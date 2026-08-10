@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
-	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	"charm.land/bubbles/v2/textarea"
@@ -141,12 +141,12 @@ type Configurator struct {
 
 	logs logViewport
 
-	pendingStartMode    runtime.Mode
+	pendingStartMode    application.Mode
 	pendingStartScreen  configuratorScreen
 	pendingClientConfig string
-	pendingDaemonMode   runtime.Mode
+	pendingDaemonMode   application.Mode
 
-	resultMode runtime.Mode
+	resultMode application.Mode
 	resultErr  error
 	done       bool
 }
@@ -228,7 +228,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 						} else if cfgErr != nil {
 							model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
 						} else {
-							model = model.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, true)
+							model = model.startModeWithDaemonGuard(application.ModeClient, configuratorScreenClientSelect, true)
 							if !model.done && isDaemonStartConfirmationScreen(model.screen) {
 								model.pendingClientConfig = autoConfig
 							}
@@ -259,7 +259,7 @@ func (m Configurator) Init() tea.Cmd {
 	return nil
 }
 
-func (m Configurator) Result() (runtime.Mode, error) {
+func (m Configurator) Result() (application.Mode, error) {
 	if !m.done {
 		return 0, ErrConfiguratorUserExit
 	}

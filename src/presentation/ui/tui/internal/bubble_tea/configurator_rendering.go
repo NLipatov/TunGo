@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tungo/application/runtime"
+	"tungo/application"
 )
 
 func (m Configurator) mainTabView() string {
@@ -126,9 +126,9 @@ func (m Configurator) mainTabView() string {
 	case configuratorScreenDaemonReconfigureConfirm:
 		roleLabel := "selected role"
 		switch m.pendingDaemonMode {
-		case runtime.ModeClient:
+		case application.ModeClient:
 			roleLabel = "client"
-		case runtime.ModeServer:
+		case application.ModeServer:
 			roleLabel = "server"
 		}
 		return m.renderSelectionScreen(
@@ -141,9 +141,9 @@ func (m Configurator) mainTabView() string {
 	case configuratorScreenDaemonActiveConfirm:
 		modeLabel := "selected mode"
 		switch m.pendingStartMode {
-		case runtime.ModeClient:
+		case application.ModeClient:
 			modeLabel = "client"
-		case runtime.ModeServer:
+		case application.ModeServer:
 			modeLabel = "server"
 		}
 		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)

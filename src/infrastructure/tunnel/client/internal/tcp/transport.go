@@ -21,11 +21,8 @@ import (
 // Client should reconnect with a fresh handshake.
 var errEpochExhausted = errors.New("epoch exhausted; reconnect required")
 
-type transportRekeyController interface {
+type transportRekey interface {
 	ObservePeerEpoch(epoch uint16)
-}
-
-type rekeyAckHandler interface {
 	HandleRekeyAck(carrierEpoch uint16, plaindata []byte) (ok bool, err error)
 }
 
@@ -34,8 +31,7 @@ type transportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService crypto
-	rekeyController     transportRekeyController
-	rekeyAck            rekeyAckHandler
+	rekey               transportRekey
 	egress              sender
 	lastRecvNano        atomic.Int64
 	pingBuf             []byte
@@ -46,8 +42,7 @@ func newTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService crypto,
-	rekeyController transportRekeyController,
-	rekeyAck rekeyAckHandler,
+	rekey transportRekey,
 	egress sender,
 ) *transportHandler {
 	t := &transportHandler{
@@ -55,8 +50,7 @@ func newTransportHandler(
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
-		rekeyController:     rekeyController,
-		rekeyAck:            rekeyAck,
+		rekey:               rekey,
 		egress:              egress,
 		pingBuf:             make([]byte, tcp.EpochPrefixSize+3, tcp.EpochPrefixSize+3+settings.TCPChacha20Overhead),
 	}
@@ -93,8 +87,8 @@ func (t *transportHandler) HandleTransport() error {
 				return payloadErr
 			}
 			carrierEpoch := binary.BigEndian.Uint16(buffer[:tcp.EpochPrefixSize])
-			if t.rekeyController != nil {
-				t.rekeyController.ObservePeerEpoch(carrierEpoch)
+			if t.rekey != nil {
+				t.rekey.ObservePeerEpoch(carrierEpoch)
 			}
 
 			t.lastRecvNano.Store(time.Now().UnixNano())
@@ -104,7 +98,7 @@ func (t *transportHandler) HandleTransport() error {
 				case service_packet.EpochExhausted:
 					slog.Warn("received EpochExhausted from server, initiating reconnect")
 					return errEpochExhausted
-				case service_packet.RekeyAck:
+				case service_packet.RekeyAck, service_packet.RekeyAckV2:
 					if err := t.handleRekeyAck(carrierEpoch, payload); err != nil {
 						return err
 					}
@@ -149,10 +143,10 @@ func (t *transportHandler) sendPing() {
 }
 
 func (t *transportHandler) handleRekeyAck(carrierEpoch uint16, payload []byte) error {
-	if t.rekeyAck == nil {
+	if t.rekey == nil {
 		return nil
 	}
-	_, err := t.rekeyAck.HandleRekeyAck(carrierEpoch, payload)
+	_, err := t.rekey.HandleRekeyAck(carrierEpoch, payload)
 	if err != nil {
 		slog.Error("rekey ack install/apply failed", "err", err)
 		if errors.Is(err, chacha20.ErrEpochExhausted) {

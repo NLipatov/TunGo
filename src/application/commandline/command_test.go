@@ -3,7 +3,7 @@ package commandline
 import (
 	"strings"
 	"testing"
-	"tungo/application/runtime"
+	"tungo/application"
 )
 
 func TestParseCommandOK(t *testing.T) {
@@ -11,9 +11,9 @@ func TestParseCommandOK(t *testing.T) {
 		in   []string
 		want Command
 	}{
-		{[]string{"c"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true}},
-		{[]string{"s"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer, RequiresElevation: true}},
-		{[]string{"  c  "}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true}},
+		{[]string{"c"}, Command{Kind: CommandRuntime, RuntimeMode: application.ModeClient, RequiresElevation: true}},
+		{[]string{"s"}, Command{Kind: CommandRuntime, RuntimeMode: application.ModeServer, RequiresElevation: true}},
+		{[]string{"  c  "}, Command{Kind: CommandRuntime, RuntimeMode: application.ModeClient, RequiresElevation: true}},
 		{[]string{"s", "gen"}, Command{Kind: CommandServerConfigGenerate, RequiresElevation: true}},
 		{[]string{" version "}, Command{Kind: CommandVersion}},
 	}
@@ -39,7 +39,7 @@ func TestParseCommandErrors(t *testing.T) {
 }
 
 func TestRuntimeModeArgs(t *testing.T) {
-	got, err := RuntimeModeArgs(runtime.ModeServer)
+	got, err := RuntimeModeArgs(application.ModeServer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestRuntimeModeArgs(t *testing.T) {
 	}
 
 	got[0] = "mutated"
-	got, err = RuntimeModeArgs(runtime.ModeServer)
+	got, err = RuntimeModeArgs(application.ModeServer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRuntimeModeArgs(t *testing.T) {
 		t.Fatalf("expected returned args to be isolated, got %v", got)
 	}
 
-	got, err = RuntimeModeArgs(runtime.ModeClient)
+	got, err = RuntimeModeArgs(application.ModeClient)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

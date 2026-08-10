@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"tungo/application/runtime"
+	"tungo/application"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,37 +29,37 @@ func (m Configurator) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, 
 	var err error
 	switch selected {
 	case daemonSetupClientLabel:
-		m, err = m.applyDaemonSetup(runtime.ModeClient, false)
+		m, err = m.applyDaemonSetup(application.ModeClient, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case daemonSetupServerLabel:
-		m, err = m.applyDaemonSetup(runtime.ModeServer, false)
+		m, err = m.applyDaemonSetup(application.ModeServer, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case daemonReconfigureClientLabel:
 		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
-			m.pendingDaemonMode = runtime.ModeClient
+			m.pendingDaemonMode = application.ModeClient
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
 			return m, nil
 		}
-		m, err = m.applyDaemonSetup(runtime.ModeClient, false)
+		m, err = m.applyDaemonSetup(application.ModeClient, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case daemonReconfigureServerLabel:
 		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
-			m.pendingDaemonMode = runtime.ModeServer
+			m.pendingDaemonMode = application.ModeServer
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
 			return m, nil
 		}
-		m, err = m.applyDaemonSetup(runtime.ModeServer, false)
+		m, err = m.applyDaemonSetup(application.ModeServer, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
@@ -160,11 +160,11 @@ func (m Configurator) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) 
 	return updated, nil
 }
 
-func (m Configurator) applyDaemonSetup(targetMode runtime.Mode, restartRunning bool) (Configurator, error) {
+func (m Configurator) applyDaemonSetup(targetMode application.Mode, restartRunning bool) (Configurator, error) {
 	if m.options.Daemon == nil {
 		return m, errors.New("daemon setup is unavailable")
 	}
-	if targetMode == runtime.ModeClient {
+	if targetMode == application.ModeClient {
 		if err := m.options.ClientConfigurationControl.ValidateActive(); err != nil {
 			return m, fmt.Errorf("cannot setup client daemon: %v", err)
 		}
@@ -177,7 +177,7 @@ func (m Configurator) applyDaemonSetup(targetMode runtime.Mode, restartRunning b
 
 	if restartRunning {
 		role := "Client"
-		if targetMode == runtime.ModeServer {
+		if targetMode == application.ModeServer {
 			role = "Server"
 		}
 		m.notice = fmt.Sprintf("%s daemon reconfigured at %s and restarted.", role, path)
@@ -249,7 +249,7 @@ func (m Configurator) updateDaemonCheckErrorConfirmScreen(msg tea.KeyPressMsg) (
 		if m.done {
 			return m, tea.Quit
 		}
-		if !m.done && isDaemonStartConfirmationScreen(m.screen) && targetMode == runtime.ModeClient {
+		if !m.done && isDaemonStartConfirmationScreen(m.screen) && targetMode == application.ModeClient {
 			m.pendingClientConfig = pendingClientConfig
 		}
 		return m, nil
@@ -262,7 +262,7 @@ func (m Configurator) completePendingDaemonStart(notice string) (Configurator, t
 	targetMode := m.pendingStartMode
 	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingDaemonStart()
-	if targetMode == runtime.ModeClient {
+	if targetMode == application.ModeClient {
 		m = m.persistAutoSelectClientConfig(pendingClientConfig)
 	}
 	m.notice = notice
@@ -271,7 +271,7 @@ func (m Configurator) completePendingDaemonStart(notice string) (Configurator, t
 	return m, tea.Quit
 }
 
-func (m Configurator) startModeWithDaemonGuard(targetMode runtime.Mode, returnScreen configuratorScreen, preserveNotice bool) Configurator {
+func (m Configurator) startModeWithDaemonGuard(targetMode application.Mode, returnScreen configuratorScreen, preserveNotice bool) Configurator {
 	m = m.clearPendingDaemonStart()
 
 	if m.options.Daemon == nil {

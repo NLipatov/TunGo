@@ -3,8 +3,10 @@ package server
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration"
+	serverConfiguration "tungo/application/configuration/server"
 	"tungo/application/configuration/settings"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/server/internal/session"
@@ -17,8 +19,10 @@ type tunManager interface {
 
 // Server owns the shared state of all server tunnels.
 type Server struct {
-	configuration appConfiguration.ServerRuntimeConfiguration
+	configuration *serverConfiguration.Configuration
 	tunManager    tunManager
+	control       configuration.ServerRuntimeControl
+	ready         atomic.Bool
 	allowedPeers  noise.AllowedPeersLookup
 	cookieManager *noise.CookieManager
 	loadMonitor   *noise.LoadMonitor
@@ -47,7 +51,7 @@ func (r *Server) RevokeByPubKey(publicKey []byte) int {
 }
 
 // Update replaces the peers accepted by new handshakes.
-func (r *Server) Update(peers []appConfiguration.ServerPeer) {
+func (r *Server) Update(peers []serverConfiguration.AllowedPeer) {
 	if r.allowedPeers != nil {
 		r.allowedPeers.Update(peers)
 	}

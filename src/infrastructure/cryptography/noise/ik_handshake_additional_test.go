@@ -586,7 +586,7 @@ func TestIKHandshake_NewResponderState_SucceedsWithDeferredKeyValidation(t *test
 		serverPrivKey: []byte{2},
 		allowedPeers:  NewAllowedPeersLookup(nil),
 	}
-	hs, err := hServer.newResponderState()
+	hs, err := hServer.newResponderState(nil)
 	if err != nil {
 		t.Fatalf("expected handshake state creation to succeed, got %v", err)
 	}
@@ -667,6 +667,9 @@ func TestIKHandshake_ClientAdvertisesCapabilitiesAndFallsBackForLegacyServer(t *
 	if h.Supports(CapabilityRekeyV2) {
 		t.Fatal("legacy server must not enable Rekey V2")
 	}
+	if _, err := h.StartRekeyV2(nil); err == nil {
+		t.Fatal("legacy negotiation must not permit Rekey V2")
+	}
 }
 
 func TestIKHandshake_ClientRejectsUnsupportedServerSelection(t *testing.T) {
@@ -737,7 +740,7 @@ func TestIKHandshake_NewInitiatorState_SucceedsWithDeferredKeyValidation(t *test
 		clientPrivKey: []byte{2},
 		peerPubKey:    make([]byte, 32),
 	}
-	hs, err := h.newInitiatorState()
+	hs, err := h.newInitiatorState(nil)
 	if err != nil {
 		t.Fatalf("expected handshake state creation to succeed, got %v", err)
 	}

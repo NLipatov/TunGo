@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/application/runtime"
+	"tungo/application"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
@@ -423,7 +423,7 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != runtime.ModeClient {
+	if updated.pendingDaemonMode != application.ModeClient {
 		t.Fatalf("expected pending daemon mode client, got %v", updated.pendingDaemonMode)
 	}
 }
@@ -447,7 +447,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = runtime.ModeClient
+	model.pendingDaemonMode = application.ModeClient
 	model.cursor = 0 // stop and restart
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -479,7 +479,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = runtime.ModeServer
+	model.pendingDaemonMode = application.ModeServer
 	model.cursor = 1 // cancel
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -708,7 +708,7 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != runtime.ModeClient {
+	if updated.pendingStartMode != application.ModeClient {
 		t.Fatalf("expected pending start mode client, got %v", updated.pendingStartMode)
 	}
 	if updated.pendingStartScreen != configuratorScreenClientSelect {
@@ -744,7 +744,7 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != runtime.ModeServer {
+	if updated.pendingStartMode != application.ModeServer {
 		t.Fatalf("expected pending start mode server, got %v", updated.pendingStartMode)
 	}
 }
@@ -762,7 +762,7 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *t
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeServer
+	model.pendingStartMode = application.ModeServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0 // stop and continue
 
@@ -777,8 +777,8 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *t
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != runtime.ModeServer {
-		t.Fatalf("expected runtime.ModeServer, got %v", updated.resultMode)
+	if updated.resultMode != application.ModeServer {
+		t.Fatalf("expected application.ModeServer, got %v", updated.resultMode)
 	}
 }
 
@@ -794,7 +794,7 @@ func TestUpdateDaemonActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testi
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 1 // cancel
@@ -839,7 +839,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	model = model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+	model = model.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, false)
 	if model.screen != configuratorScreenDaemonCheckErrorConfirm {
 		t.Fatalf("expected check error confirm screen, got %v", model.screen)
 	}
@@ -850,7 +850,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *te
 	if cmd == nil {
 		t.Fatal("expected quit cmd after successful retry")
 	}
-	if !updated.done || updated.resultMode != runtime.ModeServer {
+	if !updated.done || updated.resultMode != application.ModeServer {
 		t.Fatalf("expected done server start after retry, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if checkCalls != 2 {
@@ -874,7 +874,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t 
 		t.Fatalf("NewConfigurator() error = %v", err)
 	}
 
-	model = model.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
+	model = model.startModeWithDaemonGuard(application.ModeClient, configuratorScreenClientSelect, false)
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
 
@@ -899,7 +899,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSele
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 1 // Start anyway (unsafe)
@@ -909,7 +909,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSele
 	if cmd == nil {
 		t.Fatal("expected quit cmd for start anyway")
 	}
-	if !updated.done || updated.resultMode != runtime.ModeClient {
+	if !updated.done || updated.resultMode != application.ModeClient {
 		t.Fatalf("expected done client start, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if !strings.Contains(updated.notice, "without daemon guard") {
@@ -927,7 +927,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *t
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 2 // Cancel
 
@@ -960,7 +960,7 @@ func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *test
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 0 // stop and continue
@@ -998,7 +998,7 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConf
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
@@ -1014,8 +1014,8 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConf
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != runtime.ModeClient {
-		t.Fatalf("expected runtime.ModeClient, got %v", updated.resultMode)
+	if updated.resultMode != application.ModeClient {
+		t.Fatalf("expected application.ModeClient, got %v", updated.resultMode)
 	}
 	if s.Current().AutoSelectClientConfig != "cfg-a" {
 		t.Fatalf("expected AutoSelectClientConfig persisted after confirmation, got %q", s.Current().AutoSelectClientConfig)
@@ -1039,7 +1039,7 @@ func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
 	}
 	model.screen = configuratorScreenDaemonManage
 	model.tab = configuratorTabLogs
-	model.pendingDaemonMode = runtime.ModeServer
+	model.pendingDaemonMode = application.ModeServer
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEsc))
 	updated := updatedModel.(Configurator)
@@ -1243,7 +1243,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_EscAndNonEnter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = runtime.ModeServer
+	model.pendingDaemonMode = application.ModeServer
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyDown))
@@ -1278,7 +1278,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = runtime.ModeServer
+	model.pendingDaemonMode = application.ModeServer
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1294,7 +1294,7 @@ func TestUpdateDaemonActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 
@@ -1308,7 +1308,7 @@ func TestUpdateDaemonActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 	}
 
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeServer
+	model.pendingStartMode = application.ModeServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0
 	updatedModel, _ = model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1331,14 +1331,14 @@ func TestStartModeWithDaemonGuard_PreserveNotice(t *testing.T) {
 	}
 	model.notice = "keep me"
 
-	updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, true)
+	updated := model.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, true)
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected confirm screen, got %v", updated.screen)
 	}
 	if updated.notice != "keep me" {
 		t.Fatalf("expected notice to be preserved, got %q", updated.notice)
 	}
-	if updated.pendingStartMode != runtime.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
+	if updated.pendingStartMode != application.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
 		t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 	}
 }
@@ -1365,8 +1365,8 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
-		if !updated.done || updated.resultMode != runtime.ModeServer {
+		updated := model.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, false)
+		if !updated.done || updated.resultMode != application.ModeServer {
 			t.Fatalf("expected immediate start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1379,14 +1379,14 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		updated := model.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenDaemonCheckErrorConfirm {
 			t.Fatalf("expected daemon check error confirm screen, got %v", updated.screen)
 		}
 		if !strings.Contains(updated.notice, "Failed to check daemon status") {
 			t.Fatalf("expected status failure notice, got %q", updated.notice)
 		}
-		if updated.pendingStartMode != runtime.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
+		if updated.pendingStartMode != application.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
 			t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 		}
 	})
@@ -1399,8 +1399,8 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
-		if !updated.done || updated.resultMode != runtime.ModeClient {
+		updated := model.startModeWithDaemonGuard(application.ModeClient, configuratorScreenClientSelect, false)
+		if !updated.done || updated.resultMode != application.ModeClient {
 			t.Fatalf("expected immediate client start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1414,7 +1414,7 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.notice = "temporary notice"
-		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		updated := model.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenDaemonActiveConfirm {
 			t.Fatalf("expected confirm screen, got %v", updated.screen)
 		}
@@ -1499,7 +1499,7 @@ func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != runtime.ModeServer {
+	if updated.pendingDaemonMode != application.ModeServer {
 		t.Fatalf("expected pending daemon mode server, got %v", updated.pendingDaemonMode)
 	}
 }
@@ -1510,7 +1510,7 @@ func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 0
 
@@ -1522,7 +1522,7 @@ func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected to stay on confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != runtime.ModeClient {
+	if updated.pendingStartMode != application.ModeClient {
 		t.Fatalf("expected pending mode to remain unchanged, got %v", updated.pendingStartMode)
 	}
 }
@@ -1536,7 +1536,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		}
 		model.options.Daemon = nil
 
-		_, err = model.applyDaemonSetup(runtime.ModeClient, false)
+		_, err = model.applyDaemonSetup(application.ModeClient, false)
 		if err == nil || !strings.Contains(err.Error(), "daemon setup is unavailable") {
 			t.Fatalf("expected unavailable daemon error, got %v", err)
 		}
@@ -1551,7 +1551,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		_, err = model.applyDaemonSetup(runtime.ModeClient, false)
+		_, err = model.applyDaemonSetup(application.ModeClient, false)
 		if err == nil || !strings.Contains(err.Error(), "cannot setup client daemon: invalid client config") {
 			t.Fatalf("expected client validation error, got %v", err)
 		}
@@ -1564,7 +1564,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		_, err = model.applyDaemonSetup(runtime.ModeClient, true)
+		_, err = model.applyDaemonSetup(application.ModeClient, true)
 		if err == nil || !strings.Contains(err.Error(), "restart failed") {
 			t.Fatalf("expected setup error, got %v", err)
 		}
@@ -1584,7 +1584,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated, err := model.applyDaemonSetup(runtime.ModeServer, true)
+		updated, err := model.applyDaemonSetup(application.ModeServer, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1617,7 +1617,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_EscapeAndNavigation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 
 	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyDown))
@@ -1654,7 +1654,7 @@ func TestStartModeWithDaemonGuard_PreservesNoticeOnStatusError(t *testing.T) {
 	model.notice = "Configuration selected."
 
 	updated := model.startModeWithDaemonGuard(
-		runtime.ModeClient,
+		application.ModeClient,
 		configuratorScreenClientSelect,
 		true,
 	)
@@ -1707,7 +1707,7 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 	}
 
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = runtime.ModeClient
+	model.pendingDaemonMode = application.ModeClient
 	clientView := model.mainTabView()
 	if !strings.Contains(clientView, "requires restart") || !strings.Contains(clientView, "client daemon setup") {
 		t.Fatalf("expected client reconfigure label in view, got: %s", clientView)
@@ -1716,20 +1716,20 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 		t.Fatalf("expected reconfigure confirm hint to include tab navigation, got: %s", clientView)
 	}
 
-	model.pendingDaemonMode = runtime.ModeServer
+	model.pendingDaemonMode = application.ModeServer
 	serverView := model.mainTabView()
 	if !strings.Contains(serverView, "server daemon setup") {
 		t.Fatalf("expected server reconfigure label in view, got: %s", serverView)
 	}
 
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartMode = application.ModeClient
 	startClientView := model.mainTabView()
 	if !strings.Contains(startClientView, "starting client") {
 		t.Fatalf("expected client start label in confirm view, got: %s", startClientView)
 	}
 
-	model.pendingStartMode = runtime.ModeServer
+	model.pendingStartMode = application.ModeServer
 	startServerView := model.mainTabView()
 	if !strings.Contains(startServerView, "starting server") {
 		t.Fatalf("expected server start label in confirm view, got: %s", startServerView)

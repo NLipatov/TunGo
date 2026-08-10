@@ -1,14 +1,19 @@
 package rekey
 
 import (
+	"bytes"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"tungo/application/configuration"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/network/tcp/adapters"
 )
 
 type rekeyTestEpochManager struct {
@@ -50,18 +55,18 @@ func handleServerRekeyInit(
 	crypto primitives.KeyDeriver,
 	controller epochController,
 	packet []byte,
-) ([v1PublicKeyLen]byte, uint16, bool, error) {
-	return NewServerRekeyCoordinator(controller).HandleRekeyInit(0, crypto, packet)
+) ([]byte, uint16, bool, error) {
+	return NewServerRekeyCoordinator(controller, nil).Handle(0, crypto, packet)
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_NilController(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_NilController(t *testing.T) {
 	_, _, ok, err := handleServerRekeyInit(&primitives.DefaultKeyDeriver{}, nil, nil)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false with nil controller, got ok=%v err=%v", ok, err)
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_NilCrypto(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_NilCrypto(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 	_, _, ok, err := handleServerRekeyInit(nil, fsm, nil)
@@ -70,7 +75,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_NilCrypto(t *testing.T) {
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_ShortPacket(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_ShortPacket(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 	_, _, ok, err := handleServerRekeyInit(&primitives.DefaultKeyDeriver{}, fsm, make([]byte, 10))
@@ -79,7 +84,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_ShortPacket(t *testing.T) {
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_NotReady(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_NotReady(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 	// Make the FSM unavailable by starting a rekey.
@@ -94,7 +99,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_NotReady(t *testing.T) {
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_Success(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_Success(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
@@ -108,7 +113,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_Success(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if serverPub == ([v1PublicKeyLen]byte{}) {
+	if len(serverPub) != v1PacketLen || bytes.Equal(serverPub[serviceHeaderLen:], make([]byte, v1PublicKeyLen)) {
 		t.Fatal("expected non-zero server public key")
 	}
 	if epoch == 0 {
@@ -116,22 +121,126 @@ func TestServerRekeyCoordinator_HandleRekeyInit_Success(t *testing.T) {
 	}
 }
 
+func TestRekeyV2(t *testing.T) {
+	crypto := &primitives.DefaultKeyDeriver{}
+	serverPub, serverPriv, err := crypto.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPub, clientPriv, err := crypto.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverHandshake := noise.NewIKHandshakeServer(
+		serverPub[:],
+		serverPriv[:],
+		noise.NewAllowedPeersLookup([]configuration.ServerPeer{{
+			PublicKey: clientPub[:],
+			Enabled:   true,
+			ClientID:  1,
+		}}),
+		nil,
+		nil,
+	)
+	clientHandshake := noise.NewIKHandshakeClient(clientPub[:], clientPriv[:], serverPub[:])
+
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+	clientTransport, err := adapters.NewLengthPrefixFramingAdapter(clientConn, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTransport, err := adapters.NewLengthPrefixFramingAdapter(serverConn, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverResult := make(chan error, 1)
+	go func() {
+		_, handshakeErr := serverHandshake.ServerSideHandshake(serverTransport)
+		serverResult <- handshakeErr
+	}()
+	if err := clientHandshake.ClientSideHandshake(clientTransport); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverResult; err != nil {
+		t.Fatal(err)
+	}
+
+	initialC2S := append([]byte(nil), clientHandshake.KeyClientToServer()...)
+	initialS2C := append([]byte(nil), clientHandshake.KeyServerToClient()...)
+	clientEpochs := &rekeyTestEpochManager{}
+	serverEpochs := &rekeyTestEpochManager{}
+	clientController := rekey.NewStateMachine(clientEpochs, initialC2S, initialS2C)
+	serverController := rekey.NewStateMachine(serverEpochs, initialC2S, initialS2C)
+	clientCoordinator := NewClientRekeyCoordinator(
+		crypto,
+		clientController,
+		clientHandshake,
+		time.Millisecond,
+		time.Now().Add(-time.Second),
+	)
+	serverCoordinator := NewServerRekeyCoordinator(serverController, serverHandshake)
+
+	init, ok, err := clientCoordinator.MaybeBuildRekeyInit(time.Now(), make([]byte, 1500))
+	if err != nil || !ok {
+		t.Fatalf("build RekeyInitV2: ok=%v err=%v", ok, err)
+	}
+	if kind, parsed := service_packet.Parse(init); !parsed || kind != service_packet.RekeyInitV2 {
+		t.Fatalf("unexpected init type: kind=%v parsed=%v", kind, parsed)
+	}
+
+	ack, serverEpoch, ok, err := serverCoordinator.Handle(0, crypto, init)
+	if err != nil || !ok {
+		t.Fatalf("handle RekeyInitV2: ok=%v err=%v", ok, err)
+	}
+	repeatedAck, repeatedEpoch, ok, err := serverCoordinator.Handle(0, crypto, init)
+	if err != nil || !ok || repeatedEpoch != serverEpoch || !bytes.Equal(repeatedAck, ack) {
+		t.Fatalf("repeated init changed transaction: ok=%v epoch=%d err=%v", ok, repeatedEpoch, err)
+	}
+	if serverEpochs.nextEpoch != 1 {
+		t.Fatalf("repeated init staged %d epochs", serverEpochs.nextEpoch)
+	}
+
+	if kind, parsed := service_packet.Parse(ack); !parsed || kind != service_packet.RekeyAckV2 {
+		t.Fatalf("unexpected ack type: kind=%v parsed=%v", kind, parsed)
+	}
+	if ok, err := clientCoordinator.HandleRekeyAck(0, ack); err != nil || !ok {
+		t.Fatalf("handle RekeyAckV2: ok=%v err=%v", ok, err)
+	}
+	serverCoordinator.ActivateSendEpoch(serverEpoch)
+
+	clientC2S, clientS2C := clientController.CurrentKeys()
+	serverC2S, serverS2C := serverController.CurrentKeys()
+	if !bytes.Equal(clientC2S, serverC2S) || !bytes.Equal(clientS2C, serverS2C) {
+		t.Fatal("client and server installed different V2 keys")
+	}
+	if bytes.Equal(clientC2S, initialC2S) || bytes.Equal(clientS2C, initialS2C) {
+		t.Fatal("V2 did not replace the initial traffic keys")
+	}
+
+	v1Packet, _ := buildRekeyInitPacket(t, crypto)
+	if _, _, ok, err := serverCoordinator.Handle(1, crypto, v1Packet); err != nil || ok {
+		t.Fatalf("negotiated V2 accepted downgrade: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestServerRekeyCoordinator_RepeatedInitReturnsSameTransaction(t *testing.T) {
 	router := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(router, make([]byte, 32), make([]byte, 32))
-	coordinator := NewServerRekeyCoordinator(fsm)
+	coordinator := NewServerRekeyCoordinator(fsm, nil)
 	packet, _ := buildRekeyInitPacket(t, crypto)
 
-	firstPub, firstEpoch, firstOK, err := coordinator.HandleRekeyInit(0, crypto, packet)
+	firstPub, firstEpoch, firstOK, err := coordinator.Handle(0, crypto, packet)
 	if err != nil || !firstOK {
 		t.Fatalf("first init: ok=%v err=%v", firstOK, err)
 	}
-	secondPub, secondEpoch, secondOK, err := coordinator.HandleRekeyInit(0, crypto, packet)
+	secondPub, secondEpoch, secondOK, err := coordinator.Handle(0, crypto, packet)
 	if err != nil || !secondOK {
 		t.Fatalf("repeated init: ok=%v err=%v", secondOK, err)
 	}
-	if firstPub != secondPub || firstEpoch != secondEpoch {
+	if !bytes.Equal(firstPub, secondPub) || firstEpoch != secondEpoch {
 		t.Fatal("repeated init returned a different transaction")
 	}
 	if router.nextEpoch != 1 {
@@ -143,11 +252,11 @@ func TestServerRekeyCoordinator_ConcurrentRepeatedInitStagesOnce(t *testing.T) {
 	router := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(router, make([]byte, 32), make([]byte, 32))
-	coordinator := NewServerRekeyCoordinator(fsm)
+	coordinator := NewServerRekeyCoordinator(fsm, nil)
 	packet, _ := buildRekeyInitPacket(t, crypto)
 
 	type result struct {
-		serverPub [v1PublicKeyLen]byte
+		serverPub []byte
 		epoch     uint16
 		ok        bool
 		err       error
@@ -158,7 +267,7 @@ func TestServerRekeyCoordinator_ConcurrentRepeatedInitStagesOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i].serverPub, results[i].epoch, results[i].ok, results[i].err = coordinator.HandleRekeyInit(0, crypto, packet)
+			results[i].serverPub, results[i].epoch, results[i].ok, results[i].err = coordinator.Handle(0, crypto, packet)
 		}()
 	}
 	wg.Wait()
@@ -167,7 +276,7 @@ func TestServerRekeyCoordinator_ConcurrentRepeatedInitStagesOnce(t *testing.T) {
 		if results[i].err != nil || !results[i].ok {
 			t.Fatalf("result %d: ok=%v err=%v", i, results[i].ok, results[i].err)
 		}
-		if i > 0 && (results[i].serverPub != results[0].serverPub || results[i].epoch != results[0].epoch) {
+		if i > 0 && (!bytes.Equal(results[i].serverPub, results[0].serverPub) || results[i].epoch != results[0].epoch) {
 			t.Fatalf("result %d returned a different transaction", i)
 		}
 	}
@@ -180,28 +289,28 @@ func TestServerRekeyCoordinator_RejectsDifferentInitUntilTransitionCompletes(t *
 	router := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(router, make([]byte, 32), make([]byte, 32))
-	coordinator := NewServerRekeyCoordinator(fsm)
+	coordinator := NewServerRekeyCoordinator(fsm, nil)
 	firstPacket, _ := buildRekeyInitPacket(t, crypto)
 	secondPacket, _ := buildRekeyInitPacket(t, crypto)
 
-	_, epoch, ok, err := coordinator.HandleRekeyInit(0, crypto, firstPacket)
+	_, epoch, ok, err := coordinator.Handle(0, crypto, firstPacket)
 	if err != nil || !ok {
 		t.Fatalf("first init: ok=%v err=%v", ok, err)
 	}
-	if _, _, ok, err = coordinator.HandleRekeyInit(0, crypto, secondPacket); err != nil || ok {
+	if _, _, ok, err = coordinator.Handle(0, crypto, secondPacket); err != nil || ok {
 		t.Fatalf("different in-flight init: ok=%v err=%v", ok, err)
 	}
 
 	coordinator.ActivateSendEpoch(epoch)
-	if _, _, ok, err = coordinator.HandleRekeyInit(0, crypto, secondPacket); err != nil || ok {
+	if _, _, ok, err = coordinator.Handle(0, crypto, secondPacket); err != nil || ok {
 		t.Fatalf("init before peer confirmation: ok=%v err=%v", ok, err)
 	}
 
 	coordinator.ObservePeerEpoch(epoch)
-	if _, _, ok, err = coordinator.HandleRekeyInit(0, crypto, firstPacket); err != nil || ok {
+	if _, _, ok, err = coordinator.Handle(0, crypto, firstPacket); err != nil || ok {
 		t.Fatalf("completed transaction replay: ok=%v err=%v", ok, err)
 	}
-	_, nextEpoch, ok, err := coordinator.HandleRekeyInit(epoch, crypto, secondPacket)
+	_, nextEpoch, ok, err := coordinator.Handle(epoch, crypto, secondPacket)
 	if err != nil || !ok {
 		t.Fatalf("init after completed transition: ok=%v err=%v", ok, err)
 	}
@@ -214,33 +323,33 @@ func TestServerRekeyCoordinator_RejectsStaleInitAcrossTransactions(t *testing.T)
 	router := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(router, make([]byte, 32), make([]byte, 32))
-	coordinator := NewServerRekeyCoordinator(fsm)
+	coordinator := NewServerRekeyCoordinator(fsm, nil)
 	firstPacket, _ := buildRekeyInitPacket(t, crypto)
 	secondPacket, _ := buildRekeyInitPacket(t, crypto)
 	thirdPacket, _ := buildRekeyInitPacket(t, crypto)
 
-	_, firstEpoch, ok, err := coordinator.HandleRekeyInit(0, crypto, firstPacket)
+	_, firstEpoch, ok, err := coordinator.Handle(0, crypto, firstPacket)
 	if err != nil || !ok {
 		t.Fatalf("first init: ok=%v err=%v", ok, err)
 	}
 	coordinator.ActivateSendEpoch(firstEpoch)
 	coordinator.ObservePeerEpoch(firstEpoch)
 
-	_, secondEpoch, ok, err := coordinator.HandleRekeyInit(firstEpoch, crypto, secondPacket)
+	_, secondEpoch, ok, err := coordinator.Handle(firstEpoch, crypto, secondPacket)
 	if err != nil || !ok {
 		t.Fatalf("second init: ok=%v err=%v", ok, err)
 	}
 	coordinator.ActivateSendEpoch(secondEpoch)
 	coordinator.ObservePeerEpoch(secondEpoch)
 
-	if _, _, ok, err = coordinator.HandleRekeyInit(0, crypto, firstPacket); err != nil || ok {
+	if _, _, ok, err = coordinator.Handle(0, crypto, firstPacket); err != nil || ok {
 		t.Fatalf("stale first init: ok=%v err=%v", ok, err)
 	}
 	if router.nextEpoch != secondEpoch {
 		t.Fatalf("stale init staged epoch %d, want %d", router.nextEpoch, secondEpoch)
 	}
 
-	_, thirdEpoch, ok, err := coordinator.HandleRekeyInit(secondEpoch, crypto, thirdPacket)
+	_, thirdEpoch, ok, err := coordinator.Handle(secondEpoch, crypto, thirdPacket)
 	if err != nil || !ok {
 		t.Fatalf("third init after stale packet: ok=%v err=%v", ok, err)
 	}
@@ -250,7 +359,7 @@ func TestServerRekeyCoordinator_RejectsStaleInitAcrossTransactions(t *testing.T)
 }
 
 func TestClientRekeyCoordinator_HandleRekeyAck_NilController(t *testing.T) {
-	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, nil, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, nil, nil, time.Hour, time.Now())
 	ok, err := coordinator.HandleRekeyAck(0, nil)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false with nil controller, got ok=%v err=%v", ok, err)
@@ -260,7 +369,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_NilController(t *testing.T) {
 func TestClientRekeyCoordinator_HandleRekeyAck_NilCrypto(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
-	coordinator := NewClientRekeyCoordinator(nil, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(nil, fsm, nil, time.Hour, time.Now())
 	ok, err := coordinator.HandleRekeyAck(0, nil)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false with nil crypto, got ok=%v err=%v", ok, err)
@@ -270,7 +379,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_NilCrypto(t *testing.T) {
 func TestClientRekeyCoordinator_HandleRekeyAck_ShortPacket(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
-	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, time.Hour, time.Now())
 	ok, err := coordinator.HandleRekeyAck(0, make([]byte, 10))
 	if err != nil || ok {
 		t.Fatalf("expected ok=false for short packet, got ok=%v err=%v", ok, err)
@@ -284,7 +393,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_NoPendingKey(t *testing.T) {
 	pkt := make([]byte, v1PacketLen)
 	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 
-	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, time.Hour, time.Now())
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false without pending key, got ok=%v err=%v", ok, err)
@@ -296,7 +405,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_Success(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 
-	coordinator := NewClientRekeyCoordinator(crypto, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(crypto, fsm, nil, time.Hour, time.Now())
 	seedPendingClientRekey(t, coordinator)
 
 	// Build an ack packet with a server public key.
@@ -323,7 +432,7 @@ func TestClientRekeyCoordinator_RejectsStaleAckAcrossTransactions(t *testing.T) 
 	router := &rekeyTestEpochManager{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(router, make([]byte, 32), make([]byte, 32))
-	coordinator := NewClientRekeyCoordinator(crypto, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(crypto, fsm, nil, time.Hour, time.Now())
 
 	seedPendingClientRekey(t, coordinator)
 	firstAck := buildRekeyAckPacket(t, crypto)
@@ -393,7 +502,7 @@ func (f *mockCrypto) DeriveKey(_, _, _ []byte) ([]byte, error) {
 	return make([]byte, 32), nil
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_GenerateKeyPairError(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_GenerateKeyPairError(t *testing.T) {
 	genErr := errors.New("keygen failed")
 	crypto := &mockCrypto{genErr: genErr}
 	rk := &rekeyTestEpochManager{}
@@ -410,7 +519,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_GenerateKeyPairError(t *testing.
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_DeriveKeyError_FirstCall(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_DeriveKeyError_FirstCall(t *testing.T) {
 	deriveErr := errors.New("derive c2s failed")
 	crypto := &mockCrypto{deriveErr: deriveErr, deriveN: 1}
 	rk := &rekeyTestEpochManager{}
@@ -427,7 +536,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_DeriveKeyError_FirstCall(t *test
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_DeriveKeyError_SecondCall(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_DeriveKeyError_SecondCall(t *testing.T) {
 	deriveErr := errors.New("derive s2c failed")
 	crypto := &mockCrypto{deriveErr: deriveErr, deriveN: 2}
 	rk := &rekeyTestEpochManager{}
@@ -444,7 +553,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_DeriveKeyError_SecondCall(t *tes
 	}
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_WrongSizePublicKey(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_WrongSizePublicKey(t *testing.T) {
 	crypto := &mockCrypto{genPub: make([]byte, 31)} // wrong size
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
@@ -476,7 +585,7 @@ func (m *mockRekeyController) CurrentKeys() ([]byte, []byte) {
 	return append([]byte(nil), m.c2sKey...), append([]byte(nil), m.s2cKey...)
 }
 
-func TestServerRekeyCoordinator_HandleRekeyInit_StartRekeyError(t *testing.T) {
+func TestServerRekeyCoordinator_Handle_StartRekeyError(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	controller := &mockRekeyController{
 		ready:    true,
@@ -501,7 +610,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_StartRekeyError(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 
-	coordinator := NewClientRekeyCoordinator(crypto, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(crypto, fsm, nil, time.Hour, time.Now())
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := crypto.GenerateX25519KeyPair()
@@ -534,7 +643,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_DeriveKeyError_FirstCall(t *testi
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 
 	realCrypto := &primitives.DefaultKeyDeriver{}
-	coordinator := NewClientRekeyCoordinator(crypto, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(crypto, fsm, nil, time.Hour, time.Now())
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := realCrypto.GenerateX25519KeyPair()
@@ -558,7 +667,7 @@ func TestClientRekeyCoordinator_HandleRekeyAck_DeriveKeyError_SecondCall(t *test
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 
 	realCrypto := &primitives.DefaultKeyDeriver{}
-	coordinator := NewClientRekeyCoordinator(crypto, fsm, time.Hour, time.Now())
+	coordinator := NewClientRekeyCoordinator(crypto, fsm, nil, time.Hour, time.Now())
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := realCrypto.GenerateX25519KeyPair()

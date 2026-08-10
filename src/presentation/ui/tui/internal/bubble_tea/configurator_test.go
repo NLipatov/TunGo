@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
-	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
@@ -44,12 +44,12 @@ func TestConfiguratorResult(t *testing.T) {
 	wantErr := errors.New("failed")
 	m := newTestConfigurator(t)
 	m.done = true
-	m.resultMode = runtime.ModeServer
+	m.resultMode = application.ModeServer
 	m.resultErr = wantErr
 
 	mode, err := m.Result()
-	if mode != runtime.ModeServer || !errors.Is(err, wantErr) {
-		t.Fatalf("Result() = (%v, %v), want (%v, %v)", mode, err, runtime.ModeServer, wantErr)
+	if mode != application.ModeServer || !errors.Is(err, wantErr) {
+		t.Fatalf("Result() = (%v, %v), want (%v, %v)", mode, err, application.ModeServer, wantErr)
 	}
 }
 
@@ -725,8 +725,8 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_ValidConfiguration(t *testin
 	if !s.done {
 		t.Fatal("expected done=true when configuration is valid")
 	}
-	if s.resultMode != runtime.ModeClient {
-		t.Fatalf("expected runtime.ModeClient, got %v", s.resultMode)
+	if s.resultMode != application.ModeClient {
+		t.Fatalf("expected application.ModeClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -998,8 +998,8 @@ func TestUpdateServerSelectScreen_EnterStartServer(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true")
 	}
-	if s.resultMode != runtime.ModeServer {
-		t.Fatalf("expected runtime.ModeServer, got %v", s.resultMode)
+	if s.resultMode != application.ModeServer {
+		t.Fatalf("expected application.ModeServer, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -1888,8 +1888,8 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != runtime.ModeClient {
-		t.Fatalf("expected runtime.ModeClient, got %v", s.resultMode)
+	if s.resultMode != application.ModeClient {
+		t.Fatalf("expected application.ModeClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -2493,8 +2493,8 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != runtime.ModeClient {
-		t.Fatalf("expected runtime.ModeClient, got %v", s.resultMode)
+	if s.resultMode != application.ModeClient {
+		t.Fatalf("expected application.ModeClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -2820,7 +2820,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonReconfigureConfirm
-		model.pendingDaemonMode = runtime.ModeClient
+		model.pendingDaemonMode = application.ModeClient
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)
 		if updated.screen != configuratorScreenDaemonReconfigureConfirm {
@@ -2835,7 +2835,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonActiveConfirm
-		model.pendingStartMode = runtime.ModeClient
+		model.pendingStartMode = application.ModeClient
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)
@@ -2851,7 +2851,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonCheckErrorConfirm
-		model.pendingStartMode = runtime.ModeClient
+		model.pendingStartMode = application.ModeClient
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)

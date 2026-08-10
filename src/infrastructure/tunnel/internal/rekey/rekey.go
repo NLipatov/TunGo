@@ -1,19 +1,21 @@
 package rekey
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"tungo/infrastructure/cryptography/mem"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/curve25519"
 )
 
 type serverRekeyTransaction struct {
-	clientPub     [v1PublicKeyLen]byte
-	serverPub     [v1PublicKeyLen]byte
+	requestHash   [sha256.Size]byte
+	response      []byte
 	carrierEpoch  uint16
 	epoch         uint16
 	sendActivated atomic.Bool
@@ -22,28 +24,35 @@ type serverRekeyTransaction struct {
 
 type epochController interface {
 	ReadyForRekey() bool
-	SendEpoch() uint16
 	StartRekey(c2s, s2c []byte) (uint16, error)
 	ActivateSendEpoch(epoch uint16)
 	ObservePeerEpoch(epoch uint16)
 	CurrentKeys() (clientToServer, serverToClient []byte)
 }
 
+type serverRekeyV2Handshake interface {
+	RespondRekeyV2(prologue, msg1 []byte) (msg2, c2s, s2c []byte, err error)
+}
+
 func (t *serverRekeyTransaction) complete() bool {
 	return t.sendActivated.Load() && t.peerObserved.Load()
 }
 
-// ServerRekeyCoordinator makes RekeyInit handling idempotent for one server
-// session. While a transition is in flight, a repeated client public key maps
-// to the same staged epoch and server public key; completed replays are ignored.
+// ServerRekeyCoordinator makes rekey-init handling idempotent for one session.
+// Repeated requests return the same response and staged epoch; completed
+// replays are ignored.
 type ServerRekeyCoordinator struct {
 	mu         sync.Mutex
 	controller epochController
+	v2         serverRekeyV2Handshake
 	current    atomic.Pointer[serverRekeyTransaction]
 }
 
-func NewServerRekeyCoordinator(controller epochController) *ServerRekeyCoordinator {
-	return &ServerRekeyCoordinator{controller: controller}
+func NewServerRekeyCoordinator(
+	controller epochController,
+	v2 serverRekeyV2Handshake,
+) *ServerRekeyCoordinator {
+	return &ServerRekeyCoordinator{controller: controller, v2: v2}
 }
 
 var (
@@ -51,106 +60,130 @@ var (
 	deriveLabelS2C = []byte("tungo-rekey-s2c")
 )
 
-// HandleRekeyInit parses a RekeyInit packet and stages its keys. It does no IO;
-// the caller sends RekeyAck with the returned server public key.
-func (c *ServerRekeyCoordinator) HandleRekeyInit(
+// Handle consumes either rekey-init packet and returns an encoded ack packet.
+// It performs no IO. ok=false means there is no response to send.
+func (c *ServerRekeyCoordinator) Handle(
 	carrierEpoch uint16,
 	crypto primitives.KeyDeriver,
 	plaindata []byte,
-) (serverPub [v1PublicKeyLen]byte, epoch uint16, ok bool, err error) {
-	if c == nil || c.controller == nil || crypto == nil {
-		return serverPub, 0, false, nil
+) (response []byte, epoch uint16, ok bool, err error) {
+	if c == nil || c.controller == nil {
+		return nil, 0, false, nil
 	}
-	if len(plaindata) != v1PacketLen {
-		return serverPub, 0, false, nil
+	kind, ok := service_packet.Parse(plaindata)
+	if !ok || (kind != service_packet.RekeyInit && kind != service_packet.RekeyInitV2) {
+		return nil, 0, false, nil
 	}
-
-	var clientPub [v1PublicKeyLen]byte
-	copy(clientPub[:], plaindata[v1ServiceHeaderLen:v1PacketLen])
+	if kind == service_packet.RekeyInit && (c.v2 != nil || crypto == nil || len(plaindata) != v1PacketLen) {
+		return nil, 0, false, nil
+	}
+	if kind == service_packet.RekeyInitV2 && (c.v2 == nil || len(plaindata) <= serviceHeaderLen) {
+		return nil, 0, false, nil
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	requestHash := sha256.Sum256(plaindata)
 	current := c.current.Load()
-	if current != nil && current.clientPub == clientPub {
-		if current.complete() {
-			return serverPub, 0, false, nil
+	if current != nil && current.requestHash == requestHash {
+		if current.complete() || current.carrierEpoch != carrierEpoch {
+			return nil, 0, false, nil
 		}
-		if current.carrierEpoch != carrierEpoch {
-			return serverPub, 0, false, nil
-		}
-		return current.serverPub, current.epoch, true, nil
+		return append([]byte(nil), current.response...), current.epoch, true, nil
 	}
 	if current != nil {
 		if !current.complete() || carrierEpoch != current.epoch {
-			return serverPub, 0, false, nil
+			return nil, 0, false, nil
 		}
 	}
 	if !c.controller.ReadyForRekey() {
-		return serverPub, 0, false, nil
+		return nil, 0, false, nil
 	}
 
+	var body, c2s, s2c []byte
+	var responseType service_packet.HeaderType
+	switch kind {
+	case service_packet.RekeyInit:
+		body, c2s, s2c, err = c.rekeyV1(crypto, plaindata)
+		responseType = service_packet.RekeyAck
+	case service_packet.RekeyInitV2:
+		prologue := rekeyV2Prologue(c.controller)
+		body, c2s, s2c, err = c.v2.RespondRekeyV2(prologue[:], plaindata[serviceHeaderLen:])
+		responseType = service_packet.RekeyAckV2
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer mem.ZeroBytes(c2s)
+	defer mem.ZeroBytes(s2c)
+
+	epoch, err = c.controller.StartRekey(c2s, s2c)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	response = make([]byte, serviceHeaderLen+len(body))
+	if err := service_packet.Encode(responseType, response); err != nil {
+		return nil, 0, false, err
+	}
+	copy(response[serviceHeaderLen:], body)
+
+	c.current.Store(&serverRekeyTransaction{
+		requestHash:  requestHash,
+		response:     append([]byte(nil), response...),
+		carrierEpoch: carrierEpoch,
+		epoch:        epoch,
+	})
+	return response, epoch, true, nil
+}
+
+func (c *ServerRekeyCoordinator) rekeyV1(
+	crypto primitives.KeyDeriver,
+	plaindata []byte,
+) (serverPub, c2s, s2c []byte, err error) {
 	generatedPub, serverPriv, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
-		return serverPub, 0, false, err
+		return nil, nil, nil, err
 	}
 	defer mem.ZeroBytes(serverPriv[:])
-	shared, err := curve25519.X25519(serverPriv[:], clientPub[:])
+	shared, err := curve25519.X25519(serverPriv[:], plaindata[serviceHeaderLen:v1PacketLen])
 	if err != nil {
-		return serverPub, 0, false, err
+		return nil, nil, nil, err
 	}
 	defer mem.ZeroBytes(shared)
 
 	currentC2S, currentS2C := c.controller.CurrentKeys()
 	defer mem.ZeroBytes(currentC2S)
 	defer mem.ZeroBytes(currentS2C)
-	newC2S, err := crypto.DeriveKey(shared, currentC2S, deriveLabelC2S)
+	c2s, err = crypto.DeriveKey(shared, currentC2S, deriveLabelC2S)
 	if err != nil {
-		return serverPub, 0, false, err
+		return nil, nil, nil, err
 	}
-	defer mem.ZeroBytes(newC2S)
-	newS2C, err := crypto.DeriveKey(shared, currentS2C, deriveLabelS2C)
+	s2c, err = crypto.DeriveKey(shared, currentS2C, deriveLabelS2C)
 	if err != nil {
-		return serverPub, 0, false, err
+		mem.ZeroBytes(c2s)
+		return nil, nil, nil, err
 	}
-	defer mem.ZeroBytes(newS2C)
-
 	if len(generatedPub) != v1PublicKeyLen {
-		return serverPub, 0, false, fmt.Errorf("unexpected server public key length: %d", len(generatedPub))
+		mem.ZeroBytes(c2s)
+		mem.ZeroBytes(s2c)
+		return nil, nil, nil, fmt.Errorf("unexpected server public key length: %d", len(generatedPub))
 	}
-	copy(serverPub[:], generatedPub)
-
-	epoch, err = c.controller.StartRekey(newC2S, newS2C)
-	if err != nil {
-		return serverPub, 0, false, err
-	}
-
-	c.current.Store(&serverRekeyTransaction{
-		clientPub:    clientPub,
-		serverPub:    serverPub,
-		carrierEpoch: carrierEpoch,
-		epoch:        epoch,
-	})
-	return serverPub, epoch, true, nil
+	return generatedPub, c2s, s2c, nil
 }
 
-func (c *ServerRekeyCoordinator) ReadyForRekey() bool {
-	if c == nil || c.controller == nil {
-		return false
-	}
-	current := c.current.Load()
-	return (current == nil || current.complete()) && c.controller.ReadyForRekey()
-}
+func rekeyV2Prologue(controller epochController) [sha256.Size]byte {
+	c2s, s2c := controller.CurrentKeys()
+	defer mem.ZeroBytes(c2s)
+	defer mem.ZeroBytes(s2c)
 
-func (c *ServerRekeyCoordinator) SendEpoch() uint16 {
-	if c == nil || c.controller == nil {
-		return 0
-	}
-	return c.controller.SendEpoch()
-}
-
-func (c *ServerRekeyCoordinator) StartRekey(c2s, s2c []byte) (uint16, error) {
-	return c.controller.StartRekey(c2s, s2c)
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("tungo-rekey-v2"))
+	_, _ = hash.Write(c2s)
+	_, _ = hash.Write(s2c)
+	var prologue [sha256.Size]byte
+	copy(prologue[:], hash.Sum(nil))
+	return prologue
 }
 
 func (c *ServerRekeyCoordinator) ActivateSendEpoch(epoch uint16) {
@@ -171,11 +204,4 @@ func (c *ServerRekeyCoordinator) ObservePeerEpoch(epoch uint16) {
 	if current := c.current.Load(); current != nil && current.epoch == epoch {
 		current.peerObserved.Store(true)
 	}
-}
-
-func (c *ServerRekeyCoordinator) CurrentKeys() ([]byte, []byte) {
-	if c == nil || c.controller == nil {
-		return nil, nil
-	}
-	return c.controller.CurrentKeys()
 }

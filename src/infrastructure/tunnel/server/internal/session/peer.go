@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"tungo/infrastructure/cryptography/primitives"
 	outbound "tungo/infrastructure/tunnel/internal/egress"
-	"tungo/infrastructure/tunnel/internal/rekey"
 )
 
 var ErrPeerClosed = errors.New("peer closed")
@@ -24,6 +24,12 @@ type crypto interface {
 	Decrypt([]byte) ([]byte, error)
 }
 
+type peerRekey interface {
+	Handle(uint16, primitives.KeyDeriver, []byte) ([]byte, uint16, bool, error)
+	ObservePeerEpoch(uint16)
+	ActivateSendEpoch(uint16)
+}
+
 // Peer is a session paired with its egress path — the unit stored in Repository.
 //
 // LIFECYCLE INVARIANT: The closed flag is set BEFORE zeroing crypto.
@@ -31,7 +37,7 @@ type crypto interface {
 // operation, preventing concurrent zeroization.
 type Peer struct {
 	crypto       crypto
-	rekey        *rekey.ServerRekeyCoordinator
+	rekey        peerRekey
 	egress       peerSender
 	internalIP   netip.Addr
 	externalIP   netip.AddrPort
@@ -46,7 +52,7 @@ type Peer struct {
 
 func NewPeer(
 	crypto crypto,
-	rekey *rekey.ServerRekeyCoordinator,
+	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 	writer io.Writer,
@@ -56,7 +62,7 @@ func NewPeer(
 
 func NewPeerWithAuth(
 	crypto crypto,
-	rekey *rekey.ServerRekeyCoordinator,
+	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 	clientPubKey []byte,
@@ -71,7 +77,7 @@ func NewPeerWithAuth(
 
 func newPeer(
 	crypto crypto,
-	rekey *rekey.ServerRekeyCoordinator,
+	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 	egress peerSender,
@@ -81,7 +87,7 @@ func newPeer(
 
 func newPeerWithAuth(
 	crypto crypto,
-	rekey *rekey.ServerRekeyCoordinator,
+	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 	clientPubKey []byte,
@@ -117,8 +123,27 @@ func (p *Peer) InternalAddr() netip.Addr {
 	return p.internalIP
 }
 
-func (p *Peer) RekeyController() *rekey.ServerRekeyCoordinator {
-	return p.rekey
+func (p *Peer) HandleRekey(
+	carrierEpoch uint16,
+	deriver primitives.KeyDeriver,
+	plaintext []byte,
+) ([]byte, uint16, bool, error) {
+	if p.rekey == nil {
+		return nil, 0, false, nil
+	}
+	return p.rekey.Handle(carrierEpoch, deriver, plaintext)
+}
+
+func (p *Peer) ObservePeerEpoch(epoch uint16) {
+	if p.rekey != nil {
+		p.rekey.ObservePeerEpoch(epoch)
+	}
+}
+
+func (p *Peer) ActivateSendEpoch(epoch uint16) {
+	if p.rekey != nil {
+		p.rekey.ActivateSendEpoch(epoch)
+	}
 }
 
 func (p *Peer) IsSourceAllowed(srcIP netip.Addr) bool {

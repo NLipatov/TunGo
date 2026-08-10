@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"slices"
 	"sync/atomic"
-	"tungo/application/configuration"
+	serverConfiguration "tungo/application/configuration/server"
 	"tungo/infrastructure/cryptography/mem"
 
 	noiselib "github.com/flynn/noise"
@@ -23,7 +23,7 @@ type AllowedPeersLookup interface {
 
 	// Update atomically replaces the peer map with a new configuration.
 	// This allows runtime updates without server restart.
-	Update(peers []configuration.ServerPeer)
+	Update(peers []serverConfiguration.AllowedPeer)
 }
 
 // allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
@@ -37,7 +37,7 @@ type allowedPeerEntry struct {
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
-func NewAllowedPeersLookup(peers []configuration.ServerPeer) AllowedPeersLookup {
+func NewAllowedPeersLookup(peers []serverConfiguration.AllowedPeer) AllowedPeersLookup {
 	a := &allowedPeersMap{}
 	a.Update(peers)
 	return a
@@ -55,7 +55,7 @@ func (a *allowedPeersMap) Lookup(pubKey []byte) (int, bool, bool) {
 	return peer.clientID, peer.enabled, true
 }
 
-func (a *allowedPeersMap) Update(peers []configuration.ServerPeer) {
+func (a *allowedPeersMap) Update(peers []serverConfiguration.AllowedPeer) {
 	m := make(map[string]allowedPeerEntry, len(peers))
 	for i := range peers {
 		peer := peers[i]
@@ -92,6 +92,9 @@ type IKHandshake struct {
 
 	// Cookie for retry (client-side)
 	cookie []byte
+
+	// Rekey V2 keeps the initiator state between Init and Ack.
+	pendingRekey *noiselib.HandshakeState
 }
 
 type sessionMaterial struct {
@@ -296,7 +299,7 @@ func (h *IKHandshake) transportRemoteIP(transport io.ReadWriter) (netip.Addr, bo
 	return tr.RemoteAddrPort().Addr(), true
 }
 
-func (h *IKHandshake) newResponderState() (*noiselib.HandshakeState, error) {
+func (h *IKHandshake) newResponderState(prologue []byte) (*noiselib.HandshakeState, error) {
 	staticKey := noiselib.DHKey{
 		Private: h.serverPrivKey,
 		Public:  h.serverPubKey,
@@ -306,6 +309,7 @@ func (h *IKHandshake) newResponderState() (*noiselib.HandshakeState, error) {
 		Pattern:       noiselib.HandshakeIK,
 		Initiator:     false,
 		StaticKeypair: staticKey,
+		Prologue:      prologue,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("noise: server handshake state: %w", err)
@@ -317,7 +321,7 @@ func (h *IKHandshake) runResponderNoise(
 	transport io.ReadWriter,
 	msg1WithMAC []byte,
 ) (serverHandshakeOutcome, error) {
-	hs, err := h.newResponderState()
+	hs, err := h.newResponderState(nil)
 	if err != nil {
 		return serverHandshakeOutcome{}, err
 	}
@@ -363,7 +367,7 @@ func (h *IKHandshake) runResponderNoise(
 	}, nil
 }
 
-func (h *IKHandshake) newInitiatorState() (*noiselib.HandshakeState, error) {
+func (h *IKHandshake) newInitiatorState(prologue []byte) (*noiselib.HandshakeState, error) {
 	clientStatic := noiselib.DHKey{
 		Private: h.clientPrivKey,
 		Public:  h.clientPubKey,
@@ -375,6 +379,7 @@ func (h *IKHandshake) newInitiatorState() (*noiselib.HandshakeState, error) {
 		Initiator:     true,
 		StaticKeypair: clientStatic,
 		PeerStatic:    h.peerPubKey,
+		Prologue:      prologue,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("noise: client handshake state: %w", err)
@@ -387,7 +392,7 @@ func (h *IKHandshake) initiatorAttempt(
 	sendErrPrefix string,
 	readErrPrefix string,
 ) (*noiselib.HandshakeState, []byte, error) {
-	hs, err := h.newInitiatorState()
+	hs, err := h.newInitiatorState(nil)
 	if err != nil {
 		return nil, nil, err
 	}

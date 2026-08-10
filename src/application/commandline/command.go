@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"tungo/application/runtime"
+	"tungo/application"
 )
 
 type CommandKind uint8
@@ -18,7 +18,7 @@ const (
 
 type Command struct {
 	Kind              CommandKind
-	RuntimeMode       runtime.Mode
+	RuntimeMode       application.Mode
 	RequiresElevation bool
 }
 
@@ -32,12 +32,12 @@ var commands = []commandSpec{
 	{
 		args:        []string{"s"},
 		description: "Start server runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer, RequiresElevation: true},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: application.ModeServer, RequiresElevation: true},
 	},
 	{
 		args:        []string{"c"},
 		description: "Start client runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: application.ModeClient, RequiresElevation: true},
 	},
 	{
 		args:        []string{"s", "gen"},
@@ -60,7 +60,7 @@ func ParseCommand(args []string) (Command, error) {
 	return Command{}, errors.New("invalid arguments")
 }
 
-func RuntimeModeArgs(mode runtime.Mode) ([]string, error) {
+func RuntimeModeArgs(mode application.Mode) ([]string, error) {
 	for _, spec := range commands {
 		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == mode {
 			return append([]string(nil), spec.args...), nil

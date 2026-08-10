@@ -44,6 +44,12 @@ type epochManager struct {
 	epoch uint16
 }
 
+type rekeyV2Responder struct{}
+
+func (rekeyV2Responder) RespondRekeyV2([]byte, []byte) ([]byte, []byte, []byte, error) {
+	return []byte("noise-msg2"), bytes.Repeat([]byte{3}, 32), bytes.Repeat([]byte{4}, 32), nil
+}
+
 func (m *epochManager) StageEpoch(_, _ []byte) (uint16, error) {
 	m.epoch++
 	return m.epoch, nil
@@ -184,7 +190,7 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
-	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm)
+	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, nil)
 	writer := &captureWriter{}
 	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
 	server := &Server{}
@@ -197,7 +203,32 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	if !ok || kind != service_packet.RekeyAck {
 		t.Fatalf("response kind=%v ok=%v", kind, ok)
 	}
-	if got := coordinator.SendEpoch(); got != 0 {
+	if got := fsm.SendEpoch(); got != 0 {
+		t.Fatalf("send epoch=%d, want old epoch 0 until authenticated peer traffic", got)
+	}
+}
+
+func TestServer_RekeyV2SendsNoiseAckWithoutPrematureUDPActivation(t *testing.T) {
+	init := append(make([]byte, 3), []byte("noise-msg1")...)
+	if err := service_packet.Encode(service_packet.RekeyInitV2, init); err != nil {
+		t.Fatal(err)
+	}
+	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
+	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, rekeyV2Responder{})
+	writer := &captureWriter{}
+	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
+	server := &Server{}
+
+	handled, err := server.handleService(peer, 0, init)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	response := writer.packet[udpPayloadOffset:]
+	kind, ok := service_packet.Parse(response)
+	if !ok || kind != service_packet.RekeyAckV2 || string(response[3:]) != "noise-msg2" {
+		t.Fatalf("unexpected response: kind=%v ok=%v body=%q", kind, ok, response[3:])
+	}
+	if got := fsm.SendEpoch(); got != 0 {
 		t.Fatalf("send epoch=%d, want old epoch 0 until authenticated peer traffic", got)
 	}
 }

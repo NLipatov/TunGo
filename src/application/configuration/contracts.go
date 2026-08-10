@@ -1,6 +1,11 @@
 package configuration
 
-import "context"
+import (
+	"context"
+
+	clientConfiguration "tungo/application/configuration/client"
+	serverConfiguration "tungo/application/configuration/server"
+)
 
 type Controls struct {
 	Client ClientControl
@@ -20,13 +25,9 @@ type ClientConfigurationControl interface {
 	Delete(path string) error
 }
 
-type ClientRuntimeControl interface {
-	ClientRuntimeConfiguration() (ClientRuntimeConfiguration, error)
-}
-
 type ClientControl interface {
 	ClientConfigurationControl
-	ClientRuntimeControl
+	Configuration() (*clientConfiguration.Configuration, error)
 }
 
 type ServerConfigurationControl interface {
@@ -47,12 +48,12 @@ type ServerSessionRevoker interface {
 }
 
 type ServerAllowedPeersUpdater interface {
-	Update(peers []ServerPeer)
+	Update(peers []serverConfiguration.AllowedPeer)
 }
 
 type ServerRuntimeControl interface {
-	ServerRuntimeConfiguration() (ServerRuntimeConfiguration, error)
-	WatchServerRuntimeConfiguration(
+	ServerConfiguration() (*serverConfiguration.Configuration, error)
+	WatchServerConfiguration(
 		ctx context.Context,
 		revoker ServerSessionRevoker,
 		updater ServerAllowedPeersUpdater,
@@ -64,9 +65,5 @@ type ServerControl interface {
 	ServerRuntimeControl
 }
 
-type ServerPeer struct {
-	Name      string
-	PublicKey []byte
-	Enabled   bool
-	ClientID  int
-}
+// ServerPeer remains as a source-compatible name for the persisted peer type.
+type ServerPeer = serverConfiguration.AllowedPeer

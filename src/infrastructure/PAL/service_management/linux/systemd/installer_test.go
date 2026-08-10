@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"tungo/application/runtime"
+	"tungo/application"
 )
 
 type mockCommander struct {
@@ -222,7 +222,7 @@ func TestInstallRuntimeUnit_ServerWritesServerModeAndEnablesService(t *testing.T
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	path, err := installer.installRuntimeUnit(runtime.ModeServer)
+	path, err := installer.installRuntimeUnit(application.ModeServer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestInstallRuntimeUnit_ClientWritesClientMode(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestInstallUnit_FailsWhenTungoBinaryMissing(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "tungo executable is not installed at /usr/local/bin/tungo") {
 		t.Fatalf("expected missing /usr/local/bin/tungo error, got %v", err)
 	}
@@ -341,7 +341,7 @@ func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "is not executable") {
 		t.Fatalf("expected not executable error, got %v", err)
 	}
@@ -367,7 +367,7 @@ func TestInstallUnit_FailsWhenTungoBinaryIsSymlink(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
 		t.Fatalf("expected symlink error, got %v", err)
 	}
@@ -393,7 +393,7 @@ func TestInstallUnit_FailsWhenTungoBinaryOwnedByNonRoot(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must be owned by root") {
 		t.Fatalf("expected non-root owner error, got %v", err)
 	}
@@ -419,7 +419,7 @@ func TestInstallUnit_FailsWhenTungoBinaryGroupWritable(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must not be writable by group or others") {
 		t.Fatalf("expected unsafe mode error, got %v", err)
 	}
@@ -443,7 +443,7 @@ func TestInstallUnit_FailsWhenSystemctlCommandFails(t *testing.T) {
 	cmd := &mockCommander{runErr: errors.New("boom")}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeServer)
+	_, err := installer.installRuntimeUnit(application.ModeServer)
 	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
 		t.Fatalf("expected daemon-reload error, got %v", err)
 	}
@@ -476,7 +476,7 @@ func TestInstallUnit_DaemonReloadFailure_RollsBackWrittenUnit(t *testing.T) {
 	}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
 		t.Fatalf("expected daemon-reload error, got %v", err)
 	}
@@ -518,7 +518,7 @@ func TestInstallUnit_FailsWhenSystemdUnavailable(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
 		t.Fatalf("expected unavailable systemd error, got %v", err)
 	}
@@ -537,7 +537,7 @@ func TestInstallUnit_FailsWhenWriteFails(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return errors.New("write failed") },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to write") {
 		t.Fatalf("expected write error, got %v", err)
 	}
@@ -561,7 +561,7 @@ func TestInstallUnit_FailsWhenEnableFails(t *testing.T) {
 		},
 	}
 	installer := NewUnitInstaller(cmd)
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
 		t.Fatalf("expected enable error, got %v", err)
 	}
@@ -594,7 +594,7 @@ func TestInstallUnit_EnableFailure_RollsBackWrittenUnit(t *testing.T) {
 	}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
 		t.Fatalf("expected enable error, got %v", err)
 	}
@@ -1696,7 +1696,7 @@ func TestInstallUnit_FailsWhenLstatReturnsUnexpectedError(t *testing.T) {
 		return nil, nil
 	}
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to lstat") {
 		t.Fatalf("expected lstat error, got %v", err)
 	}
@@ -1721,7 +1721,7 @@ func TestInstallUnit_FailsWhenLstatReturnsNilInfo(t *testing.T) {
 		return nil, nil
 	}
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "empty file info") {
 		t.Fatalf("expected empty file info error, got %v", err)
 	}
@@ -1745,7 +1745,7 @@ func TestInstallUnit_FailsWhenTungoBinaryIsNotRegular(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("expected non-regular file error, got %v", err)
 	}
@@ -1769,7 +1769,7 @@ func TestInstallUnit_FailsWhenOwnerCannotBeVerified(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	_, err := installer.installRuntimeUnit(application.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to verify owner") {
 		t.Fatalf("expected owner verification error, got %v", err)
 	}

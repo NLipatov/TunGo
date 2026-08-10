@@ -4,12 +4,8 @@ import (
 	"context"
 	"io"
 	"net/netip"
-	"time"
 
-	"tungo/application/configuration/settings"
-	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/tunnel/internal/egress"
-	"tungo/infrastructure/tunnel/internal/rekey"
 )
 
 type sender interface {
@@ -21,13 +17,9 @@ type crypto interface {
 	Decrypt([]byte) ([]byte, error)
 }
 
-type rekeyController interface {
-	ReadyForRekey() bool
-	SendEpoch() uint16
-	StartRekey(c2s, s2c []byte) (uint16, error)
-	ActivateSendEpoch(uint16)
-	ObservePeerEpoch(uint16)
-	CurrentKeys() (clientToServer, serverToClient []byte)
+type rekeySession interface {
+	rekeyInitiator
+	transportRekey
 }
 
 // Client moves packets between a TUN device and a TCP-style transport.
@@ -43,18 +35,12 @@ func New(
 	transport io.ReadWriteCloser,
 	tun io.ReadWriteCloser,
 	crypto crypto,
-	controller rekeyController,
+	rekey rekeySession,
 	allowedSources map[netip.Addr]struct{},
 ) *Client {
-	rekey := rekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{},
-		controller,
-		settings.DefaultRekeyInterval,
-		time.Now().UTC(),
-	)
 	outbound := egress.New(transport, crypto)
 	tunHandler := newTunHandler(ctx, tun, outbound, rekey, allowedSources)
-	transportHandler := newTransportHandler(ctx, transport, tun, crypto, controller, rekey, outbound)
+	transportHandler := newTransportHandler(ctx, transport, tun, crypto, rekey, outbound)
 
 	return &Client{
 		ctx:       ctx,

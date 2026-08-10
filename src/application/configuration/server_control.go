@@ -32,33 +32,18 @@ type serverConfigurationManager interface {
 	InvalidateCache()
 }
 
-func (c *serverControl) ServerRuntimeConfiguration() (ServerRuntimeConfiguration, error) {
+func (c *serverControl) ServerConfiguration() (*serverConfiguration.Configuration, error) {
 	if err := serverImplementation.NewX25519KeyManager(c.manager).PrepareKeys(); err != nil {
-		return ServerRuntimeConfiguration{}, fmt.Errorf("could not prepare server keys: %w", err)
+		return nil, fmt.Errorf("could not prepare server keys: %w", err)
 	}
 	conf, err := c.manager.Configuration()
 	if err != nil {
-		return ServerRuntimeConfiguration{}, err
+		return nil, err
 	}
-	peers := make([]ServerPeer, len(conf.AllowedPeers))
-	for i := range conf.AllowedPeers {
-		peers[i] = serverPeer(conf.AllowedPeers[i])
-	}
-	return ServerRuntimeConfiguration{
-		TCPSettings:      conf.TCPSettings,
-		UDPSettings:      conf.UDPSettings,
-		WSSettings:       conf.WSSettings,
-		X25519PublicKey:  append([]byte(nil), conf.X25519PublicKey...),
-		X25519PrivateKey: append([]byte(nil), conf.X25519PrivateKey...),
-		ClientCounter:    conf.ClientCounter,
-		EnableTCP:        conf.EnableTCP,
-		EnableUDP:        conf.EnableUDP,
-		EnableWS:         conf.EnableWS,
-		AllowedPeers:     peers,
-	}, nil
+	return conf, nil
 }
 
-func (c *serverControl) WatchServerRuntimeConfiguration(
+func (c *serverControl) WatchServerConfiguration(
 	ctx context.Context,
 	revoker ServerSessionRevoker,
 	updater ServerAllowedPeersUpdater,
@@ -66,35 +51,11 @@ func (c *serverControl) WatchServerRuntimeConfiguration(
 	watcher := serverImplementation.NewConfigWatcher(
 		c.manager,
 		revoker,
-		allowedPeersUpdater{updater: updater},
+		updater,
 		c.configPath,
 		serverImplementation.DefaultWatchInterval,
 	)
 	watcher.Watch(ctx)
-}
-
-type allowedPeersUpdater struct {
-	updater ServerAllowedPeersUpdater
-}
-
-func (a allowedPeersUpdater) Update(peers []serverConfiguration.AllowedPeer) {
-	if a.updater == nil {
-		return
-	}
-	result := make([]ServerPeer, len(peers))
-	for i := range peers {
-		result[i] = serverPeer(peers[i])
-	}
-	a.updater.Update(result)
-}
-
-func serverPeer(peer serverConfiguration.AllowedPeer) ServerPeer {
-	return ServerPeer{
-		Name:      peer.Name,
-		PublicKey: append([]byte(nil), peer.PublicKey...),
-		Enabled:   peer.Enabled,
-		ClientID:  peer.ClientID,
-	}
 }
 
 func (c *serverControl) RuntimeInfo() (RuntimeInfo, error) {
@@ -147,11 +108,10 @@ func (c *serverControl) ListPeers() ([]ServerPeer, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := make([]ServerPeer, len(peers))
 	for i := range peers {
-		result[i] = serverPeer(peers[i])
+		peers[i].PublicKey = append([]byte(nil), peers[i].PublicKey...)
 	}
-	return result, nil
+	return peers, nil
 }
 
 func (c *serverControl) SetPeerEnabled(clientID int, enabled bool) error {

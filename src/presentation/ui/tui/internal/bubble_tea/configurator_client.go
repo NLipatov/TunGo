@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"tungo/application/runtime"
+	"tungo/application"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -73,7 +73,7 @@ func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 			return m, tea.Quit
 		}
 
-		m = m.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
+		m = m.startModeWithDaemonGuard(application.ModeClient, configuratorScreenClientSelect, false)
 		if m.done {
 			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit

@@ -27,12 +27,17 @@ type authenticatedHandshake interface {
 	AllowedIPs() []netip.Prefix
 }
 
+type rekeyV2Handshake interface {
+	Supports(noise.Capability) bool
+	RespondRekeyV2(prologue, msg1 []byte) (msg2, c2s, s2c []byte, err error)
+}
+
 type crypto interface {
 	Encrypt([]byte) ([]byte, error)
 	Decrypt([]byte) ([]byte, error)
 }
 
-type rekeyController interface {
+type epochController interface {
 	ReadyForRekey() bool
 	SendEpoch() uint16
 	StartRekey(c2s, s2c []byte) (uint16, error)
@@ -42,7 +47,7 @@ type rekeyController interface {
 }
 
 type newHandshake func() handshake
-type newCrypto func(chacha20.KeyMaterial, bool) (crypto, rekeyController, error)
+type newCrypto func(chacha20.KeyMaterial, bool) (crypto, epochController, error)
 
 // registrar turns an untrusted net.Conn into an established Peer
 // (handshake + crypto init + session repo add).
@@ -142,7 +147,11 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 	}
 	var rekeyCoordinator *rekey.ServerRekeyCoordinator
 	if epochController != nil {
-		rekeyCoordinator = rekey.NewServerRekeyCoordinator(epochController)
+		var rehandshake rekeyV2Handshake
+		if capable, ok := h.(rekeyV2Handshake); ok && capable.Supports(noise.CapabilityRekeyV2) {
+			rehandshake = capable
+		}
+		rekeyCoordinator = rekey.NewServerRekeyCoordinator(epochController, rehandshake)
 	}
 
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.

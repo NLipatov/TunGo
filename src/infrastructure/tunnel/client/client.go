@@ -2,13 +2,18 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/netip"
+	"sync/atomic"
+	"time"
 
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration"
+	clientConfiguration "tungo/application/configuration/client"
 	"tungo/application/configuration/settings"
+	platformTun "tungo/infrastructure/PAL/tunnel/client"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/client/internal/tcp"
 	"tungo/infrastructure/tunnel/client/internal/udp"
@@ -25,57 +30,87 @@ type crypto interface {
 	Decrypt([]byte) ([]byte, error)
 }
 
-type rekeyController interface {
-	ReadyForRekey() bool
-	SendEpoch() uint16
-	StartRekey(c2s, s2c []byte) (uint16, error)
-	ActivateSendEpoch(uint16)
+type clientRekey interface {
+	MaybeBuildRekeyInit(time.Time, []byte) ([]byte, bool, error)
+	HandleRekeyAck(uint16, []byte) (bool, error)
 	ObservePeerEpoch(uint16)
-	CurrentKeys() (clientToServer, serverToClient []byte)
+	ActivateSendEpoch(uint16)
 }
 
-type establishConnection func(context.Context) (
-	io.ReadWriteCloser,
-	crypto,
-	rekeyController,
-	error,
-)
-
-type runTunnel func(
-	context.Context,
-	io.ReadWriteCloser,
-	io.ReadWriteCloser,
-	crypto,
-	rekeyController,
-) (func() error, error)
-
-// Client owns one complete client tunnel session: transport establishment,
-// TUN setup, packet forwarding, and cleanup.
+// Client owns the client lifecycle: reconnects, transport sessions, TUN setup,
+// packet forwarding, and cleanup.
 type Client struct {
-	tunManager tunManager
-	establish  establishConnection
-	runTunnel  runTunnel
+	configuration *clientConfiguration.Configuration
+	tunManager    tunManager
+	ready         atomic.Bool
 }
 
-// New builds a client that owns transport and TUN session lifecycles.
-func New(
-	configuration appConfiguration.ClientRuntimeConfiguration,
-	tunManager tunManager,
-) *Client {
-	connectionFactory := newConnection(configuration)
-	return &Client{
-		tunManager: tunManager,
-		establish:  connectionFactory.EstablishConnection,
-		runTunnel:  newTunnel(configuration),
+// New builds a client that owns the transport and TUN lifecycles.
+func New() (*Client, error) {
+	control := configuration.NewClientControl()
+	slog.Info("starting client")
+
+	conf, err := control.Configuration()
+	if err != nil {
+		return nil, fmt.Errorf("init error: failed to read client configuration: %w", err)
 	}
+	tunManager, err := platformTun.NewPlatformTunManager(conf)
+	if err != nil {
+		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
+	}
+
+	return &Client{
+		configuration: conf,
+		tunManager:    tunManager,
+	}, nil
 }
 
-// Run establishes and runs one session. ready is called only after the
-// transport and TUN device are ready to forward packets.
-func (c *Client) Run(ctx context.Context, ready func()) error {
+// Run reconnects until the client is stopped. Context cancellation is a clean
+// stop.
+func (c *Client) Run(ctx context.Context) error {
+	err := c.run(ctx)
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func (c *Client) run(ctx context.Context) error {
+	defer c.disposeDevices()
+
+	for ctx.Err() == nil {
+		err := c.runSession(ctx)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, context.Canceled):
+			return context.Canceled
+		default:
+			slog.Warn("session error, reconnecting", "err", err)
+			timer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return context.Canceled
+			case <-timer.C:
+			}
+		}
+	}
+	return context.Canceled
+}
+
+func (c *Client) runSession(parentCtx context.Context) error {
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	c.disposeDevices()
+	return c.forward(ctx)
+}
+
+func (c *Client) forward(ctx context.Context) error {
 	c.tunManager.SetRouteEndpoint(netip.AddrPort{})
 
-	transport, crypto, rekey, err := c.establish(ctx)
+	transport, crypto, rekey, err := c.establishConnection(ctx)
 	if err != nil {
 		return err
 	}
@@ -89,37 +124,60 @@ func (c *Client) Run(ctx context.Context, ready func()) error {
 	}
 	defer func() { _ = device.Close() }()
 
-	run, err := c.runTunnel(ctx, transport, trafficstats.WrapTun(device), crypto, rekey)
+	return c.runTunnel(ctx, transport, trafficstats.WrapTun(device), crypto, rekey)
+}
+
+func (c *Client) Ready() bool {
+	return c.ready.Load()
+}
+
+func (c *Client) disposeDevices() {
+	if err := c.tunManager.DisposeDevices(); err != nil {
+		slog.Warn("failed to dispose TUN devices", "err", err)
+	}
+}
+
+func (c *Client) runTunnel(
+	ctx context.Context,
+	transport io.ReadWriteCloser,
+	tun io.ReadWriteCloser,
+	crypto crypto,
+	rekey clientRekey,
+) error {
+	selected, err := c.selectedSettings()
 	if err != nil {
 		return err
 	}
-	ready()
-	slog.Info("tunneling traffic via TUN device")
-	return run()
+	allowed := allowedSources(selected)
+	switch selected.Protocol {
+	case settings.UDP:
+		tunnel, err := udp.New(ctx, transport, tun, crypto, rekey, allowed)
+		if err != nil {
+			return err
+		}
+		c.ready.Store(true)
+		slog.Info("tunneling traffic via TUN device")
+		return tunnel.Run()
+	case settings.TCP, settings.WS, settings.WSS:
+		tunnel := tcp.New(ctx, transport, tun, crypto, rekey, allowed)
+		c.ready.Store(true)
+		slog.Info("tunneling traffic via TUN device")
+		return tunnel.Run()
+	default:
+		return fmt.Errorf("unsupported protocol %q", selected.Protocol)
+	}
 }
 
-func newTunnel(configuration appConfiguration.ClientRuntimeConfiguration) runTunnel {
-	allowed := allowedSources(configuration.Settings)
-	return func(
-		ctx context.Context,
-		transport io.ReadWriteCloser,
-		tun io.ReadWriteCloser,
-		crypto crypto,
-		rekey rekeyController,
-	) (func() error, error) {
-		switch configuration.Settings.Protocol {
-		case settings.UDP:
-			client, err := udp.New(ctx, transport, tun, crypto, rekey, allowed)
-			if err != nil {
-				return nil, err
-			}
-			return client.Run, nil
-		case settings.TCP, settings.WS, settings.WSS:
-			return tcp.New(ctx, transport, tun, crypto, rekey, allowed).Run, nil
-		default:
-			return nil, fmt.Errorf("unsupported protocol %q", configuration.Settings.Protocol)
-		}
+func (c *Client) selectedSettings() (settings.Settings, error) {
+	selected, err := c.configuration.ActiveSettings()
+	if err != nil {
+		return settings.Settings{}, err
 	}
+	selected.Protocol = c.configuration.Protocol
+	if err := selected.DeriveIP(c.configuration.ClientID); err != nil {
+		return settings.Settings{}, err
+	}
+	return selected, nil
 }
 
 func allowedSources(s settings.Settings) map[netip.Addr]struct{} {

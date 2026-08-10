@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/configuration/settings"
+	platformServer "tungo/infrastructure/PAL/tunnel/server"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/telemetry/trafficstats"
@@ -21,9 +23,64 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Run starts every enabled protocol and blocks until one fails or ctx is
-// cancelled. ready is called after all listeners and TUN devices are ready.
-func (s *Server) Run(ctx context.Context, ready func()) error {
+type protocolTunnel interface {
+	Run() error
+}
+
+// New builds a server that owns all configured protocol tunnels.
+func New() (*Server, error) {
+	control := appConfiguration.NewServerControl()
+	if control == nil {
+		return nil, fmt.Errorf("server runtime is not supported on this platform")
+	}
+	conf, err := control.ServerConfiguration()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server configuration: %w", err)
+	}
+
+	cookieManager, err := noise.NewCookieManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cookie manager: %w", err)
+	}
+
+	return &Server{
+		configuration: conf,
+		tunManager:    platformServer.NewTunFactory(),
+		control:       control,
+		allowedPeers:  noise.NewAllowedPeersLookup(conf.AllowedPeers),
+		cookieManager: cookieManager,
+		loadMonitor:   noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+	}, nil
+}
+
+// Run starts every enabled protocol and watches authorization changes until
+// the server stops.
+func (s *Server) Run(ctx context.Context) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	watcherDone := make(chan struct{})
+	if s.control != nil {
+		go func() {
+			defer close(watcherDone)
+			s.control.WatchServerConfiguration(runCtx, s, s)
+		}()
+	} else {
+		close(watcherDone)
+	}
+
+	err := s.run(runCtx)
+	cancel()
+	<-watcherDone
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) Ready() bool {
+	return s.ready.Load()
+}
+
+func (s *Server) run(ctx context.Context) error {
 	if err := s.cleanup(); err != nil {
 		slog.Warn("preflight cleanup error", "err", err)
 	}
@@ -40,7 +97,7 @@ func (s *Server) Run(ctx context.Context, ready func()) error {
 		if !profile.Enabled {
 			continue
 		}
-		run, device, err := s.createTunnel(groupCtx, profile.Settings)
+		tunnel, device, err := s.createTunnel(groupCtx, profile.Settings)
 		if err != nil {
 			cancel()
 			_ = group.Wait()
@@ -49,13 +106,13 @@ func (s *Server) Run(ctx context.Context, ready func()) error {
 		protocol := profile.Settings.Protocol
 		group.Go(func() error {
 			defer func() { _ = device.Close() }()
-			if err := run(); err != nil {
+			if err := tunnel.Run(); err != nil {
 				return fmt.Errorf("%s tunnel failed: %w", protocol, err)
 			}
 			return nil
 		})
 	}
-	ready()
+	s.ready.Store(true)
 	return group.Wait()
 }
 
@@ -70,24 +127,24 @@ func (s *Server) cleanup() error {
 func (s *Server) createTunnel(
 	ctx context.Context,
 	workerSettings settings.Settings,
-) (func() error, io.ReadWriteCloser, error) {
+) (protocolTunnel, io.ReadWriteCloser, error) {
 	device, err := s.tunManager.CreateDevice(workerSettings)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error creating tun device: %w", err)
 	}
-	run, err := s.newTunnel(ctx, device, workerSettings)
+	tunnel, err := s.newTunnel(ctx, device, workerSettings)
 	if err != nil {
 		_ = device.Close()
 		return nil, nil, fmt.Errorf("error creating tunnel: %w", err)
 	}
-	return run, device, nil
+	return tunnel, device, nil
 }
 
 func (s *Server) newTunnel(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (func() error, error) {
+) (protocolTunnel, error) {
 	tun = trafficstats.WrapTun(tun)
 	switch workerSettings.Protocol {
 	case settings.TCP:
@@ -104,21 +161,11 @@ func (s *Server) newTunnel(
 var _ appConfiguration.ServerSessionRevoker = (*Server)(nil)
 var _ appConfiguration.ServerAllowedPeersUpdater = (*Server)(nil)
 
-func (s *Server) newHandshake() *noise.IKHandshake {
-	return noise.NewIKHandshakeServer(
-		s.configuration.X25519PublicKey,
-		s.configuration.X25519PrivateKey,
-		s.allowedPeers,
-		s.cookieManager,
-		s.loadMonitor,
-	)
-}
-
 func (s *Server) newTCPTunnel(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (func() error, error) {
+) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
@@ -135,17 +182,26 @@ func (s *Server) newTCPTunnel(
 	s.register(sessionManager)
 
 	server := tcpserver.New(
-		ctx, tun, listener, sessionManager, s.newHandshake,
+		ctx, tun, listener, sessionManager,
+		func() *noise.IKHandshake {
+			return noise.NewIKHandshakeServer(
+				s.configuration.X25519PublicKey,
+				s.configuration.X25519PrivateKey,
+				s.allowedPeers,
+				s.cookieManager,
+				s.loadMonitor,
+			)
+		},
 		workerSettings.IPv4Subnet, workerSettings.IPv6Subnet,
 	)
-	return server.Run, nil
+	return server, nil
 }
 
 func (s *Server) newWSTunnel(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (func() error, error) {
+) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
@@ -168,17 +224,26 @@ func (s *Server) newWSTunnel(
 	s.register(sessionManager)
 
 	server := tcpserver.New(
-		ctx, tun, wsListener, sessionManager, s.newHandshake,
+		ctx, tun, wsListener, sessionManager,
+		func() *noise.IKHandshake {
+			return noise.NewIKHandshakeServer(
+				s.configuration.X25519PublicKey,
+				s.configuration.X25519PrivateKey,
+				s.allowedPeers,
+				s.cookieManager,
+				s.loadMonitor,
+			)
+		},
 		workerSettings.IPv4Subnet, workerSettings.IPv6Subnet,
 	)
-	return server.Run, nil
+	return server, nil
 }
 
 func (s *Server) newUDPTunnel(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (func() error, error) {
+) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
@@ -195,10 +260,19 @@ func (s *Server) newUDPTunnel(
 	s.register(sessionManager)
 
 	server := udpserver.New(
-		ctx, tun, conn, sessionManager, s.newHandshake,
+		ctx, tun, conn, sessionManager,
+		func() *noise.IKHandshake {
+			return noise.NewIKHandshakeServer(
+				s.configuration.X25519PublicKey,
+				s.configuration.X25519PrivateKey,
+				s.allowedPeers,
+				s.cookieManager,
+				s.loadMonitor,
+			)
+		},
 		workerSettings.IPv4Subnet, workerSettings.IPv6Subnet,
 	)
-	return server.Run, nil
+	return server, nil
 }
 
 func (s *Server) addrPortToListen(

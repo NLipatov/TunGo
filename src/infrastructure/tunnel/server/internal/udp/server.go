@@ -50,7 +50,7 @@ func New(
 			conn,
 			peers,
 			func() handshake { return newHandshake() },
-			func(material chacha20.KeyMaterial, isServer bool) (crypto, rekeyController, error) {
+			func(material chacha20.KeyMaterial, isServer bool) (crypto, epochController, error) {
 				return udpcrypto.NewFromHandshake(material, isServer)
 			},
 			ipv4Subnet,
@@ -166,10 +166,8 @@ func (s *Server) handleDecrypted(
 		return nil
 	}
 	epoch := binary.BigEndian.Uint16(frame[udpcrypto.EpochOffset : udpcrypto.EpochOffset+2])
-	if rekey := peer.RekeyController(); rekey != nil {
-		rekey.ObservePeerEpoch(epoch)
-		rekey.ActivateSendEpoch(epoch)
-	}
+	peer.ObservePeerEpoch(epoch)
+	peer.ActivateSendEpoch(epoch)
 	if handled, err := s.handleService(peer, epoch, plaintext); handled {
 		return err
 	}
@@ -219,35 +217,25 @@ func (s *Server) runTun() error {
 }
 
 func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
+	response, _, rekeyed, err := peer.HandleRekey(carrierEpoch, &s.deriver, plaintext)
+	if err != nil {
+		if errors.Is(err, chacha20.ErrEpochExhausted) {
+			_ = s.sendService(peer, service_packet.EpochExhausted, nil)
+		}
+		return true, nil
+	}
+	if rekeyed {
+		return true, s.sendPlaintext(peer, response)
+	}
 	kind, ok := service_packet.Parse(plaintext)
 	if !ok {
 		return false, nil
 	}
 	switch kind {
-	case service_packet.RekeyInit:
-		return true, s.handleRekey(peer, carrierEpoch, plaintext)
 	case service_packet.Ping:
 		return true, s.sendService(peer, service_packet.Pong, nil)
 	}
 	return true, nil
-}
-
-func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext []byte) error {
-	controller := peer.RekeyController()
-	if controller == nil {
-		return nil
-	}
-	serverPub, _, ok, err := controller.HandleRekeyInit(carrierEpoch, &s.deriver, plaintext)
-	if err != nil {
-		if errors.Is(err, chacha20.ErrEpochExhausted) {
-			_ = s.sendService(peer, service_packet.EpochExhausted, nil)
-		}
-		return nil
-	}
-	if !ok {
-		return nil
-	}
-	return s.sendService(peer, service_packet.RekeyAck, serverPub[:])
 }
 
 func (s *Server) sendService(peer *session.Peer, kind service_packet.HeaderType, body []byte) error {
@@ -262,4 +250,13 @@ func (s *Server) sendService(peer *session.Peer, kind service_packet.HeaderType,
 		return err
 	}
 	return peer.Send(frame[:udpPayloadOffset+payloadLen])
+}
+
+func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
+	if len(payload) > settings.DefaultEthernetMTU {
+		return io.ErrShortBuffer
+	}
+	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	copy(frame[udpPayloadOffset:], payload)
+	return peer.Send(frame[:udpPayloadOffset+len(payload)])
 }

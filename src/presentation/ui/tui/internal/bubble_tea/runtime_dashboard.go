@@ -5,16 +5,16 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/configuration/settings"
-	"tungo/application/runtime"
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 type RuntimeDashboardOptions struct {
-	Mode            runtime.Mode
+	Mode            application.Mode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	Ready           func() bool
@@ -52,7 +52,7 @@ var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
 type RuntimeDashboard struct {
 	settings             *Preferences
 	ctx                  context.Context
-	mode                 runtime.Mode
+	mode                 application.Mode
 	width                int
 	height               int
 	screen               runtimeDashboardScreen
@@ -80,14 +80,14 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		ctx = context.Background()
 	}
 	mode := options.Mode
-	if mode != runtime.ModeServer {
-		mode = runtime.ModeClient
+	if mode != application.ModeServer {
+		mode = application.ModeClient
 	}
 	ready := options.Ready
 	if ready == nil {
 		ready = func() bool { return true }
 	}
-	connected := mode == runtime.ModeServer || ready()
+	connected := mode == application.ModeServer || ready()
 	model := RuntimeDashboard{
 		settings:        settings,
 		ctx:             ctx,
@@ -160,7 +160,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
-				if m.mode == runtime.ModeClient && !m.connected {
+				if m.mode == application.ModeClient && !m.connected {
 					m.logs.stopWait()
 					m.reconfigureRequested = true
 					return m, tea.Quit
@@ -303,7 +303,7 @@ func (m RuntimeDashboard) mainView() string {
 	if m.connected {
 		status = "Status: Connected"
 	}
-	if m.mode == runtime.ModeServer {
+	if m.mode == application.ModeServer {
 		modeLine = "Mode: Server"
 		status = "Status: Running"
 	}
@@ -371,7 +371,7 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == runtime.ModeServer && len(m.endpoints) > 1 {
+	if m.mode == application.ModeServer && len(m.endpoints) > 1 {
 		if sharedAddress, ok := sharedServerAddress(m.endpoints); ok {
 			return []string{formatRuntimeHostLine("Server IP", sharedAddress)}
 		}
@@ -396,7 +396,7 @@ func (m RuntimeDashboard) tunnelIPLines() []string {
 	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == runtime.ModeServer && len(m.endpoints) > 1 {
+	if m.mode == application.ModeServer && len(m.endpoints) > 1 {
 		lines := []string{"Tunnel IPs:"}
 		for _, endpoint := range m.endpoints {
 			if line := formatRuntimeProtocolAddress(endpoint.Protocol, endpoint.TunnelIPv4, endpoint.TunnelIPv6); line != "" {
@@ -414,7 +414,7 @@ func (m RuntimeDashboard) tunnelIPLines() []string {
 }
 
 func (m RuntimeDashboard) protocolLine() string {
-	if m.mode != runtime.ModeClient || m.protocol == settings.UNKNOWN {
+	if m.mode != application.ModeClient || m.protocol == settings.UNKNOWN {
 		return ""
 	}
 	return "Protocol: " + m.protocol.String()
@@ -500,14 +500,14 @@ func sharedServerAddress(endpoints []appConfiguration.EndpointInfo) (settings.Ho
 }
 
 func (m RuntimeDashboard) stopActionLabel() string {
-	if m.mode == runtime.ModeClient && m.preferences.AutoConnect {
+	if m.mode == application.ModeClient && m.preferences.AutoConnect {
 		return "Stop (AutoConnect will be disabled)"
 	}
 	return "Stop"
 }
 
 func (m RuntimeDashboard) stopConfirmTitle() string {
-	if m.mode == runtime.ModeServer {
+	if m.mode == application.ModeServer {
 		return runtimeStopConfirmTitleServer
 	}
 	return runtimeStopConfirmTitleClient
@@ -517,7 +517,7 @@ func (m RuntimeDashboard) dataplaneHint() string {
 	if m.confirmOpen {
 		return runtimeHintDataplaneConfirmOpen
 	}
-	if m.mode == runtime.ModeClient && !m.connected {
+	if m.mode == application.ModeClient && !m.connected {
 		return runtimeHintDataplaneReconfigure
 	}
 	return runtimeHintDataplaneStopConfirm

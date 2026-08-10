@@ -11,95 +11,86 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"tungo/application/configuration"
 	"tungo/application/configuration/settings"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/host_resolver"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/network/ws"
+	"tungo/infrastructure/tunnel/internal/rekey"
 
 	"github.com/coder/websocket"
 )
 
-type connectionFactory struct {
-	conf configuration.ClientRuntimeConfiguration
+type epochController interface {
+	ReadyForRekey() bool
+	SendEpoch() uint16
+	StartRekey(c2s, s2c []byte) (uint16, error)
+	ActivateSendEpoch(uint16)
+	ObservePeerEpoch(uint16)
+	CurrentKeys() (clientToServer, serverToClient []byte)
 }
 
-func newConnection(conf configuration.ClientRuntimeConfiguration) *connectionFactory {
-	return &connectionFactory{
-		conf: conf,
-	}
+type rekeyV2Handshake interface {
+	StartRekeyV2(prologue []byte) ([]byte, error)
+	FinishRekeyV2(msg2 []byte) (c2s, s2c []byte, err error)
 }
 
-func (f *connectionFactory) EstablishConnection(
+func (c *Client) establishConnection(
 	ctx context.Context,
-) (io.ReadWriteCloser, crypto, rekeyController, error) {
-	connSettings := f.conf.Settings
+) (io.ReadWriteCloser, crypto, clientRekey, error) {
+	connSettings, err := c.selectedSettings()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
 	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
 	defer establishCancel()
 
-	adapter, err := f.dial(establishCtx, ctx, connSettings)
+	adapter, err := dial(establishCtx, ctx, connSettings)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", connSettings.Protocol, err)
 	}
 
-	builder := f.sessionBuilder(connSettings.Protocol)
-	return f.establishSecuredConnection(establishCtx, adapter, builder)
+	return c.establishSecuredConnection(establishCtx, adapter, connSettings.Protocol)
 }
 
-func (f *connectionFactory) dial(
+func dial(
 	establishCtx, connCtx context.Context,
 	s settings.Settings,
 ) (io.ReadWriteCloser, error) {
 	switch s.Protocol {
-	case settings.UDP:
-		return f.dialWithFallback(establishCtx, s, f.dialUDP)
-	case settings.TCP:
-		return f.dialWithFallback(establishCtx, s, f.dialTCP)
+	case settings.UDP, settings.TCP:
+		return dialWithFallback(establishCtx, s)
 	case settings.WS, settings.WSS:
-		return f.dialWSWithFallback(establishCtx, connCtx, s)
+		return dialWSWithFallback(establishCtx, connCtx, s)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
 	}
 }
 
-type buildCrypto func(chacha20.KeyMaterial, bool) (crypto, rekeyController, error)
-
-func (f *connectionFactory) sessionBuilder(proto settings.Protocol) buildCrypto {
-	if proto == settings.UDP {
-		return func(handshake chacha20.KeyMaterial, isServer bool) (crypto, rekeyController, error) {
-			return udp.NewFromHandshake(handshake, isServer)
-		}
-	}
-	return func(handshake chacha20.KeyMaterial, isServer bool) (crypto, rekeyController, error) {
-		return tcp.NewFromHandshake(handshake, isServer)
-	}
-}
-
-func (f *connectionFactory) establishSecuredConnection(
+func (c *Client) establishSecuredConnection(
 	ctx context.Context,
 	adapter io.ReadWriteCloser,
-	buildCrypto buildCrypto,
-) (io.ReadWriteCloser, crypto, rekeyController, error) {
+	protocol settings.Protocol,
+) (io.ReadWriteCloser, crypto, clientRekey, error) {
 	// IK handshake requires client keys
-	if len(f.conf.ClientPublicKey) != 32 || len(f.conf.ClientPrivateKey) != 32 {
+	if len(c.configuration.ClientPublicKey) != 32 || len(c.configuration.ClientPrivateKey) != 32 {
 		_ = adapter.Close()
 		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
 	}
-	if len(f.conf.X25519PublicKey) != 32 {
+	if len(c.configuration.X25519PublicKey) != 32 {
 		_ = adapter.Close()
 		return nil, nil, nil, fmt.Errorf("server public key not configured (required for IK handshake)")
 	}
 
 	handshake := noise.NewIKHandshakeClient(
-		f.conf.ClientPublicKey,
-		f.conf.ClientPrivateKey,
-		f.conf.X25519PublicKey,
+		c.configuration.ClientPublicKey,
+		c.configuration.ClientPrivateKey,
+		c.configuration.X25519PublicKey,
 	)
 
 	var closeOnce sync.Once
@@ -117,7 +108,19 @@ func (f *connectionFactory) establishSecuredConnection(
 		return nil, nil, nil, err
 	}
 
-	cr, ctrl, err := buildCrypto(handshake, false)
+	var (
+		cr              crypto
+		epochController epochController
+		err             error
+	)
+	switch protocol {
+	case settings.UDP:
+		cr, epochController, err = udp.NewFromHandshake(handshake, false)
+	case settings.TCP, settings.WS, settings.WSS:
+		cr, epochController, err = tcp.NewFromHandshake(handshake, false)
+	default:
+		err = fmt.Errorf("unsupported protocol: %v", protocol)
+	}
 	cancelCloseOnContextDone()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		closeAdapter()
@@ -127,10 +130,21 @@ func (f *connectionFactory) establishSecuredConnection(
 		closeAdapter()
 		return nil, nil, nil, fmt.Errorf("failed to create client crypto: %w", err)
 	}
-	return adapter, cr, ctrl, nil
+	var rehandshake rekeyV2Handshake
+	if handshake.Supports(noise.CapabilityRekeyV2) {
+		rehandshake = handshake
+	}
+	coordinator := rekey.NewClientRekeyCoordinator(
+		&primitives.DefaultKeyDeriver{},
+		epochController,
+		rehandshake,
+		settings.DefaultRekeyInterval,
+		time.Now().UTC(),
+	)
+	return adapter, cr, coordinator, nil
 }
 
-func (f *connectionFactory) dialTCP(
+func dialTCP(
 	ctx context.Context,
 	ap netip.AddrPort,
 ) (io.ReadWriteCloser, error) {
@@ -157,7 +171,7 @@ func (f *connectionFactory) dialTCP(
 	)
 }
 
-func (f *connectionFactory) dialUDP(
+func dialUDP(
 	ctx context.Context,
 	ap netip.AddrPort,
 ) (io.ReadWriteCloser, error) {
@@ -174,51 +188,50 @@ func (f *connectionFactory) dialUDP(
 
 const minimumIPv6ProbeTimeout = 2 * time.Second
 
-func (f *connectionFactory) dialWithFallback(
-	ctx context.Context,
-	s settings.Settings,
-	dialFn func(context.Context, netip.AddrPort) (io.ReadWriteCloser, error),
-) (io.ReadWriteCloser, error) {
+func dialWithFallback(ctx context.Context, s settings.Settings) (io.ReadWriteCloser, error) {
 	preferredAP, preferredErr := resolvePreferredAddrPort(ctx, s)
 	if preferredErr != nil {
 		if ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s); ipv6Err == nil {
-			return dialFn(ctx, ipv6AP)
+			if s.Protocol == settings.UDP {
+				return dialUDP(ctx, ipv6AP)
+			}
+			return dialTCP(ctx, ipv6AP)
 		}
 		return nil, preferredErr
 	}
 	// UDP dial only creates a connected socket; it does not prove endpoint reachability.
 	// Prefer the default address, but still fall back on immediate local dial errors.
 	if s.Protocol == settings.UDP {
-		transport, dialErr := dialFn(ctx, preferredAP)
+		transport, dialErr := dialUDP(ctx, preferredAP)
 		if dialErr == nil {
 			return transport, nil
 		}
 		if ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s); ipv6Err == nil && ipv6AP != preferredAP {
-			return dialFn(ctx, ipv6AP)
+			return dialUDP(ctx, ipv6AP)
 		}
 		return nil, dialErr
 	}
 
 	ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s)
 	if ipv6Err != nil {
-		return dialFn(ctx, preferredAP)
+		return dialTCP(ctx, preferredAP)
 	}
 
 	// IPv6-only path: avoid probing then retrying the exact same endpoint.
 	if ipv6AP == preferredAP {
-		return dialFn(ctx, preferredAP)
+		return dialTCP(ctx, preferredAP)
 	}
 
 	ipv6Ctx, cancel := context.WithTimeout(ctx, ipv6ProbeTimeout(s))
-	transport, dialErr := dialFn(ipv6Ctx, ipv6AP)
+	transport, dialErr := dialTCP(ipv6Ctx, ipv6AP)
 	cancel()
 	if dialErr == nil {
 		return transport, nil
 	}
-	return dialFn(ctx, preferredAP)
+	return dialTCP(ctx, preferredAP)
 }
 
-func (f *connectionFactory) dialWSWithFallback(
+func dialWSWithFallback(
 	establishCtx, connCtx context.Context,
 	s settings.Settings,
 ) (io.ReadWriteCloser, error) {
@@ -238,16 +251,16 @@ func (f *connectionFactory) dialWSWithFallback(
 		ipv6Endpoint := net.JoinHostPort(s.Server.IPv6, strconv.Itoa(port))
 		// IPv6-only path: no reason to probe then retry the same endpoint.
 		if ipv6Endpoint == endpoint {
-			return f.dialWS(establishCtx, connCtx, scheme, endpoint)
+			return dialWS(establishCtx, connCtx, scheme, endpoint)
 		}
 		ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-		adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
+		adapter, dialErr := dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
 		cancel()
 		if dialErr == nil {
 			return adapter, nil
 		}
 	}
-	return f.dialWS(establishCtx, connCtx, scheme, endpoint)
+	return dialWS(establishCtx, connCtx, scheme, endpoint)
 }
 
 func preferredHost(host settings.Host) string {
@@ -260,12 +273,28 @@ func preferredHost(host settings.Host) string {
 	return host.IPv6
 }
 
-func (f *connectionFactory) dialWS(
+func dialWS(
 	establishCtx, connCtx context.Context,
 	scheme, endpoint string,
 ) (io.ReadWriteCloser, error) {
 	url := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
-	opts, remoteAddr := newWSDialOptionsWithRemoteCapture()
+	var (
+		remoteMu   sync.Mutex
+		remoteAddr net.Addr
+	)
+	dialer := &net.Dialer{}
+	transport := cloneDefaultTransport()
+	transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, target)
+		if err != nil {
+			return nil, err
+		}
+		remoteMu.Lock()
+		remoteAddr = conn.RemoteAddr()
+		remoteMu.Unlock()
+		return conn, nil
+	}
+	opts := &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}}
 	conn, resp, err := websocket.Dial(establishCtx, url, opts)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -282,7 +311,10 @@ func (f *connectionFactory) dialWS(
 		_ = conn.Close(websocket.StatusInternalError, "adapter wrap failed")
 		return nil, wrapErr
 	}
-	if remote := parseNetAddrPort(remoteAddr()); remote.IsValid() {
+	remoteMu.Lock()
+	remote := parseNetAddrPort(remoteAddr)
+	remoteMu.Unlock()
+	if remote.IsValid() {
 		return adapters.NewRemoteAddrTransport(wrapped, remote), nil
 	}
 	if remote := parseEndpointAddrPort(endpoint); remote.IsValid() {
@@ -301,34 +333,6 @@ func ipv6ProbeTimeout(s settings.Settings) time.Duration {
 		return minimumIPv6ProbeTimeout
 	}
 	return probe
-}
-
-func newWSDialOptionsWithRemoteCapture() (*websocket.DialOptions, func() net.Addr) {
-	var (
-		mu   sync.Mutex
-		addr net.Addr
-	)
-
-	dialer := &net.Dialer{}
-	transport := cloneDefaultTransport()
-	transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
-		conn, err := dialer.DialContext(ctx, network, target)
-		if err != nil {
-			return nil, err
-		}
-		mu.Lock()
-		addr = conn.RemoteAddr()
-		mu.Unlock()
-		return conn, nil
-	}
-
-	return &websocket.DialOptions{
-			HTTPClient: &http.Client{Transport: transport},
-		}, func() net.Addr {
-			mu.Lock()
-			defer mu.Unlock()
-			return addr
-		}
 }
 
 func cloneDefaultTransport() *http.Transport {

@@ -51,6 +51,47 @@ func (m *TransportHandlerMockRekeyAck) HandleRekeyAck(uint16, []byte) (bool, err
 	return true, nil
 }
 
+type testEpochObserver interface {
+	ObservePeerEpoch(uint16)
+}
+
+type testRekeyAckHandler interface {
+	HandleRekeyAck(uint16, []byte) (bool, error)
+}
+
+type testTransportRekey struct {
+	epoch testEpochObserver
+	ack   testRekeyAckHandler
+}
+
+func (r testTransportRekey) ObservePeerEpoch(epoch uint16) {
+	if r.epoch != nil {
+		r.epoch.ObservePeerEpoch(epoch)
+	}
+}
+
+func (r testTransportRekey) HandleRekeyAck(epoch uint16, packet []byte) (bool, error) {
+	if r.ack == nil {
+		return false, nil
+	}
+	return r.ack.HandleRekeyAck(epoch, packet)
+}
+
+func newTestTransportHandler(
+	ctx context.Context,
+	reader io.Reader,
+	writer io.Writer,
+	crypto crypto,
+	epoch testEpochObserver,
+	ack testRekeyAckHandler,
+	egress sender,
+) *transportHandler {
+	if epoch == nil && ack == nil {
+		return newTransportHandler(ctx, reader, writer, crypto, nil, egress)
+	}
+	return newTransportHandler(ctx, reader, writer, crypto, testTransportRekey{epoch: epoch, ack: ack}, egress)
+}
+
 type dummyEpochManager struct {
 	epoch uint16
 	err   error
@@ -67,7 +108,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 	cancel()
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -76,7 +117,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 func TestTransportHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
@@ -93,7 +134,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx,
+	h := newTestTransportHandler(ctx,
 		rdr(struct {
 			data []byte
 			err  error
@@ -109,7 +150,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 	short := make([]byte, chacha20poly1305.Overhead-1) // triggers "invalid length"
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
@@ -132,7 +173,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	cipher := make([]byte, chacha20poly1305.Overhead+8)
 	decErr := errors.New("decrypt fail")
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
@@ -152,7 +193,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	plain := []byte{1, 2, 3, 4}
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
@@ -174,7 +215,7 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 	plain := []byte{9, 9, 9, 9, 9, 9}
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
@@ -197,33 +238,38 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 }
 
 func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
-	ackPayload := make([]byte, testRekeyPacketLen)
-	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
+	for _, kind := range []service_packet.HeaderType{service_packet.RekeyAck, service_packet.RekeyAckV2} {
+		name := "v1"
+		if kind == service_packet.RekeyAckV2 {
+			name = "v2"
+		}
+		t.Run(name, func(t *testing.T) {
+			ackPayload := make([]byte, testRekeyPacketLen)
+			_ = service_packet.Encode(kind, ackPayload)
+			cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
+			ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+			rekeyAck := &TransportHandlerMockRekeyAck{}
+			h := newTestTransportHandler(context.Background(),
+				rdr(
+					struct {
+						data []byte
+						err  error
+					}{cipher, nil},
+					struct {
+						data []byte
+						err  error
+					}{nil, io.EOF},
+				),
+				io.Discard,
+				&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, rekeyAck, nil)
 
-	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
-
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	rekeyAck := &TransportHandlerMockRekeyAck{}
-	h := newTransportHandler(context.Background(),
-		rdr(
-			struct {
-				data []byte
-				err  error
-			}{cipher, nil},
-			struct {
-				data []byte
-				err  error
-			}{nil, io.EOF},
-		),
-		io.Discard,
-		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, rekeyAck, nil)
-
-	// RekeyAck is consumed; handler continues to next read which is EOF.
-	if err := h.HandleTransport(); err != io.EOF {
-		t.Fatalf("want io.EOF after RekeyAck, got %v", err)
-	}
-	if rekeyAck.calls != 1 {
-		t.Fatalf("rekey ack calls=%d, want 1", rekeyAck.calls)
+			if err := h.HandleTransport(); err != io.EOF {
+				t.Fatalf("want io.EOF after rekey ack, got %v", err)
+			}
+			if rekeyAck.calls != 1 {
+				t.Fatalf("rekey ack calls=%d, want 1", rekeyAck.calls)
+			}
+		})
 	}
 }
 
@@ -233,7 +279,7 @@ func TestTransportHandler_RekeyAck_NilHandler(t *testing.T) {
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
 
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
@@ -261,7 +307,7 @@ func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
 	decErr := errors.New("decrypt fail")
 	cipher := make([]byte, chacha20poly1305.Overhead+8)
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx,
+	h := newTestTransportHandler(ctx,
 		rdr(struct {
 			data []byte
 			err  error
@@ -282,7 +328,7 @@ func TestTransportHandler_EpochExhausted_ReturnsError(t *testing.T) {
 	cipher := make([]byte, chacha20poly1305.Overhead+len(epochPayload))
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
@@ -317,7 +363,7 @@ func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
 		t.Fatalf("seed pending rekey: ok=%v err=%v", ok, buildErr)
 	}
 
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
@@ -357,7 +403,7 @@ func TestTransportHandler_SendPing_Success(t *testing.T) {
 	egress := &TransportHandlerMockEgress{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(), io.Discard,
 		&TransportHandlerMockCrypto{}, ctrl, nil,
 
@@ -375,7 +421,7 @@ func TestTransportHandler_SendPing_EgressError(t *testing.T) {
 	egress := &TransportHandlerMockEgress{err: errors.New("send fail")}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(), io.Discard,
 		&TransportHandlerMockCrypto{}, ctrl, nil,
 
@@ -387,7 +433,7 @@ func TestTransportHandler_SendPing_EgressError(t *testing.T) {
 }
 
 func TestTransportHandler_NewTransportHandler_InitializesRecvTime(t *testing.T) {
-	h := newTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, nil, nil, nil)
+	h := newTestTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, nil, nil, nil)
 	impl := h
 	if got := impl.lastRecvNano.Load(); got == 0 {
 		t.Fatal("expected initial receive timestamp to be set")
@@ -396,7 +442,7 @@ func TestTransportHandler_NewTransportHandler_InitializesRecvTime(t *testing.T) 
 
 func TestTransportHandler_HandleRekeyAck_ErrorDoesNotBubble(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
-	h := newTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
 	impl := h
 
 	shortAck := make([]byte, 3)
@@ -412,7 +458,7 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 	egress := &TransportHandlerMockEgress{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
-	h := newTransportHandler(ctx,
+	h := newTestTransportHandler(ctx,
 		rdr(), io.Discard,
 		&TransportHandlerMockCrypto{}, ctrl, nil,
 
@@ -439,7 +485,7 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
 	long := make([]byte, 1500+18+1) // DefaultEthernetMTU + TCPChacha20Overhead + 1
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
@@ -473,7 +519,7 @@ func TestTransportHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx,
+	h := newTestTransportHandler(ctx,
 		&blockingReader{ctx: ctx},
 		io.Discard,
 		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
@@ -502,7 +548,7 @@ func TestTransportHandler_Pong_Consumed(t *testing.T) {
 	cipher := make([]byte, chacha20poly1305.Overhead+len(pongPayload))
 
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(),
+	h := newTestTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte

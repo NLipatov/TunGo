@@ -45,7 +45,7 @@ func New(
 		peers: peers,
 		registrar: newRegistrar(
 			func() handshake { return newHandshake() },
-			func(material chacha20.KeyMaterial, isServer bool) (crypto, rekeyController, error) {
+			func(material chacha20.KeyMaterial, isServer bool) (crypto, epochController, error) {
 				return tcpcrypto.NewFromHandshake(material, isServer)
 			},
 			peers,
@@ -136,9 +136,7 @@ func (s *Server) handleFrame(peer *session.Peer, frame []byte) error {
 		return err
 	}
 	epoch := binary.BigEndian.Uint16(frame[:tcpcrypto.EpochPrefixSize])
-	if rekey := peer.RekeyController(); rekey != nil {
-		rekey.ObservePeerEpoch(epoch)
-	}
+	peer.ObservePeerEpoch(epoch)
 	if handled, err := s.handleService(peer, epoch, plaintext); handled {
 		return err
 	}
@@ -187,39 +185,29 @@ func (s *Server) runTun() error {
 }
 
 func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
+	response, epoch, rekeyed, err := peer.HandleRekey(carrierEpoch, &s.deriver, plaintext)
+	if err != nil {
+		if errors.Is(err, chacha20.ErrEpochExhausted) {
+			return true, s.sendService(peer, service_packet.EpochExhausted, nil)
+		}
+		return true, nil
+	}
+	if rekeyed {
+		if err := s.sendPlaintext(peer, response); err != nil {
+			return true, err
+		}
+		peer.ActivateSendEpoch(epoch)
+		return true, nil
+	}
 	kind, ok := service_packet.Parse(plaintext)
 	if !ok {
 		return false, nil
 	}
 	switch kind {
-	case service_packet.RekeyInit:
-		return true, s.handleRekey(peer, carrierEpoch, plaintext)
 	case service_packet.Ping:
 		s.sendPong(peer)
 	}
 	return true, nil
-}
-
-func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext []byte) error {
-	controller := peer.RekeyController()
-	if controller == nil {
-		return nil
-	}
-	serverPub, epoch, ok, err := controller.HandleRekeyInit(carrierEpoch, &s.deriver, plaintext)
-	if err != nil {
-		if errors.Is(err, chacha20.ErrEpochExhausted) {
-			return s.sendService(peer, service_packet.EpochExhausted, nil)
-		}
-		return nil
-	}
-	if !ok {
-		return nil
-	}
-	if err := s.sendService(peer, service_packet.RekeyAck, serverPub[:]); err != nil {
-		return err
-	}
-	controller.ActivateSendEpoch(epoch)
-	return nil
 }
 
 func (s *Server) sendPong(peer *session.Peer) {
@@ -240,4 +228,13 @@ func (s *Server) sendService(peer *session.Peer, kind service_packet.HeaderType,
 		return err
 	}
 	return peer.Send(frame[:tcpcrypto.EpochPrefixSize+payloadLen])
+}
+
+func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
+	if len(payload) > settings.DefaultEthernetMTU {
+		return io.ErrShortBuffer
+	}
+	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	copy(frame[tcpcrypto.EpochPrefixSize:], payload)
+	return peer.Send(frame[:tcpcrypto.EpochPrefixSize+len(payload)])
 }

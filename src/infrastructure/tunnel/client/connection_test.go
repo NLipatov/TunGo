@@ -16,10 +16,11 @@ import (
 	"github.com/coder/websocket"
 
 	appConfiguration "tungo/application/configuration"
+	clientConfiguration "tungo/application/configuration/client"
 	"tungo/application/configuration/settings"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/network/tcp/adapters"
 )
 
@@ -76,6 +77,19 @@ func mkWSSettings(host string, port int, proto settings.Protocol) settings.Setti
 	}
 }
 
+func testClientWithSettings(selected settings.Settings) *Client {
+	conf := &clientConfiguration.Configuration{ClientID: 1, Protocol: selected.Protocol}
+	switch selected.Protocol {
+	case settings.UDP:
+		conf.UDPSettings = selected
+	case settings.TCP:
+		conf.TCPSettings = selected
+	case settings.WS, settings.WSS:
+		conf.WSSettings = selected
+	}
+	return &Client{configuration: conf}
+}
+
 // ConnectionFactoryMockWSServer spins up a barebones WS echo server at /ws.
 func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shutdown func()) {
 	t.Helper()
@@ -119,29 +133,12 @@ func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shut
 
 // ---- tests ----
 
-func TestSessionBuilder_ByProtocol(t *testing.T) {
-	f := &connectionFactory{}
-
-	udpBuilder := f.sessionBuilder(settings.UDP)
-	if udpBuilder == nil {
-		t.Fatal("expected non-nil UDP session builder")
-	}
-
-	tcpBuilder := f.sessionBuilder(settings.TCP)
-	if tcpBuilder == nil {
-		t.Fatal("expected non-nil TCP session builder")
-	}
-}
-
 func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 	t.Parallel()
 	// Out-of-range port should fail during addr:port parsing.
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Settings: mkTCPSettings(70000),
-	}
-	f := &connectionFactory{conf: conf}
+	client := testClientWithSettings(mkTCPSettings(70000))
 
-	_, _, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad port")
 	}
@@ -149,12 +146,9 @@ func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 
 func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
 	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Settings: mkUDPSettings(70000),
-	}
-	f := &connectionFactory{conf: conf}
+	client := testClientWithSettings(mkUDPSettings(70000))
 
-	_, _, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad UDP port")
 	}
@@ -179,11 +173,10 @@ func TestDialTCP_Success(t *testing.T) {
 	}()
 
 	ap := netip.MustParseAddrPort(ln.Addr().String())
-	f := &connectionFactory{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	adapter, err := f.dialTCP(ctx, ap)
+	adapter, err := dialTCP(ctx, ap)
 	if err != nil {
 		t.Fatalf("dialTCP failed: %v", err)
 	}
@@ -201,11 +194,10 @@ func TestDialTCP_Refused(t *testing.T) {
 	t.Parallel()
 	// Port 1 on localhost is almost always closed -> should return an error quickly.
 	ap := netip.MustParseAddrPort("127.0.0.1:1")
-	f := &connectionFactory{}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	adapter, err := f.dialTCP(ctx, ap)
+	adapter, err := dialTCP(ctx, ap)
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error dialing to closed port")
@@ -216,11 +208,10 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	t.Parallel()
 	// UDP "dial" does not require a server to succeed in most cases.
 	ap := netip.MustParseAddrPort("127.0.0.1:9") // discard port
-	f := &connectionFactory{}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	conn, err := f.dialUDP(ctx, ap)
+	conn, err := dialUDP(ctx, ap)
 	if err != nil {
 		t.Fatalf("dialUDP failed: %v", err)
 	}
@@ -238,8 +229,7 @@ func TestDialWS_Success(t *testing.T) {
 	host, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	f := &connectionFactory{}
-	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
 	if err != nil {
 		t.Fatalf("dialWS failed: %v", err)
 	}
@@ -257,8 +247,7 @@ func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 	_, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	f := &connectionFactory{}
-	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
 	if err != nil {
 		t.Fatalf("dialWS failed: %v", err)
 	}
@@ -274,9 +263,8 @@ func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 
 func TestDialWS_Error_NoServer(t *testing.T) {
 	t.Parallel()
-	f := &connectionFactory{}
 	// Use a port with no WS server
-	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error when no WS server is listening")
@@ -286,11 +274,8 @@ func TestDialWS_Error_NoServer(t *testing.T) {
 func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	t.Parallel()
 	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Settings: mkWSSettings("127.0.0.1", 0, settings.WSS),
-	}
-	f := &connectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
+	client := testClientWithSettings(mkWSSettings("127.0.0.1", 0, settings.WSS))
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
 	}
@@ -298,9 +283,8 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 
 func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: 999}}
-	f := &connectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
+	client := testClientWithSettings(settings.Settings{Protocol: 999})
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol")
 	}
@@ -309,12 +293,9 @@ func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 // Verifies the error wrapping path for TCP.
 func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Settings: mkTCPSettings(1), // likely closed → Dial error
-	}
-	f := &connectionFactory{conf: conf}
+	client := testClientWithSettings(mkTCPSettings(1)) // likely closed → Dial error
 
-	_, _, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected dial error")
 	}
@@ -326,11 +307,8 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 // Verifies the error wrapping path for WS with provided Host fallback.
 func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Settings: mkWSSettings("127.0.0.1", 9, settings.WS),
-	}
-	f := &connectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
+	client := testClientWithSettings(mkWSSettings("127.0.0.1", 9, settings.WS))
+	_, _, _, err := client.establishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
 		t.Fatalf("expected wrapped WS dial error, got: %v", err)
 	}
@@ -433,29 +411,19 @@ func (t *cfUnitNoDeadlineTransport) Close() error {
 	return nil
 }
 
-type cfUnitCryptoFactory struct {
-	called bool
-}
-
-func (f *cfUnitCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, rekeyController, error) {
-	f.called = true
-	return nil, nil, errors.New("unexpected factory call")
-}
-
-func TestConnectionFactoryUnit_establishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T) {
-	f := &connectionFactory{
-		conf: appConfiguration.ClientRuntimeConfiguration{
+func TestEstablishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T) {
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{
 			ClientPublicKey:  []byte{1, 2, 3}, // invalid length
 			ClientPrivateKey: []byte{4, 5, 6}, // invalid length
 		},
 	}
 	tr := &cfUnitTransport{}
-	cryptoFactory := &cfUnitCryptoFactory{}
 
-	_, _, _, err := f.establishSecuredConnection(
+	_, _, _, err := client.establishSecuredConnection(
 		context.Background(),
 		tr,
-		cryptoFactory.FromHandshake,
+		settings.TCP,
 	)
 	if err == nil || !strings.Contains(err.Error(), "client keys not configured") {
 		t.Fatalf("expected client keys error, got %v", err)
@@ -463,29 +431,25 @@ func TestConnectionFactoryUnit_establishSecuredConnection_MissingClientKeys_Clos
 	if !tr.closed {
 		t.Fatal("expected adapter to be closed on missing keys")
 	}
-	if cryptoFactory.called {
-		t.Fatal("crypto factory should not be called when keys are missing")
-	}
 }
 
-func TestConnectionFactoryUnit_establishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *testing.T) {
+func TestEstablishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *testing.T) {
 	clientPub := make([]byte, 32)
 	clientPriv := make([]byte, 32)
 
-	f := &connectionFactory{
-		conf: appConfiguration.ClientRuntimeConfiguration{
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{
 			ClientPublicKey:  clientPub,
 			ClientPrivateKey: clientPriv,
 			X25519PublicKey:  []byte{7, 8, 9}, // invalid length
 		},
 	}
 	tr := &cfUnitTransport{}
-	cryptoFactory := &cfUnitCryptoFactory{}
 
-	_, _, _, err := f.establishSecuredConnection(
+	_, _, _, err := client.establishSecuredConnection(
 		context.Background(),
 		tr,
-		cryptoFactory.FromHandshake,
+		settings.TCP,
 	)
 	if err == nil || !strings.Contains(err.Error(), "server public key not configured") {
 		t.Fatalf("expected server public key error, got %v", err)
@@ -493,31 +457,27 @@ func TestConnectionFactoryUnit_establishSecuredConnection_MissingServerPublicKey
 	if !tr.closed {
 		t.Fatal("expected adapter to be closed on missing server public key")
 	}
-	if cryptoFactory.called {
-		t.Fatal("crypto factory should not be called when server key is missing")
-	}
 }
 
-func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
+func TestEstablishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
 	clientPub := make([]byte, 32)
 	clientPriv := make([]byte, 32)
 	serverPub := make([]byte, 32)
 	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
 
-	f := &connectionFactory{
-		conf: appConfiguration.ClientRuntimeConfiguration{
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{
 			ClientPublicKey:  clientPub,
 			ClientPrivateKey: clientPriv,
 			X25519PublicKey:  serverPub,
 		},
 	}
 	tr := &cfUnitTransport{readErr: io.ErrUnexpectedEOF}
-	cryptoFactory := &cfUnitCryptoFactory{}
 
-	_, _, _, err := f.establishSecuredConnection(
+	_, _, _, err := client.establishSecuredConnection(
 		context.Background(),
 		tr,
-		cryptoFactory.FromHandshake,
+		settings.TCP,
 	)
 	if err == nil {
 		t.Fatal("expected handshake error")
@@ -525,31 +485,27 @@ func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesA
 	if !tr.closed {
 		t.Fatal("expected adapter to be closed on handshake error")
 	}
-	if cryptoFactory.called {
-		t.Fatal("crypto factory should not be called when handshake fails")
-	}
 }
 
-func TestConnectionFactoryUnit_establishSecuredConnection_CancelClosesAdapter(t *testing.T) {
+func TestEstablishSecuredConnection_CancelClosesAdapter(t *testing.T) {
 	clientPub := make([]byte, 32)
 	clientPriv := make([]byte, 32)
 	serverPub := make([]byte, 32)
 	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
 
-	f := &connectionFactory{
-		conf: appConfiguration.ClientRuntimeConfiguration{
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{
 			ClientPublicKey:  clientPub,
 			ClientPrivateKey: clientPriv,
 			X25519PublicKey:  serverPub,
 		},
 	}
 	transport := newCFBlockingTransport()
-	cryptoFactory := &cfUnitCryptoFactory{}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, _, err := f.establishSecuredConnection(ctx, transport, cryptoFactory.FromHandshake)
+		_, _, _, err := client.establishSecuredConnection(ctx, transport, settings.TCP)
 		errCh <- err
 	}()
 
@@ -569,9 +525,6 @@ func TestConnectionFactoryUnit_establishSecuredConnection_CancelClosesAdapter(t 
 	case <-transport.closed:
 	default:
 		t.Fatal("expected adapter to be closed on context cancellation")
-	}
-	if cryptoFactory.called {
-		t.Fatal("crypto factory should not be called after context cancellation")
 	}
 }
 
@@ -603,30 +556,26 @@ func TestConnectionFactoryUnit_NewReadDeadlineTransport_WithDeadlineSupport_Wrap
 	}
 }
 
-func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
+func TestEstablishConnection_ErrorBranches(t *testing.T) {
 	t.Run("unsupported protocol", func(t *testing.T) {
-		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: settings.UNKNOWN}}}
-		_, _, _, err := f.EstablishConnection(context.Background())
+		client := testClientWithSettings(settings.Settings{Protocol: settings.UNKNOWN})
+		_, _, _, err := client.establishConnection(context.Background())
 		if err == nil {
 			t.Fatal("expected unsupported protocol error")
 		}
 	})
 
 	t.Run("tcp parse addr error", func(t *testing.T) {
-		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Settings: mkTCPSettings(70000),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
+		client := testClientWithSettings(mkTCPSettings(70000))
+		_, _, _, err := client.establishConnection(context.Background())
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
 	})
 
 	t.Run("udp parse addr error", func(t *testing.T) {
-		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Settings: mkUDPSettings(70000),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
+		client := testClientWithSettings(mkUDPSettings(70000))
+		_, _, _, err := client.establishConnection(context.Background())
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
@@ -634,20 +583,19 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 
 }
 
-func TestConnectionFactoryUnit_dial_ErrorBranches(t *testing.T) {
-	f := &connectionFactory{}
+func TestDialErrorBranches(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	t.Run("dialTCP error", func(t *testing.T) {
-		_, err := f.dialTCP(ctx, netip.MustParseAddrPort("127.0.0.1:1"))
+		_, err := dialTCP(ctx, netip.MustParseAddrPort("127.0.0.1:1"))
 		if err == nil {
 			t.Fatal("expected dialTCP error")
 		}
 	})
 
 	t.Run("dialUDP error", func(t *testing.T) {
-		conn, err := f.dialUDP(ctx, netip.MustParseAddrPort("127.0.0.1:9"))
+		conn, err := dialUDP(ctx, netip.MustParseAddrPort("127.0.0.1:9"))
 		// Environment-dependent: some sandboxes deny UDP connect, others allow it.
 		if err == nil {
 			if conn == nil {
@@ -658,14 +606,14 @@ func TestConnectionFactoryUnit_dial_ErrorBranches(t *testing.T) {
 	})
 
 	t.Run("dialWS error", func(t *testing.T) {
-		_, err := f.dialWS(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+		_, err := dialWS(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
 		if err == nil {
 			t.Fatal("expected dialWS error")
 		}
 	})
 }
 
-func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) {
+func TestEstablishSecuredConnection_Success(t *testing.T) {
 	deriver := &primitives.DefaultKeyDeriver{}
 
 	serverPub, serverPrivArr, err := deriver.GenerateX25519KeyPair()
@@ -677,8 +625,8 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 		t.Fatalf("client keygen failed: %v", err)
 	}
 
-	f := &connectionFactory{
-		conf: appConfiguration.ClientRuntimeConfiguration{
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{
 			ClientPublicKey:  clientPub,
 			ClientPrivateKey: clientPrivArr[:],
 			X25519PublicKey:  serverPub,
@@ -723,48 +671,29 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 		serverErrCh <- serr
 	}()
 
-	adapter, crypto, _, err := f.establishSecuredConnection(
+	adapter, crypto, coordinator, err := client.establishSecuredConnection(
 		context.Background(),
 		clientAdapter,
-		f.sessionBuilder(settings.TCP),
+		settings.TCP,
 	)
 	if err != nil {
 		t.Fatalf("establishSecuredConnection failed: %v", err)
 	}
-	if adapter == nil || crypto == nil {
-		t.Fatal("expected non-nil adapter and crypto")
+	if adapter == nil || crypto == nil || coordinator == nil {
+		t.Fatal("expected non-nil adapter, crypto, and rekey coordinator")
 	}
 	if serr := <-serverErrCh; serr != nil {
 		t.Fatalf("server handshake failed: %v", serr)
 	}
-}
-
-func TestDialWithFallback_IPv6Success(t *testing.T) {
-	t.Parallel()
-	f := &connectionFactory{}
-	tr := &cfUnitTransport{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			Port:   8080,
-		},
+	init, ok, err := coordinator.MaybeBuildRekeyInit(
+		time.Now().Add(settings.DefaultRekeyInterval+time.Second),
+		make([]byte, settings.DefaultEthernetMTU),
+	)
+	if err != nil || !ok {
+		t.Fatalf("build negotiated rekey init: ok=%v err=%v", ok, err)
 	}
-
-	var dialedAddr netip.AddrPort
-	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
-		dialedAddr = ap
-		return tr, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != tr {
-		t.Fatal("expected transport from IPv6 dial")
-	}
-	// Should have dialed the IPv6 address, not IPv4.
-	if !dialedAddr.Addr().Is6() {
-		t.Fatalf("expected IPv6 dial address, got %v", dialedAddr)
+	if kind, parsed := service_packet.Parse(init); !parsed || kind != service_packet.RekeyInitV2 {
+		t.Fatalf("unexpected negotiated rekey type: kind=%v parsed=%v", kind, parsed)
 	}
 }
 
@@ -783,142 +712,6 @@ func TestAddrPort(t *testing.T) {
 	}
 	if _, err := addrPort(netip.MustParseAddr("192.0.2.1"), 65536); err == nil {
 		t.Fatal("expected invalid port error")
-	}
-}
-
-func TestDialWithFallback_UDP_DualStackUsesPreferredIPv4(t *testing.T) {
-	t.Parallel()
-	f := &connectionFactory{}
-	tr := &cfUnitTransport{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
-			Port:   9090,
-		},
-		Protocol: settings.UDP,
-	}
-
-	var (
-		calls      int
-		dialedAddr netip.AddrPort
-	)
-	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
-		calls++
-		dialedAddr = ap
-		return tr, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != tr {
-		t.Fatal("expected transport from UDP dial")
-	}
-	if calls != 1 {
-		t.Fatalf("expected one UDP dial attempt, got %d", calls)
-	}
-	if !dialedAddr.Addr().Unmap().Is4() {
-		t.Fatalf("expected UDP to prefer IPv4, got %v", dialedAddr)
-	}
-}
-
-func TestDialWithFallback_UDP_DualStackFallsBackToIPv6WhenPreferredIPv4DialFails(t *testing.T) {
-	t.Parallel()
-	f := &connectionFactory{}
-	tr := &cfUnitTransport{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
-			Port:   9090,
-		},
-		Protocol: settings.UDP,
-	}
-
-	var dialed []netip.AddrPort
-	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
-		dialed = append(dialed, ap)
-		if ap.Addr().Unmap().Is4() {
-			return nil, errors.New("IPv4 unavailable")
-		}
-		return tr, nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != tr {
-		t.Fatal("expected transport from IPv6 fallback")
-	}
-	if len(dialed) != 2 {
-		t.Fatalf("expected IPv4 then IPv6 attempts, got %v", dialed)
-	}
-	if !dialed[0].Addr().Unmap().Is4() {
-		t.Fatalf("expected first UDP attempt to use IPv4, got %v", dialed[0])
-	}
-	if !dialed[1].Addr().Is6() {
-		t.Fatalf("expected second UDP attempt to use IPv6, got %v", dialed[1])
-	}
-}
-
-func TestDialWithFallback_UDP_ReturnsPreferredDialErrorWhenIPv6FallbackUnavailable(t *testing.T) {
-	t.Parallel()
-	f := &connectionFactory{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: mustHost("198.51.100.10"),
-			Port:   9090,
-		},
-		Protocol: settings.UDP,
-	}
-
-	wantErr := errors.New("IPv4 unavailable")
-	var calls int
-	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
-		calls++
-		if !ap.Addr().Unmap().Is4() {
-			t.Fatalf("expected only IPv4 attempt, got %v", ap)
-		}
-		return nil, wantErr
-	})
-	if got != nil {
-		t.Fatalf("expected nil transport, got %T", got)
-	}
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("expected preferred dial error %v, got %v", wantErr, err)
-	}
-	if calls != 1 {
-		t.Fatalf("expected one UDP dial attempt, got %d", calls)
-	}
-}
-
-func TestDialWithFallback_IPv6Only_DialsOnce(t *testing.T) {
-	t.Parallel()
-	f := &connectionFactory{}
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: mustHost("::1"),
-			Port:   8080,
-		},
-	}
-
-	var (
-		calls int
-		last  netip.AddrPort
-	)
-	_, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
-		calls++
-		last = ap
-		return nil, errors.New("dial failed")
-	})
-	if err == nil {
-		t.Fatal("expected error from dial")
-	}
-	if calls != 1 {
-		t.Fatalf("expected single dial attempt for IPv6-only endpoint, got %d", calls)
-	}
-	if !last.IsValid() || !last.Addr().Is6() {
-		t.Fatalf("expected IPv6 dial target, got %v", last)
 	}
 }
 
@@ -954,17 +747,17 @@ func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
 	}()
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	f := &connectionFactory{}
 	s := settings.Settings{
 		Addressing: settings.Addressing{
 			Server: mustHost("localhost"),
 			Port:   port,
 		},
+		Protocol: settings.TCP,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, dialErr := f.dialWithFallback(ctx, s, f.dialTCP)
+	conn, dialErr := dialWithFallback(ctx, s)
 	if dialErr != nil {
 		t.Fatalf("expected domain dial success, got %v", dialErr)
 	}
@@ -994,7 +787,6 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 	go func() { _ = srv.Serve(ln) }()
 	defer func() { _ = srv.Shutdown(context.Background()); _ = ln.Close() }()
 
-	f := &connectionFactory{}
 	s := settings.Settings{
 		Addressing: settings.Addressing{
 			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
@@ -1003,7 +795,7 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 		Protocol: settings.WS,
 	}
 
-	adapter, dialErr := f.dialWSWithFallback(context.Background(), context.Background(), s)
+	adapter, dialErr := dialWSWithFallback(context.Background(), context.Background(), s)
 	if dialErr != nil {
 		t.Fatalf("unexpected error: %v", dialErr)
 	}

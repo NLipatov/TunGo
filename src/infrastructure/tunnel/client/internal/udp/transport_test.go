@@ -36,6 +36,84 @@ func (dummyEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil
 func (dummyEpochManager) PromoteSendEpoch(uint16)                {}
 func (dummyEpochManager) RetirePreviousEpoch() bool              { return true }
 
+type rekeyAckRecorder struct {
+	calls int
+}
+
+func (r *rekeyAckRecorder) HandleRekeyAck(uint16, []byte) (bool, error) {
+	r.calls++
+	return true, nil
+}
+
+type testEpochController interface {
+	ObservePeerEpoch(uint16)
+	ActivateSendEpoch(uint16)
+}
+
+type testRekeyAckHandler interface {
+	HandleRekeyAck(uint16, []byte) (bool, error)
+}
+
+type testTransportRekey struct {
+	epoch testEpochController
+	ack   testRekeyAckHandler
+}
+
+func (r testTransportRekey) ObservePeerEpoch(epoch uint16) {
+	if r.epoch != nil {
+		r.epoch.ObservePeerEpoch(epoch)
+	}
+}
+
+func (r testTransportRekey) ActivateSendEpoch(epoch uint16) {
+	if r.epoch != nil {
+		r.epoch.ActivateSendEpoch(epoch)
+	}
+}
+
+func (r testTransportRekey) HandleRekeyAck(epoch uint16, packet []byte) (bool, error) {
+	if r.ack == nil {
+		return false, nil
+	}
+	return r.ack.HandleRekeyAck(epoch, packet)
+}
+
+func newTestTransportHandler(
+	ctx context.Context,
+	reader io.Reader,
+	writer io.Writer,
+	crypto crypto,
+	epoch testEpochController,
+	ack testRekeyAckHandler,
+	egress sender,
+) *transportHandler {
+	if epoch == nil && ack == nil {
+		return newTransportHandler(ctx, reader, writer, crypto, nil, egress)
+	}
+	return newTransportHandler(ctx, reader, writer, crypto, testTransportRekey{epoch: epoch, ack: ack}, egress)
+}
+
+func TestHandleControlplane_RekeyAckTypes(t *testing.T) {
+	for _, kind := range []service_packet.HeaderType{service_packet.RekeyAck, service_packet.RekeyAckV2} {
+		name := "v1"
+		if kind == service_packet.RekeyAckV2 {
+			name = "v2"
+		}
+		t.Run(name, func(t *testing.T) {
+			ack := make([]byte, 3)
+			if err := service_packet.Encode(kind, ack); err != nil {
+				t.Fatal(err)
+			}
+			recorder := &rekeyAckRecorder{}
+			handler := newTestTransportHandler(context.Background(), nil, nil, nil, nil, recorder, nil)
+			handled, err := handler.handleControlplane(0, ack)
+			if err != nil || !handled || recorder.calls != 1 {
+				t.Fatalf("handled=%v calls=%d err=%v", handled, recorder.calls, err)
+			}
+		})
+	}
+}
+
 // thTestCrypto implements application.crypto for testing TransportHandler
 // Only Decrypt is used in tests.
 type thTestCrypto struct {
@@ -144,7 +222,7 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -157,7 +235,7 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, nil)
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -174,7 +252,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -200,7 +278,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -223,7 +301,7 @@ func TestHandleTransport_DecryptErrorDropped(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
 	// Should exit with read error (EOF), not decrypt error
 	err := h.HandleTransport()
 	if err == nil || !strings.Contains(err.Error(), "EOF") {
@@ -240,7 +318,7 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -260,7 +338,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -294,7 +372,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
 	coordinator := tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, ctrl, 5*time.Millisecond, time.Now(),
+		&primitives.DefaultKeyDeriver{}, ctrl, nil, 5*time.Millisecond, time.Now(),
 	)
 	tunHandler := newTunHandler(ctx, reader, outbound.New(writer, crypto), coordinator, nil)
 
@@ -378,7 +456,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	transportCtx, transportCancel := context.WithCancel(context.Background())
 	defer transportCancel()
-	h := newTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, coordinator, nil)
+	h := newTestTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, coordinator, nil)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- h.HandleTransport() }()
@@ -413,8 +491,8 @@ func TestHandleDatagram_RejectsStaleRekeyAckAcrossTransactions(t *testing.T) {
 	epochManager := &incEpochManager{}
 	controller := rekey.NewStateMachine(epochManager, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	coordinator := tunnelrekey.NewClientRekeyCoordinator(crypto, controller, time.Millisecond, now)
-	handler := newTransportHandler(
+	coordinator := tunnelrekey.NewClientRekeyCoordinator(crypto, controller, nil, time.Millisecond, now)
+	handler := newTestTransportHandler(
 		context.Background(),
 		&thTestReader{},
 		&thTestWriter{},
@@ -507,7 +585,7 @@ func TestHandleTransport_PingRestartTimeout(t *testing.T) {
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := newTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, eg)
+	h := newTestTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, eg)
 	// Set lastRecvAt far in the past to trigger timeout immediately.
 	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
 
@@ -533,7 +611,7 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := newTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
+	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
 	// Set lastRecvAt so that PingInterval is exceeded but PingRestartTimeout is not.
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
@@ -579,7 +657,7 @@ func TestHandleTransport_RecvResetsPingTimer(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -604,7 +682,7 @@ func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: []byte{42}} // should not be reached
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -643,7 +721,7 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thAckCrypto{}
-	h := newTransportHandler(context.Background(), r, w, crypto, ctrl, coordinator, nil)
+	h := newTestTransportHandler(context.Background(), r, w, crypto, ctrl, coordinator, nil)
 
 	err = h.HandleTransport()
 	if err == nil {
@@ -665,7 +743,7 @@ func TestHandleTransport_NilEgress_NoIdlePing(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
 	// Set lastRecvAt so PingInterval is exceeded but not PingRestartTimeout.
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
@@ -696,7 +774,7 @@ func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	err := h.HandleTransport()
 	if err != nil {
@@ -721,7 +799,7 @@ func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
 	coordinator := newTestRekeyCoordinator(ctrl)
-	h := newTransportHandler(ctx, r, w, &thAckCrypto{}, ctrl, coordinator, nil)
+	h := newTestTransportHandler(ctx, r, w, &thAckCrypto{}, ctrl, coordinator, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -746,7 +824,7 @@ func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{sendErr: errors.New("send failed")}
-	h := newTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
+	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
 	done := make(chan error)
@@ -760,7 +838,7 @@ func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
 }
 
 func TestHandleDatagram_TooShortPacket_Ignored(t *testing.T) {
-	h := newTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, nil, nil, nil)
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, nil, nil, nil)
 	n, err := h.handleDatagram([]byte{0x01})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -774,7 +852,7 @@ func TestHandleDatagram_WriteErrorAfterCancel_IsSuppressed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	h := newTransportHandler(ctx, &thTestReader{}, &thTestWriter{err: errors.New("write fail")}, &thTestCrypto{output: []byte{1, 2}}, nil, nil, nil)
+	h := newTestTransportHandler(ctx, &thTestReader{}, &thTestWriter{err: errors.New("write fail")}, &thTestCrypto{output: []byte{1, 2}}, nil, nil, nil)
 	n, err := h.handleDatagram([]byte{0x00, 0x01})
 	if err != nil {
 		t.Fatalf("expected nil error after cancel, got %v", err)
@@ -797,7 +875,7 @@ func TestHandleTransport_NilRekeyController(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	h := newTransportHandler(ctx, r, w, crypto, nil, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, nil, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -827,7 +905,7 @@ func TestHandleTransport_EncryptedPong_ConsumedSilently(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: pongSP}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -857,7 +935,7 @@ func TestHandleTransport_WriteErrorAfterCancel(t *testing.T) {
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
-	h := newTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 	// Force context done before write error check.
 	cancel()
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/application/runtime"
+	"tungo/application"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -185,7 +185,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	if !model.done {
 		t.Fatal("expected done=true when AutoSelectClientConfig matches an available config")
 	}
-	if model.resultMode != runtime.ModeClient {
+	if model.resultMode != application.ModeClient {
 		t.Fatalf("expected resultMode=Client, got %v", model.resultMode)
 	}
 	if opts.testControl().selected != "cfg.json" {
@@ -221,7 +221,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if model.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected configuratorScreenDaemonActiveConfirm, got %v", model.screen)
 	}
-	if model.pendingStartMode != runtime.ModeClient {
+	if model.pendingStartMode != application.ModeClient {
 		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
 	}
 	if model.pendingClientConfig != "cfg.json" {

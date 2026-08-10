@@ -34,29 +34,8 @@ type clientConfigurationManager interface {
 	Configuration() (*clientConfiguration.Configuration, error)
 }
 
-func (c *clientControl) ClientRuntimeConfiguration() (ClientRuntimeConfiguration, error) {
-	conf, err := c.manager.Configuration()
-	if err != nil {
-		return ClientRuntimeConfiguration{}, err
-	}
-	activeSettings, err := runtimeClientSettings(conf)
-	if err != nil {
-		return ClientRuntimeConfiguration{}, err
-	}
-	cleanupSettings := make([]settings.Settings, 0, 3)
-	for _, profile := range []settings.Settings{conf.TCPSettings, conf.UDPSettings, conf.WSSettings} {
-		if profile.TunName == "" {
-			continue
-		}
-		cleanupSettings = append(cleanupSettings, profile)
-	}
-	return ClientRuntimeConfiguration{
-		Settings:         activeSettings,
-		CleanupSettings:  cleanupSettings,
-		X25519PublicKey:  append([]byte(nil), conf.X25519PublicKey...),
-		ClientPublicKey:  append([]byte(nil), conf.ClientPublicKey...),
-		ClientPrivateKey: append([]byte(nil), conf.ClientPrivateKey...),
-	}, nil
+func (c *clientControl) Configuration() (*clientConfiguration.Configuration, error) {
+	return c.manager.Configuration()
 }
 
 func (c *clientControl) List() ([]string, error) {

@@ -67,11 +67,11 @@ func (f *udpRegHandshakeFactory) NewHandshake() handshake {
 
 type udpRegCryptoFactory struct {
 	crypto crypto
-	ctrl   rekeyController
+	ctrl   epochController
 	err    error
 }
 
-func (f *udpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, rekeyController, error) {
+func (f *udpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, epochController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -240,9 +240,6 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
-	}
-	if peer.RekeyController() == nil {
-		t.Fatal("expected server rekey coordinator")
 	}
 }
 
@@ -558,6 +555,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	internalIP := netip.MustParseAddr("10.0.0.2")
 	staleRekey := tunnelrekey.NewServerRekeyCoordinator(
 		rekey.NewStateMachine(udpRegEpochManager{}, []byte("old-c2s"), []byte("old-s2c")),
+		nil,
 	)
 	repo.Add(session.NewPeerWithAuth(
 		udpRegCrypto{}, staleRekey, internalIP, netip.MustParseAddrPort("192.168.1.10:1234"), nil, nil,

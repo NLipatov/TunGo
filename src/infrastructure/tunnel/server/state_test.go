@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	appConfiguration "tungo/application/configuration"
+	serverConfiguration "tungo/application/configuration/server"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/server/internal/session"
 )
@@ -14,7 +14,7 @@ func TestServerUpdateReplacesAllowedPeers(t *testing.T) {
 	r := Server{
 		allowedPeers: noise.NewAllowedPeersLookup(nil),
 	}
-	r.Update([]appConfiguration.ServerPeer{{PublicKey: publicKey, ClientID: 7, Enabled: true}})
+	r.Update([]serverConfiguration.AllowedPeer{{PublicKey: publicKey, ClientID: 7, Enabled: true}})
 
 	clientID, enabled, found := r.allowedPeers.Lookup(publicKey)
 	if !found || !enabled || clientID != 7 {

@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
+	"tungo/application"
 	"tungo/application/commandline"
-	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
 // Control exposes systemd unit management operations.
 type Control interface {
-	Setup(runtime.Mode) (string, error)
+	Setup(application.Mode) (string, error)
 	RemoveUnit() error
 	IsUnitActive() (bool, error)
 	StopUnit() error
@@ -51,9 +51,9 @@ func (i *UnitInstaller) Available() bool {
 }
 
 // Setup installs the selected runtime unit and preserves its running state.
-func (i *UnitInstaller) Setup(mode runtime.Mode) (string, error) {
+func (i *UnitInstaller) Setup(mode application.Mode) (string, error) {
 	switch mode {
-	case runtime.ModeClient, runtime.ModeServer:
+	case application.ModeClient, application.ModeServer:
 	default:
 		return "", fmt.Errorf("invalid daemon mode: %v", mode)
 	}
@@ -85,7 +85,7 @@ func (i *UnitInstaller) Setup(mode runtime.Mode) (string, error) {
 	return path, nil
 }
 
-func (i *UnitInstaller) installRuntimeUnit(mode runtime.Mode) (string, error) {
+func (i *UnitInstaller) installRuntimeUnit(mode application.Mode) (string, error) {
 	args, err := commandline.RuntimeModeArgs(mode)
 	if err != nil {
 		return "", err

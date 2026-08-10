@@ -6,9 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
+	clientConfiguration "tungo/application/configuration/client"
+	serverConfiguration "tungo/application/configuration/server"
 	"tungo/application/configuration/settings"
-	"tungo/application/runtime"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
@@ -94,7 +96,7 @@ func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 
 	err := ui.runRuntime(
 		context.Background(),
-		runtime.ModeClient,
+		application.ModeClient,
 		bubbleTea.NewRuntimeLogBuffer(8),
 	)
 	if err == nil || err.Error() != "runtime info error: runtime info failed" {
@@ -103,14 +105,14 @@ func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 }
 
 func TestTUI_RunRuntime_PropagatesRuntimeConstructionError(t *testing.T) {
-	if _, err := appConfiguration.NewClientControl().ClientRuntimeConfiguration(); err == nil {
+	if _, err := appConfiguration.NewClientControl().Configuration(); err == nil {
 		t.Skip("default client runtime configuration is available")
 	}
 	ui := newTestTUI(t)
 
 	err := ui.runRuntime(
 		context.Background(),
-		runtime.ModeClient,
+		application.ModeClient,
 		bubbleTea.NewRuntimeLogBuffer(8),
 	)
 	if err == nil {
@@ -123,7 +125,7 @@ func TestTUI_RunRuntimePhase_PropagatesProgramRunErrorWithoutTTY(t *testing.T) {
 	ui := newTestTUI(t)
 
 	reconfigure, err := ui.runRuntimePhase(context.Background(), bubbleTea.RuntimeDashboardOptions{
-		Mode: runtime.ModeClient,
+		Mode: application.ModeClient,
 	})
 	if err == nil || !strings.Contains(err.Error(), "opening TTY") {
 		t.Fatalf("runRuntimePhase() error = %v, want TTY initialization error", err)
@@ -142,7 +144,7 @@ func TestShowFatalError_ReturnsWhenProgramCannotOpenTTY(t *testing.T) {
 func TestTUI_RuntimeInfo_Client(t *testing.T) {
 	ui := newTestTUI(t)
 
-	got, err := ui.runtimeInfo(runtime.ModeClient)
+	got, err := ui.runtimeInfo(application.ModeClient)
 	if err != nil {
 		t.Fatalf("runtimeInfo() error = %v", err)
 	}
@@ -154,7 +156,7 @@ func TestTUI_RuntimeInfo_Client(t *testing.T) {
 func TestTUI_RuntimeInfo_Server(t *testing.T) {
 	ui := newTestTUI(t)
 
-	got, err := ui.runtimeInfo(runtime.ModeServer)
+	got, err := ui.runtimeInfo(application.ModeServer)
 	if err != nil {
 		t.Fatalf("runtimeInfo() error = %v", err)
 	}
@@ -167,7 +169,7 @@ func TestTUI_RuntimeInfo_MissingClientControl(t *testing.T) {
 	ui := newTestTUI(t)
 	ui.configuratorOptions.ClientConfigurationControl = nil
 
-	_, err := ui.runtimeInfo(runtime.ModeClient)
+	_, err := ui.runtimeInfo(application.ModeClient)
 	if err == nil || err.Error() != "client configuration control is nil" {
 		t.Fatalf("expected missing client control error, got %v", err)
 	}
@@ -177,7 +179,7 @@ func TestTUI_RuntimeInfo_MissingServerControl(t *testing.T) {
 	ui := newTestTUI(t)
 	ui.configuratorOptions.ServerConfigurationControl = nil
 
-	_, err := ui.runtimeInfo(runtime.ModeServer)
+	_, err := ui.runtimeInfo(application.ModeServer)
 	if err == nil || err.Error() != "server configuration control is nil" {
 		t.Fatalf("expected missing server control error, got %v", err)
 	}
@@ -246,8 +248,8 @@ func (configurationControlMock) Delete(string) error {
 	return nil
 }
 
-func (configurationControlMock) ClientRuntimeConfiguration() (appConfiguration.ClientRuntimeConfiguration, error) {
-	return appConfiguration.ClientRuntimeConfiguration{}, nil
+func (configurationControlMock) Configuration() (*clientConfiguration.Configuration, error) {
+	return &clientConfiguration.Configuration{}, nil
 }
 
 func (configurationControlMock) GenerateClientConfiguration() (appConfiguration.GeneratedClientConfiguration, error) {
@@ -266,11 +268,11 @@ func (configurationControlMock) RemovePeer(int) error {
 	return nil
 }
 
-func (configurationControlMock) ServerRuntimeConfiguration() (appConfiguration.ServerRuntimeConfiguration, error) {
-	return appConfiguration.ServerRuntimeConfiguration{}, nil
+func (configurationControlMock) ServerConfiguration() (*serverConfiguration.Configuration, error) {
+	return &serverConfiguration.Configuration{}, nil
 }
 
-func (configurationControlMock) WatchServerRuntimeConfiguration(
+func (configurationControlMock) WatchServerConfiguration(
 	context.Context,
 	appConfiguration.ServerSessionRevoker,
 	appConfiguration.ServerAllowedPeersUpdater,

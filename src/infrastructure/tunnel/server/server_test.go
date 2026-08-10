@@ -10,8 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	appConfiguration "tungo/application/configuration"
+	serverConfiguration "tungo/application/configuration/server"
 	"tungo/application/configuration/settings"
+	"tungo/infrastructure/cryptography/noise"
 )
 
 var errServerLifecycleTest = errors.New("test error")
@@ -40,8 +41,17 @@ func mustHost(raw string) settings.Host {
 
 func newTestRuntime(t *testing.T) (*Server, error) {
 	t.Helper()
-	configuration := appConfiguration.ServerRuntimeConfiguration{}
-	return New(configuration, nil)
+	conf := &serverConfiguration.Configuration{}
+	cookieManager, err := noise.NewCookieManager()
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		configuration: conf,
+		allowedPeers:  noise.NewAllowedPeersLookup(nil),
+		cookieManager: cookieManager,
+		loadMonitor:   noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+	}, nil
 }
 
 // ------------------- tests -------------------
@@ -286,7 +296,7 @@ func TestNewTunnel_TCP_UDP_WS_Success(t *testing.T) {
 }
 
 func TestRuntimeRevocationAndAllowedPeersUpdate(t *testing.T) {
-	runtime, err := New(appConfiguration.ServerRuntimeConfiguration{}, nil)
+	runtime, err := newTestRuntime(t)
 	if err != nil {
 		t.Fatalf("unexpected runtime error: %v", err)
 	}
@@ -331,13 +341,12 @@ func (m *serverLifecycleTunManager) DisposeDevices(settings.Settings) error {
 
 func TestServerRunOwnsCleanupAndReadiness(t *testing.T) {
 	manager := &serverLifecycleTunManager{}
-	server := &Server{configuration: appConfiguration.ServerRuntimeConfiguration{}, tunManager: manager}
-	ready := false
+	server := &Server{configuration: &serverConfiguration.Configuration{}, tunManager: manager}
 
-	if err := server.Run(context.Background(), func() { ready = true }); err != nil {
+	if err := server.Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if !ready {
+	if !server.Ready() {
 		t.Fatal("server did not become ready")
 	}
 	if calls := atomic.LoadInt32(&manager.disposeCalls); calls != 6 {

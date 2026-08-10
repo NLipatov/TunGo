@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/application/runtime"
+	"tungo/application"
 )
 
 func TestSetupInactiveUnitInstallsWithoutRestart(t *testing.T) {
@@ -19,7 +19,7 @@ func TestSetupInactiveUnitInstallsWithoutRestart(t *testing.T) {
 	commander := &mockCommander{combinedOutput: []byte("inactive\n")}
 	installer := NewUnitInstaller(commander)
 
-	path, err := installer.Setup(runtime.ModeServer)
+	path, err := installer.Setup(application.ModeServer)
 	if err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestSetupActiveUnitStopsInstallsAndRestarts(t *testing.T) {
 	commander := &mockCommander{combinedOutput: []byte("active\n")}
 	installer := NewUnitInstaller(commander)
 
-	path, err := installer.Setup(runtime.ModeClient)
+	path, err := installer.Setup(application.ModeClient)
 	if err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestSetupReturnsStatusCheckError(t *testing.T) {
 	commander := &mockCommander{combinedOutputErr: wantErr}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeClient)
+	_, err := installer.Setup(application.ModeClient)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
 	}
@@ -83,7 +83,7 @@ func TestSetupReturnsInstallError(t *testing.T) {
 	commander := &mockCommander{combinedOutput: []byte("inactive\n")}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeServer)
+	_, err := installer.Setup(application.ModeServer)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
 	}
@@ -95,7 +95,7 @@ func TestSetupRestartsActiveUnitAfterInstallError(t *testing.T) {
 	commander := &mockCommander{combinedOutput: []byte("active\n")}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeServer)
+	_, err := installer.Setup(application.ModeServer)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
 	}
@@ -112,7 +112,7 @@ func TestSetupPreservesInstallErrorWhenRecoveryRestartFails(t *testing.T) {
 	}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeServer)
+	_, err := installer.Setup(application.ModeServer)
 	if !errors.Is(err, installErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, installErr)
 	}
@@ -131,7 +131,7 @@ func TestSetupStopsWhenActiveUnitCannotBeStopped(t *testing.T) {
 	}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeClient)
+	_, err := installer.Setup(application.ModeClient)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
 	}
@@ -147,7 +147,7 @@ func TestSetupReturnsRestartError(t *testing.T) {
 	}
 	installer := NewUnitInstaller(commander)
 
-	_, err := installer.Setup(runtime.ModeServer)
+	_, err := installer.Setup(application.ModeServer)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
 	}

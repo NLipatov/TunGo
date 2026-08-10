@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"tungo/infrastructure/tunnel/internal/rekey"
 )
 
 type testCrypto struct {
@@ -222,13 +220,5 @@ func TestRepository_RevocationAndIdleReaping(t *testing.T) {
 	}
 	if count := repo.TerminateByPubKey(pubKey); count != 1 || !active.IsClosed() {
 		t.Fatalf("revoked=%d activeClosed=%v", count, active.IsClosed())
-	}
-}
-
-func TestPeer_RekeyCoordinatorIsConcrete(t *testing.T) {
-	coordinator := rekey.NewServerRekeyCoordinator(nil)
-	peer := NewPeer(nil, coordinator, netip.Addr{}, netip.AddrPort{}, nil)
-	if peer.RekeyController() != coordinator {
-		t.Fatal("peer did not preserve rekey coordinator")
 	}
 }

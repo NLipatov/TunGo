@@ -6,14 +6,17 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"tungo/application"
 	"tungo/application/commandline"
 	"tungo/application/configuration"
-	"tungo/application/runtime"
 	"tungo/application/version"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/telemetry/trafficstats"
+	tunnelClient "tungo/infrastructure/tunnel/client"
+	tunnelServer "tungo/infrastructure/tunnel/server"
 	"tungo/presentation/elevation"
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
@@ -75,11 +78,22 @@ func runCLI(ctx context.Context) error {
 		fmt.Println(generated.JSON)
 		return nil
 	case commandline.CommandRuntime:
-		runtimeInstance, err := runtime.New(command.RuntimeMode)
-		if err != nil {
-			return err
+		switch command.RuntimeMode {
+		case application.ModeClient:
+			client, err := tunnelClient.New()
+			if err != nil {
+				return err
+			}
+			return client.Run(ctx)
+		case application.ModeServer:
+			server, err := tunnelServer.New()
+			if err != nil {
+				return err
+			}
+			return server.Run(ctx)
+		default:
+			return fmt.Errorf("invalid runtime mode: %v", command.RuntimeMode)
 		}
-		return runtimeInstance.Run(ctx)
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}

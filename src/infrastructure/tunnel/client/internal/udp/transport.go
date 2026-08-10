@@ -18,12 +18,9 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-type transportRekeyController interface {
+type transportRekey interface {
 	ObservePeerEpoch(epoch uint16)
 	ActivateSendEpoch(epoch uint16)
-}
-
-type rekeyAckHandler interface {
 	HandleRekeyAck(carrierEpoch uint16, plaindata []byte) (ok bool, err error)
 }
 
@@ -32,8 +29,7 @@ type transportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService crypto
-	rekeyController     transportRekeyController
-	rekeyAck            rekeyAckHandler
+	rekey               transportRekey
 	egress              sender
 	lastRecvAt          time.Time
 	lastPingSentAt      time.Time
@@ -45,8 +41,7 @@ func newTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService crypto,
-	rekeyController transportRekeyController,
-	rekeyAck rekeyAckHandler,
+	rekey transportRekey,
 	egress sender,
 ) *transportHandler {
 	const pingLen = udpPayloadOffset + 3
@@ -55,8 +50,7 @@ func newTransportHandler(
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
-		rekeyController:     rekeyController,
-		rekeyAck:            rekeyAck,
+		rekey:               rekey,
 		egress:              egress,
 		lastRecvAt:          time.Now(),
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
@@ -110,10 +104,10 @@ func (t *transportHandler) handleDatagram(pkt []byte) (int, error) {
 		carrierEpoch = binary.BigEndian.Uint16(pkt[udp.EpochOffset : udp.EpochOffset+2])
 	}
 
-	if t.rekeyController != nil {
+	if t.rekey != nil {
 		// Authentication proves the peer epoch; UDP uses the same event to promote send.
-		t.rekeyController.ObservePeerEpoch(carrierEpoch)
-		t.rekeyController.ActivateSendEpoch(carrierEpoch)
+		t.rekey.ObservePeerEpoch(carrierEpoch)
+		t.rekey.ActivateSendEpoch(carrierEpoch)
 	}
 
 	if handled, err := t.handleControlplane(carrierEpoch, decrypted); handled {
@@ -148,11 +142,11 @@ func (t *transportHandler) handleControlplane(
 		// Server cannot create new epochs - reconnect immediately.
 		slog.Warn("received EpochExhausted from server, initiating reconnect")
 		return true, errEpochExhausted
-	case service_packet.RekeyAck:
-		if t.rekeyAck == nil {
+	case service_packet.RekeyAck, service_packet.RekeyAckV2:
+		if t.rekey == nil {
 			return true, nil
 		}
-		if _, err := t.rekeyAck.HandleRekeyAck(carrierEpoch, plaintext); err != nil {
+		if _, err := t.rekey.HandleRekeyAck(carrierEpoch, plaintext); err != nil {
 			slog.Error("rekey ack install/apply failed", "err", err)
 			if errors.Is(err, chacha20.ErrEpochExhausted) {
 				return true, errEpochExhausted

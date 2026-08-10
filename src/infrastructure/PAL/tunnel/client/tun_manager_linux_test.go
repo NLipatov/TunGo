@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	clientConfiguration "tungo/application/configuration/client"
 	"tungo/application/configuration/settings"
 )
 
@@ -186,17 +187,19 @@ func newMgr(
 			Protocol: settings.WS,
 		},
 	}
+	conf := &clientConfiguration.Configuration{
+		Protocol:    proto,
+		TCPSettings: profiles[settings.TCP],
+		UDPSettings: profiles[settings.UDP],
+		WSSettings:  profiles[settings.WS],
+	}
 	return &PlatformTunManager{
 		connectionSettings: profiles[proto],
-		cleanupSettings: []settings.Settings{
-			profiles[settings.UDP],
-			profiles[settings.TCP],
-			profiles[settings.WS],
-		},
-		ip:      ipMock,
-		ioctl:   ioctlMock,
-		mss:     mssMock,
-		wrapper: wrap,
+		configuration:      conf,
+		ip:                 ipMock,
+		ioctl:              ioctlMock,
+		mss:                mssMock,
+		wrapper:            wrap,
 	}
 }
 
@@ -412,8 +415,13 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	for i := range mgr.cleanupSettings {
-		mgr.cleanupSettings[i].Server.IPv6 = fmt.Sprintf("2001:db8::%d", i+1)
+	profiles := []*settings.Settings{
+		&mgr.configuration.TCPSettings,
+		&mgr.configuration.UDPSettings,
+		&mgr.configuration.WSSettings,
+	}
+	for i, profile := range profiles {
+		profile.Server.IPv6 = fmt.Sprintf("2001:db8::%d", i+1)
 	}
 
 	if err := mgr.DisposeDevices(); err != nil {
@@ -424,6 +432,20 @@ func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	got := ipMock.log.String()
 	if strings.Count(got, "rdel;") != 6 {
 		t.Fatalf("expected 6 route deletions (3 IPv4 + 3 IPv6), got: %s", got)
+	}
+}
+
+func TestDisposeDevicesSkipsProfilesWithoutTunName(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+	mgr.configuration.TCPSettings.TunName = ""
+	mgr.configuration.WSSettings.TunName = ""
+
+	if err := mgr.DisposeDevices(); err != nil {
+		t.Fatalf("DisposeDevices() error = %v", err)
+	}
+	if got := strings.Count(ipMock.log.String(), "ldel;"); got != 1 {
+		t.Fatalf("LinkDelete() calls = %d, want 1", got)
 	}
 }
 

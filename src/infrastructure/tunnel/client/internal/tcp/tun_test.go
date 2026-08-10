@@ -14,15 +14,24 @@ import (
 	tunnelrekey "tungo/infrastructure/tunnel/internal/rekey"
 )
 
-func newTestRekeyCoordinator(controller rekeyController) *tunnelrekey.ClientRekeyCoordinator {
+type testRekeyController interface {
+	ReadyForRekey() bool
+	SendEpoch() uint16
+	CurrentKeys() ([]byte, []byte)
+	StartRekey([]byte, []byte) (uint16, error)
+	ActivateSendEpoch(uint16)
+	ObservePeerEpoch(uint16)
+}
+
+func newTestRekeyCoordinator(controller testRekeyController) *tunnelrekey.ClientRekeyCoordinator {
 	return tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, controller, time.Hour, time.Now(),
+		&primitives.DefaultKeyDeriver{}, controller, nil, time.Hour, time.Now(),
 	)
 }
 
-func newDueTestRekeyCoordinator(controller rekeyController) *tunnelrekey.ClientRekeyCoordinator {
+func newDueTestRekeyCoordinator(controller testRekeyController) *tunnelrekey.ClientRekeyCoordinator {
 	return tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, controller, time.Millisecond, time.Now().Add(-time.Second),
+		&primitives.DefaultKeyDeriver{}, controller, nil, time.Millisecond, time.Now().Add(-time.Second),
 	)
 }
 
@@ -322,6 +331,7 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 	th.rekeyInit = tunnelrekey.NewClientRekeyCoordinator(
 		&tunHandlerFailingKeyDeriver{err: errors.New("keygen fail")},
 		ctrl,
+		nil,
 		time.Millisecond,
 		time.Now().Add(-2*time.Second),
 	)

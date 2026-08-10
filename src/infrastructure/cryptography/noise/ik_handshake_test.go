@@ -131,6 +131,83 @@ func TestIKHandshake_Success(t *testing.T) {
 	}
 }
 
+func TestIKHandshake_RekeyV2(t *testing.T) {
+	serverKP, err := cipherSuite.GenerateKeypair(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientKP, err := cipherSuite.GenerateKeypair(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedPeers := NewAllowedPeersLookup([]configuration.ServerPeer{{
+		PublicKey: clientKP.Public,
+		Enabled:   true,
+		ClientID:  1,
+	}})
+	serverHS := NewIKHandshakeServer(serverKP.Public, serverKP.Private, allowedPeers, nil, nil)
+	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+
+	clientConn, serverConn := net.Pipe()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
+	clientTransport, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, 2048)
+	serverTransport, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, 2048)
+	completeTestHandshake(t, serverHS, clientHS, serverTransport, clientTransport)
+
+	prologue := []byte("current session")
+	msg1, err := clientHS.StartRekeyV2(prologue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg2, serverC2S, serverS2C, err := serverHS.RespondRekeyV2(prologue, msg1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientC2S, clientS2C, err := clientHS.FinishRekeyV2(msg2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(clientC2S, serverC2S) || !bytes.Equal(clientS2C, serverS2C) {
+		t.Fatal("rekey traffic keys do not match")
+	}
+	if bytes.Equal(clientC2S, clientHS.KeyClientToServer()) || bytes.Equal(clientS2C, clientHS.KeyServerToClient()) {
+		t.Fatal("rekey reused initial traffic keys")
+	}
+}
+
+func TestIKHandshake_RekeyV2RejectsWrongPrologue(t *testing.T) {
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	clientKP, _ := cipherSuite.GenerateKeypair(nil)
+	serverHS := NewIKHandshakeServer(
+		serverKP.Public,
+		serverKP.Private,
+		NewAllowedPeersLookup([]configuration.ServerPeer{{
+			PublicKey: clientKP.Public,
+			Enabled:   true,
+			ClientID:  1,
+		}}),
+		nil,
+		nil,
+	)
+	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+
+	clientConn, serverConn := net.Pipe()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
+	clientTransport, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, 2048)
+	serverTransport, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, 2048)
+	completeTestHandshake(t, serverHS, clientHS, serverTransport, clientTransport)
+
+	msg1, err := clientHS.StartRekeyV2([]byte("client state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := serverHS.RespondRekeyV2([]byte("server state"), msg1); err == nil {
+		t.Fatal("expected mismatched prologue to reject rekey")
+	}
+}
+
 func TestIKHandshake_UnknownClient(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)

@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"tungo/application/runtime"
+	"tungo/application"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
 )
 
-func (t *TUI) configure(ctx context.Context, logFeed bubbleTea.RuntimeLogFeed) (runtime.Mode, error) {
+func (t *TUI) configure(ctx context.Context, logFeed bubbleTea.RuntimeLogFeed) (application.Mode, error) {
 	options := t.configuratorOptions
 	options.LogFeed = logFeed
 	model, err := bubbleTea.NewConfigurator(options, t.preferences)

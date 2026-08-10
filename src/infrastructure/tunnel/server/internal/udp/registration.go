@@ -28,12 +28,17 @@ type authenticatedHandshake interface {
 	AllowedIPs() []netip.Prefix
 }
 
+type rekeyV2Handshake interface {
+	Supports(noise.Capability) bool
+	RespondRekeyV2(prologue, msg1 []byte) (msg2, c2s, s2c []byte, err error)
+}
+
 type crypto interface {
 	Encrypt([]byte) ([]byte, error)
 	Decrypt([]byte) ([]byte, error)
 }
 
-type rekeyController interface {
+type epochController interface {
 	ReadyForRekey() bool
 	SendEpoch() uint16
 	StartRekey(c2s, s2c []byte) (uint16, error)
@@ -43,7 +48,7 @@ type rekeyController interface {
 }
 
 type newHandshake func() handshake
-type newCrypto func(chacha20.KeyMaterial, bool) (crypto, rekeyController, error)
+type newCrypto func(chacha20.KeyMaterial, bool) (crypto, epochController, error)
 
 const (
 	registrationQueueCapacity = 16
@@ -206,7 +211,11 @@ func (r *registrar) registerClient(addrPort netip.AddrPort, queue *registrationQ
 	}
 	var rekeyCoordinator *rekey.ServerRekeyCoordinator
 	if epochController != nil {
-		rekeyCoordinator = rekey.NewServerRekeyCoordinator(epochController)
+		var rehandshake rekeyV2Handshake
+		if capable, ok := h.(rekeyV2Handshake); ok && capable.Supports(noise.CapabilityRekeyV2) {
+			rehandshake = capable
+		}
+		rekeyCoordinator = rekey.NewServerRekeyCoordinator(epochController, rehandshake)
 	}
 
 	// Extract authentication info from IK handshake result if available

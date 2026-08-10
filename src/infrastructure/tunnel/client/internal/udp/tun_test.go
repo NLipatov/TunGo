@@ -18,15 +18,24 @@ import (
 	tunnelrekey "tungo/infrastructure/tunnel/internal/rekey"
 )
 
-func newTestRekeyCoordinator(controller rekeyController) *tunnelrekey.ClientRekeyCoordinator {
+type testRekeyController interface {
+	ReadyForRekey() bool
+	SendEpoch() uint16
+	CurrentKeys() ([]byte, []byte)
+	StartRekey([]byte, []byte) (uint16, error)
+	ActivateSendEpoch(uint16)
+	ObservePeerEpoch(uint16)
+}
+
+func newTestRekeyCoordinator(controller testRekeyController) *tunnelrekey.ClientRekeyCoordinator {
 	return tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, controller, time.Hour, time.Now(),
+		&primitives.DefaultKeyDeriver{}, controller, nil, time.Hour, time.Now(),
 	)
 }
 
-func newDueTestRekeyCoordinator(controller rekeyController) *tunnelrekey.ClientRekeyCoordinator {
+func newDueTestRekeyCoordinator(controller testRekeyController) *tunnelrekey.ClientRekeyCoordinator {
 	return tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, controller, time.Millisecond, time.Now().Add(-time.Second),
+		&primitives.DefaultKeyDeriver{}, controller, nil, time.Millisecond, time.Now().Add(-time.Second),
 	)
 }
 
@@ -379,7 +388,7 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough encrypt
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	coordinator := tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, ctrl, 5*time.Millisecond, time.Now(),
+		&primitives.DefaultKeyDeriver{}, ctrl, nil, 5*time.Millisecond, time.Now(),
 	)
 
 	h := newTunHandler(ctx, reader, outbound.New(writer, crypto), coordinator, nil)
@@ -437,7 +446,7 @@ func TestHandleTun_RekeyInitSendError_DoesNotFail(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
 	egress := &tunHandlerFailingControlEgress{}
 	coordinator := tunnelrekey.NewClientRekeyCoordinator(
-		&primitives.DefaultKeyDeriver{}, ctrl, time.Millisecond, time.Now().Add(-time.Second),
+		&primitives.DefaultKeyDeriver{}, ctrl, nil, time.Millisecond, time.Now().Add(-time.Second),
 	)
 
 	h := newTunHandler(ctx, reader, egress, coordinator, nil)

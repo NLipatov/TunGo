@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
-	appRuntime "tungo/application/runtime"
+	tunnelClient "tungo/infrastructure/tunnel/client"
+	tunnelServer "tungo/infrastructure/tunnel/server"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
@@ -43,14 +45,25 @@ func (t *TUI) Run(ctx context.Context) error {
 
 func (t *TUI) runRuntime(
 	ctx context.Context,
-	mode appRuntime.Mode,
+	mode application.Mode,
 	logBuffer *bubbleTea.RuntimeLogBuffer,
 ) error {
 	info, err := t.runtimeInfo(mode)
 	if err != nil {
 		return fmt.Errorf("runtime info error: %w", err)
 	}
-	runtimeInstance, err := appRuntime.New(mode)
+	var runtimeInstance interface {
+		Run(context.Context) error
+		Ready() bool
+	}
+	switch mode {
+	case application.ModeClient:
+		runtimeInstance, err = tunnelClient.New()
+	case application.ModeServer:
+		runtimeInstance, err = tunnelServer.New()
+	default:
+		return fmt.Errorf("invalid runtime mode: %v", mode)
+	}
 	if err != nil {
 		return err
 	}
@@ -94,14 +107,14 @@ func (t *TUI) runRuntime(
 	return fmt.Errorf("runtime UI failed: %w", uiErr)
 }
 
-func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, error) {
+func (t *TUI) runtimeInfo(mode application.Mode) (appConfiguration.RuntimeInfo, error) {
 	switch mode {
-	case appRuntime.ModeClient:
+	case application.ModeClient:
 		if t.configuratorOptions.ClientConfigurationControl == nil {
 			return appConfiguration.RuntimeInfo{}, fmt.Errorf("client configuration control is nil")
 		}
 		return t.configuratorOptions.ClientConfigurationControl.RuntimeInfo()
-	case appRuntime.ModeServer:
+	case application.ModeServer:
 		if t.configuratorOptions.ServerConfigurationControl == nil {
 			return appConfiguration.RuntimeInfo{}, fmt.Errorf("server configuration control is nil")
 		}
@@ -130,7 +143,7 @@ func (t *TUI) runRuntimePhase(
 	if !dashboard.ReconfigureRequested() {
 		return false, nil
 	}
-	if options.Mode == appRuntime.ModeClient {
+	if options.Mode == application.ModeClient {
 		if err := t.preferences.DisableAutoConnect(); err != nil {
 			return false, fmt.Errorf("persist AutoConnect=false: %w", err)
 		}

@@ -61,99 +61,7 @@ func (m *runtimeInfoServerManager) RemoveAllowedPeer(id int) error {
 func (m *runtimeInfoServerManager) EnsureIPv6Subnets() error { return nil }
 func (m *runtimeInfoServerManager) InvalidateCache()         {}
 
-func TestClientControlRuntimeConfiguration(t *testing.T) {
-	publicKey := make([]byte, 32)
-	publicKey[0] = 7
-	conf := &clientConfiguration.Configuration{
-		ClientID: 3,
-		Protocol: settings.UDP,
-		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{TunName: "tcp0"},
-		},
-		UDPSettings: settings.Settings{
-			Addressing: settings.Addressing{
-				TunName:    "udp0",
-				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
-			},
-		},
-		WSSettings: settings.Settings{
-			Addressing: settings.Addressing{TunName: "ws0"},
-		},
-		ClientPublicKey: publicKey,
-	}
-	control := clientControl{
-		manager: runtimeInfoClientManager{cfg: conf},
-	}
-
-	got, err := control.ClientRuntimeConfiguration()
-	if err != nil {
-		t.Fatalf("ClientRuntimeConfiguration() error = %v", err)
-	}
-	if got.Settings.IPv4 != netip.MustParseAddr("10.0.1.4") {
-		t.Fatalf("derived IPv4 = %v", got.Settings.IPv4)
-	}
-	if got.Settings.Protocol != settings.UDP {
-		t.Fatalf("runtime protocol = %v", got.Settings.Protocol)
-	}
-	if len(got.CleanupSettings) != 3 ||
-		got.CleanupSettings[0].TunName != "tcp0" ||
-		got.CleanupSettings[1].TunName != "udp0" ||
-		got.CleanupSettings[2].TunName != "ws0" {
-		t.Fatalf("cleanup settings = %+v", got.CleanupSettings)
-	}
-	got.ClientPublicKey[0] = 9
-	if conf.ClientPublicKey[0] != 7 {
-		t.Fatal("runtime configuration aliases persisted client key")
-	}
-}
-
-func TestClientControlRuntimeConfiguration_UsesSelectedWSSProtocol(t *testing.T) {
-	control := clientControl{
-		manager: runtimeInfoClientManager{cfg: &clientConfiguration.Configuration{
-			ClientID: 1,
-			Protocol: settings.WSS,
-			WSSettings: settings.Settings{
-				Protocol: settings.WS,
-				Addressing: settings.Addressing{
-					IPv4Subnet: netip.MustParsePrefix("10.0.2.0/24"),
-				},
-			},
-		}},
-	}
-
-	got, err := control.ClientRuntimeConfiguration()
-	if err != nil {
-		t.Fatalf("ClientRuntimeConfiguration() error = %v", err)
-	}
-	if got.Settings.Protocol != settings.WSS {
-		t.Fatalf("runtime protocol = %v, want WSS", got.Settings.Protocol)
-	}
-}
-
-func TestClientControlRuntimeConfiguration_ConfigurationError(t *testing.T) {
-	want := errors.New("read failed")
-	control := clientControl{manager: runtimeInfoClientManager{err: want}}
-
-	_, err := control.ClientRuntimeConfiguration()
-	if !errors.Is(err, want) {
-		t.Fatalf("ClientRuntimeConfiguration() error = %v, want %v", err, want)
-	}
-}
-
-func TestClientControlRuntimeConfiguration_ActiveSettingsError(t *testing.T) {
-	control := clientControl{
-		manager: runtimeInfoClientManager{
-			cfg: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
-		},
-	}
-
-	_, err := control.ClientRuntimeConfiguration()
-	if err == nil || err.Error() != "unsupported protocol: UNKNOWN" {
-		t.Fatalf("expected unsupported protocol error, got %v", err)
-	}
-}
-
-func TestServerControlRuntimeConfiguration(t *testing.T) {
+func TestServerControlConfiguration(t *testing.T) {
 	peerKey := make([]byte, 32)
 	peerKey[0] = 11
 	conf := &serverConfiguration.Configuration{
@@ -173,16 +81,12 @@ func TestServerControlRuntimeConfiguration(t *testing.T) {
 		manager:    manager,
 	}
 
-	got, err := control.ServerRuntimeConfiguration()
+	got, err := control.ServerConfiguration()
 	if err != nil {
-		t.Fatalf("ServerRuntimeConfiguration() error = %v", err)
+		t.Fatalf("ServerConfiguration() error = %v", err)
 	}
 	if !got.EnableTCP || len(got.AllowedPeers) != 1 || got.AllowedPeers[0].ClientID != 1 {
 		t.Fatalf("unexpected runtime configuration: %+v", got)
-	}
-	got.AllowedPeers[0].PublicKey[0] = 12
-	if conf.AllowedPeers[0].PublicKey[0] != 11 {
-		t.Fatal("runtime configuration aliases persisted peer key")
 	}
 }
 

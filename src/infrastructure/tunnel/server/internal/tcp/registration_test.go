@@ -59,11 +59,11 @@ func (tcpRegEpochManager) RetirePreviousEpoch() bool              { return true 
 // tcpRegCryptoFactory returns a pre-configured crypto.
 type tcpRegCryptoFactory struct {
 	crypto crypto
-	ctrl   rekeyController
+	ctrl   epochController
 	err    error
 }
 
-func (f *tcpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, rekeyController, error) {
+func (f *tcpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, epochController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -185,10 +185,6 @@ func TestRegisterClient_Success(t *testing.T) {
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
 	}
-	if peer.RekeyController() == nil {
-		t.Fatal("expected server rekey coordinator")
-	}
-
 	// Verify peer is in repo. AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
 	ip := netip.MustParseAddr("10.0.0.2")
 	found, findErr := repo.GetByInternalAddrPort(ip)

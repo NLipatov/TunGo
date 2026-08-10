@@ -23,7 +23,7 @@ func (r *initTestEpochManager) RetirePreviousEpoch() bool { return true }
 func TestMaybeBuildRekeyInit_NilCrypto(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
-	s := NewClientRekeyCoordinator(nil, fsm, time.Second, time.Now().Add(-time.Hour))
+	s := NewClientRekeyCoordinator(nil, fsm, nil, time.Second, time.Now().Add(-time.Hour))
 	dst := make([]byte, v1PacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(time.Now(), dst)
 	if err != nil || ok {
@@ -32,7 +32,7 @@ func TestMaybeBuildRekeyInit_NilCrypto(t *testing.T) {
 }
 
 func TestMaybeBuildRekeyInit_NilFSM(t *testing.T) {
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, nil, time.Second, time.Now().Add(-time.Hour))
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, nil, nil, time.Second, time.Now().Add(-time.Hour))
 	dst := make([]byte, v1PacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(time.Now(), dst)
 	if err != nil || ok {
@@ -44,7 +44,7 @@ func TestMaybeBuildRekeyInit_BeforeRotateAt(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, 10*time.Second, now)
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, 10*time.Second, now)
 	dst := make([]byte, v1PacketLen)
 
 	// now is before rotateAt (now+10s), should return false.
@@ -58,7 +58,7 @@ func TestMaybeBuildRekeyInit_NotReady(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, time.Millisecond, now)
 
 	// Make the FSM unavailable for another rekey.
 	_, _ = fsm.StartRekey(make([]byte, 32), make([]byte, 32))
@@ -74,7 +74,7 @@ func TestMaybeBuildRekeyInit_ShortDst(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, time.Millisecond, now)
 
 	// dst too short.
 	dst := make([]byte, 10)
@@ -88,7 +88,7 @@ func TestMaybeBuildRekeyInit_Success(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, time.Millisecond, now)
 
 	dst := make([]byte, v1PacketLen)
 	payload, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), dst)
@@ -116,7 +116,7 @@ func TestMaybeBuildRekeyInit_SchedulesNextAttempt(t *testing.T) {
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
 	interval := 5 * time.Second
-	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, interval, now)
+	s := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, nil, interval, now)
 
 	callTime := now.Add(10 * time.Second)
 	dst := make([]byte, v1PacketLen)
@@ -136,7 +136,7 @@ func TestMaybeBuildRekeyInit_ReusesPendingKey(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(crypto, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(crypto, fsm, nil, time.Millisecond, now)
 
 	dst := make([]byte, v1PacketLen)
 	payload1, ok1, err := s.MaybeBuildRekeyInit(now.Add(time.Second), dst)
@@ -166,7 +166,7 @@ func TestMaybeBuildRekeyInit_WrongSizePublicKey(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(crypto, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(crypto, fsm, nil, time.Millisecond, now)
 
 	dst := make([]byte, v1PacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), dst)
@@ -184,7 +184,7 @@ func TestMaybeBuildRekeyInit_GenerateKeyPairError(t *testing.T) {
 	rk := &initTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	now := time.Now()
-	s := NewClientRekeyCoordinator(crypto, fsm, time.Millisecond, now)
+	s := NewClientRekeyCoordinator(crypto, fsm, nil, time.Millisecond, now)
 
 	dst := make([]byte, v1PacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), dst)

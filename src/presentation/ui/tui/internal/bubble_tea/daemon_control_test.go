@@ -3,7 +3,7 @@ package bubble_tea
 import (
 	"errors"
 
-	"tungo/application/runtime"
+	"tungo/application"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 )
 
@@ -30,13 +30,13 @@ func (s *daemonControlStub) Status() (systemd.UnitStatus, error) {
 	return s.status()
 }
 
-func (s *daemonControlStub) Setup(mode runtime.Mode) (string, error) {
+func (s *daemonControlStub) Setup(mode application.Mode) (string, error) {
 	switch mode {
-	case runtime.ModeClient:
+	case application.ModeClient:
 		if s.setupClient != nil {
 			return s.setupClient()
 		}
-	case runtime.ModeServer:
+	case application.ModeServer:
 		if s.setupServer != nil {
 			return s.setupServer()
 		}

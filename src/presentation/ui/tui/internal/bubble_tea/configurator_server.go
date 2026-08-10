@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"tungo/application"
 	appConfiguration "tungo/application/configuration"
-	"tungo/application/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -26,7 +26,7 @@ func (m Configurator) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 
 	switch m.server.menuOptions[m.cursor] {
 	case serverStartLabel:
-		m = m.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		m = m.startModeWithDaemonGuard(application.ModeServer, configuratorScreenServerSelect, false)
 		if m.done {
 			return m, tea.Quit
 		}

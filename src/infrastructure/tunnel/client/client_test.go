@@ -2,141 +2,78 @@ package client
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/netip"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	clientConfiguration "tungo/application/configuration/client"
+	"tungo/application/configuration/settings"
 )
 
-var errClientTest = errors.New("test error")
-
-type clientTestTransport struct {
-	closed int
-	remote netip.AddrPort
-}
-
-func (*clientTestTransport) Read([]byte) (int, error)         { return 0, io.EOF }
-func (*clientTestTransport) Write(packet []byte) (int, error) { return len(packet), nil }
-func (t *clientTestTransport) Close() error {
-	t.closed++
-	return nil
-}
-func (t *clientTestTransport) RemoteAddrPort() netip.AddrPort { return t.remote }
-
-type clientTestDevice struct {
-	closed int
-}
-
-func (*clientTestDevice) Read([]byte) (int, error)         { return 0, io.EOF }
-func (*clientTestDevice) Write(packet []byte) (int, error) { return len(packet), nil }
-func (d *clientTestDevice) Close() error {
-	d.closed++
-	return nil
-}
-
 type clientTestTunManager struct {
-	device    io.ReadWriteCloser
-	createErr error
-	endpoints []netip.AddrPort
+	disposeCalls atomic.Int32
 }
 
-func (m *clientTestTunManager) CreateDevice() (io.ReadWriteCloser, error) {
-	return m.device, m.createErr
-}
-func (*clientTestTunManager) DisposeDevices() error { return nil }
-func (m *clientTestTunManager) SetRouteEndpoint(endpoint netip.AddrPort) {
-	m.endpoints = append(m.endpoints, endpoint)
+func (*clientTestTunManager) CreateDevice() (io.ReadWriteCloser, error) {
+	return nil, nil
 }
 
-func TestClientRunOwnsSessionLifecycle(t *testing.T) {
-	remote := netip.MustParseAddrPort("192.0.2.1:443")
-	transport := &clientTestTransport{remote: remote}
-	device := &clientTestDevice{}
-	manager := &clientTestTunManager{device: device}
-	runCalled := false
-	readyCalled := false
-	client := &Client{
-		tunManager: manager,
-		establish: func(context.Context) (io.ReadWriteCloser, crypto, rekeyController, error) {
-			return transport, nil, nil, nil
-		},
-		runTunnel: func(
-			context.Context,
-			io.ReadWriteCloser,
-			io.ReadWriteCloser,
-			crypto,
-			rekeyController,
-		) (func() error, error) {
-			return func() error {
-				runCalled = true
-				return errClientTest
-			}, nil
-		},
-	}
-
-	if err := client.Run(context.Background(), func() { readyCalled = true }); !errors.Is(err, errClientTest) {
-		t.Fatalf("Run() error = %v, want %v", err, errClientTest)
-	}
-	if !readyCalled || !runCalled {
-		t.Fatalf("ready=%v run=%v, want both true", readyCalled, runCalled)
-	}
-	if transport.closed != 1 || device.closed != 1 {
-		t.Fatalf("closed transport=%d device=%d, want 1 each", transport.closed, device.closed)
-	}
-	if len(manager.endpoints) != 2 || manager.endpoints[0].IsValid() || manager.endpoints[1] != remote {
-		t.Fatalf("route endpoints = %v, want empty then %v", manager.endpoints, remote)
-	}
+func (m *clientTestTunManager) DisposeDevices() error {
+	m.disposeCalls.Add(1)
+	return nil
 }
 
-func TestClientRunClosesTransportAfterTunCreationFailure(t *testing.T) {
-	transport := &clientTestTransport{}
-	manager := &clientTestTunManager{createErr: errClientTest}
-	client := &Client{
-		tunManager: manager,
-		establish: func(context.Context) (io.ReadWriteCloser, crypto, rekeyController, error) {
-			return transport, nil, nil, nil
-		},
-	}
+func (*clientTestTunManager) SetRouteEndpoint(netip.AddrPort) {}
 
-	if err := client.Run(context.Background(), func() { t.Fatal("must not become ready") }); !errors.Is(err, errClientTest) {
-		t.Fatalf("Run() error = %v, want %v", err, errClientTest)
-	}
-	if transport.closed != 1 {
-		t.Fatalf("transport Close() calls = %d, want 1", transport.closed)
-	}
-}
-
-func TestClientRunClosesResourcesAfterTunnelSetupFailure(t *testing.T) {
-	transport := &clientTestTransport{}
-	device := &clientTestDevice{}
-	client := &Client{
-		tunManager: &clientTestTunManager{device: device},
-		establish: func(context.Context) (io.ReadWriteCloser, crypto, rekeyController, error) {
-			return transport, nil, nil, nil
-		},
-		runTunnel: func(context.Context, io.ReadWriteCloser, io.ReadWriteCloser, crypto, rekeyController) (func() error, error) {
-			return nil, errClientTest
-		},
-	}
-
-	if err := client.Run(context.Background(), func() { t.Fatal("must not become ready") }); !errors.Is(err, errClientTest) {
-		t.Fatalf("Run() error = %v, want %v", err, errClientTest)
-	}
-	if transport.closed != 1 || device.closed != 1 {
-		t.Fatalf("closed transport=%d device=%d, want 1 each", transport.closed, device.closed)
-	}
-}
-
-func TestClientRunStopsAfterConnectionFailure(t *testing.T) {
+func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	manager := &clientTestTunManager{}
 	client := &Client{
-		tunManager: manager,
-		establish: func(context.Context) (io.ReadWriteCloser, crypto, rekeyController, error) {
-			return nil, nil, nil, errClientTest
-		},
+		configuration: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
+		tunManager:    manager,
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- client.Run(ctx) }()
 
-	if err := client.Run(context.Background(), func() { t.Fatal("must not become ready") }); !errors.Is(err, errClientTest) {
-		t.Fatalf("Run() error = %v, want %v", err, errClientTest)
+	deadline := time.After(2 * time.Second)
+	for manager.disposeCalls.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("client did not start a session")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("client did not stop after cancellation")
+	}
+	if got := manager.disposeCalls.Load(); got != 2 {
+		t.Fatalf("DisposeDevices() calls = %d, want before attempt and on exit", got)
+	}
+}
+
+func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
+	manager := &clientTestTunManager{}
+	client := &Client{
+		configuration: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
+		tunManager:    manager,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := client.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := manager.disposeCalls.Load(); got != 1 {
+		t.Fatalf("DisposeDevices() calls = %d, want final cleanup", got)
 	}
 }

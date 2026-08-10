@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	clientConfiguration "tungo/application/configuration/client"
 	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
@@ -24,7 +25,7 @@ type tunWrapper interface {
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
 	connectionSettings settings.Settings
-	cleanupSettings    []settings.Settings
+	configuration      *clientConfiguration.Configuration
 	ip                 ip.Contract
 	ioctl              ioctl.Contract
 	mss                mssclamp.Contract
@@ -32,13 +33,14 @@ type PlatformTunManager struct {
 	routeEndpoint      netip.AddrPort
 }
 
-func NewPlatformTunManager(
-	connectionSettings settings.Settings,
-	cleanupSettings []settings.Settings,
-) (*PlatformTunManager, error) {
+func NewPlatformTunManager(conf *clientConfiguration.Configuration) (*PlatformTunManager, error) {
+	connectionSettings, err := selectedSettings(conf)
+	if err != nil {
+		return nil, err
+	}
 	return &PlatformTunManager{
 		connectionSettings: connectionSettings,
-		cleanupSettings:    append([]settings.Settings(nil), cleanupSettings...),
+		configuration:      conf,
 		ip:                 ip.NewWrapper(exec_commander.NewExecCommander()),
 		ioctl:              ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:                mssclamp.NewManager(exec_commander.NewExecCommander()),
@@ -217,23 +219,29 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
-	for _, s := range t.cleanupSettings {
-		if err := t.mss.Remove(s.TunName); err != nil {
-			slog.Warn("failed to remove MSS clamping", "name", s.TunName, "err", err)
-		}
-		// Remove split routes before deleting the device
-		_ = t.ip.RouteDelSplitDefault(s.TunName)
-		_ = t.ip.Route6DelSplitDefault(s.TunName)
-		if routeTarget, routeErr := host_resolver.ResolveIP(context.Background(), s.Server); routeErr == nil {
+	t.disposeDevice(t.configuration.TCPSettings)
+	t.disposeDevice(t.configuration.UDPSettings)
+	t.disposeDevice(t.configuration.WSSettings)
+	return nil
+}
+
+func (t *PlatformTunManager) disposeDevice(s settings.Settings) {
+	if s.TunName == "" {
+		return
+	}
+	if err := t.mss.Remove(s.TunName); err != nil {
+		slog.Warn("failed to remove MSS clamping", "name", s.TunName, "err", err)
+	}
+	// Remove split routes before deleting the device
+	_ = t.ip.RouteDelSplitDefault(s.TunName)
+	_ = t.ip.Route6DelSplitDefault(s.TunName)
+	if routeTarget, routeErr := host_resolver.ResolveIP(context.Background(), s.Server); routeErr == nil {
+		_ = t.ip.RouteDel(routeTarget)
+	}
+	if s.Server.IPv6 != "" {
+		if routeTarget, routeErr := host_resolver.ResolveIPv6(context.Background(), s.Server); routeErr == nil {
 			_ = t.ip.RouteDel(routeTarget)
 		}
-		if s.Server.IPv6 != "" {
-			if routeTarget, routeErr := host_resolver.ResolveIPv6(context.Background(), s.Server); routeErr == nil {
-				_ = t.ip.RouteDel(routeTarget)
-			}
-		}
-		_ = t.ip.LinkDelete(s.TunName)
 	}
-
-	return nil
+	_ = t.ip.LinkDelete(s.TunName)
 }
