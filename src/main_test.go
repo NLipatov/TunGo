@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/application/version"
-	"tungo/presentation/elevation"
+	"tungo/internal/elevation"
+	"tungo/internal/version"
 )
 
 const runMainVersionEnv = "TUNGO_TEST_RUN_MAIN_VERSION"

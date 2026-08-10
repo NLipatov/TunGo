@@ -7,19 +7,18 @@ import (
 	"os"
 	"time"
 
-	"tungo/application"
-	"tungo/application/commandline"
-	"tungo/application/configuration"
-	"tungo/application/version"
-	"tungo/infrastructure/PAL/exec_commander"
-	"tungo/infrastructure/PAL/service_management/linux/systemd"
-	"tungo/infrastructure/logging"
-	"tungo/infrastructure/telemetry/trafficstats"
-	tunnelClient "tungo/infrastructure/tunnel/client"
-	tunnelServer "tungo/infrastructure/tunnel/server"
-	"tungo/presentation/elevation"
-	"tungo/presentation/signals/shutdown"
-	"tungo/presentation/ui/tui"
+	"tungo/internal/client"
+	"tungo/internal/commandline"
+	"tungo/internal/config"
+	"tungo/internal/daemon/systemd"
+	"tungo/internal/elevation"
+	"tungo/internal/logging"
+	"tungo/internal/platform/command"
+	"tungo/internal/server"
+	"tungo/internal/shutdown"
+	"tungo/internal/trafficstats"
+	"tungo/internal/ui/tui"
+	"tungo/internal/version"
 )
 
 const appName = "tungo"
@@ -34,12 +33,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	shutdownSignalHandler := shutdown.NewHandler(
-		ctx,
-		cancel,
-		shutdown.NewNotifier(),
-	)
-	shutdownSignalHandler.Handle()
+	shutdown.Handle(ctx, cancel)
 	var err error
 	if isTUI() {
 		err = runTUI(ctx)
@@ -67,7 +61,7 @@ func runCLI(ctx context.Context) error {
 		fmt.Printf("%s %s\n", appName, version.Current())
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		serverControl := configuration.NewServerControl()
+		serverControl := config.NewServerControl()
 		if serverControl == nil {
 			return fmt.Errorf("server configuration is not supported")
 		}
@@ -79,18 +73,18 @@ func runCLI(ctx context.Context) error {
 		return nil
 	case commandline.CommandRuntime:
 		switch command.RuntimeMode {
-		case application.ModeClient:
-			client, err := tunnelClient.New()
+		case config.ModeClient:
+			runningClient, err := client.New()
 			if err != nil {
 				return err
 			}
-			return client.Run(ctx)
-		case application.ModeServer:
-			server, err := tunnelServer.New()
+			return runningClient.Run(ctx)
+		case config.ModeServer:
+			runningServer, err := server.New()
 			if err != nil {
 				return err
 			}
-			return server.Run(ctx)
+			return runningServer.Run(ctx)
 		default:
 			return fmt.Errorf("invalid runtime mode: %v", command.RuntimeMode)
 		}
@@ -103,9 +97,9 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls := configuration.NewControls()
+	configurationControls := config.NewControls()
 	var daemonControl systemd.Control
-	systemdControl := systemd.NewUnitInstaller(exec_commander.NewExecCommander())
+	systemdControl := systemd.NewUnitInstaller(command.New())
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}

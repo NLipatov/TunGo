@@ -1,0 +1,59 @@
+package udp
+
+import (
+	"io"
+	"net/netip"
+	"sync/atomic"
+)
+
+type registrationQueue interface {
+	ReadInto(dst []byte) (int, error)
+	Close()
+}
+
+// registrationConn adapts registrationQueue to the handshake's Read/Write interface.
+//
+// The destination address is stored atomically so that it can be updated
+// after NAT roaming without replacing the writer in the egress pipeline.
+type registrationConn struct {
+	conn  UdpListener
+	addr  atomic.Pointer[netip.AddrPort]
+	queue registrationQueue
+}
+
+func NewRegistrationConn(
+	conn UdpListener,
+	addrPort netip.AddrPort,
+	queue registrationQueue,
+) io.ReadWriteCloser {
+	a := &registrationConn{
+		conn:  conn,
+		queue: queue,
+	}
+	a.addr.Store(&addrPort)
+	return a
+}
+
+func (t *registrationConn) Read(p []byte) (int, error) {
+	return t.queue.ReadInto(p)
+}
+
+func (t *registrationConn) Write(p []byte) (int, error) {
+	return t.conn.WriteToUDPAddrPort(p, *t.addr.Load())
+}
+
+func (t *registrationConn) Close() error {
+	// Do not close the shared UDP socket; its lifecycle is controlled by
+	// The queue is closed by the server registration lifecycle.
+	return nil
+}
+
+// RemoteAddrPort returns the client's current external address.
+func (t *registrationConn) RemoteAddrPort() netip.AddrPort {
+	return *t.addr.Load()
+}
+
+// SetAddrPort atomically updates the destination address after NAT roaming.
+func (t *registrationConn) SetAddrPort(addr netip.AddrPort) {
+	t.addr.Store(&addr)
+}
