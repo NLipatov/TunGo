@@ -217,25 +217,30 @@ func (s *Server) runTun() error {
 }
 
 func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
+	if kind, ok := servicepacket.Parse(plaintext); ok {
+		switch kind {
+		case servicepacket.RekeyInit, servicepacket.RekeyInitV2:
+			return true, s.handleRekey(peer, carrierEpoch, plaintext)
+		case servicepacket.Ping:
+			return true, s.sendService(peer, servicepacket.Pong, nil)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext []byte) error {
 	response, _, rekeyed, err := peer.HandleRekey(carrierEpoch, &s.deriver, plaintext)
 	if err != nil {
 		if errors.Is(err, chacha20.ErrEpochExhausted) {
 			_ = s.sendService(peer, servicepacket.EpochExhausted, nil)
 		}
-		return true, nil
+		return nil
 	}
 	if rekeyed {
-		return true, s.sendPlaintext(peer, response)
+		return s.sendPlaintext(peer, response)
 	}
-	kind, ok := servicepacket.Parse(plaintext)
-	if !ok {
-		return false, nil
-	}
-	switch kind {
-	case servicepacket.Ping:
-		return true, s.sendService(peer, servicepacket.Pong, nil)
-	}
-	return true, nil
+	return nil
 }
 
 func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, body []byte) error {
