@@ -14,14 +14,12 @@ import (
 	"tungo/internal/elevation"
 	"tungo/internal/logging"
 	"tungo/internal/platform/command"
+	"tungo/internal/product"
 	"tungo/internal/server"
 	"tungo/internal/shutdown"
 	"tungo/internal/trafficstats"
 	"tungo/internal/ui/tui"
-	"tungo/internal/version"
 )
-
-const appName = "tungo"
 
 func main() {
 	exitCode := 0
@@ -51,7 +49,7 @@ func main() {
 func runCLI(ctx context.Context) error {
 	command, err := commandline.ParseCommand(os.Args[1:])
 	if err != nil {
-		fmt.Print(commandline.CommandUsage(appName))
+		fmt.Print(commandline.CommandUsage(product.Name))
 		return fmt.Errorf("configuration error: %w", err)
 	}
 	if command.RequiresElevation {
@@ -61,7 +59,7 @@ func runCLI(ctx context.Context) error {
 	}
 	switch command.Kind {
 	case commandline.CommandVersion:
-		fmt.Printf("%s %s\n", appName, version.Current())
+		fmt.Printf("%s %s\n", product.Name, product.Version)
 		return nil
 	case commandline.CommandServerConfigGenerate:
 		serverControl := config.NewServerControl()
@@ -125,7 +123,7 @@ func requireElevation() error {
 	}
 	return fmt.Errorf(
 		"%s must be run with admin privileges.\n%s",
-		appName, elevation.Hint(),
+		product.Name, elevation.Hint(),
 	)
 }
 

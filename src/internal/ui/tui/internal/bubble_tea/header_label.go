@@ -1,17 +1,7 @@
 package bubble_tea
 
-import (
-	"strings"
-	"tungo/internal/version"
-)
-
-const defaultProductLabel = "TunGo"
-const devBuildLabel = "dev-build"
+import "tungo/internal/product"
 
 func productLabel() string {
-	tag := strings.TrimSpace(version.Tag)
-	if tag == "" || strings.EqualFold(tag, "version not set") {
-		return defaultProductLabel + " [" + devBuildLabel + "]"
-	}
-	return defaultProductLabel + " [" + tag + "]"
+	return product.Name + " [" + product.Version + "]"
 }
