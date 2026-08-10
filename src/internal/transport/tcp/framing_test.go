@@ -34,6 +34,12 @@ type framedConnMockConn struct {
 	wCalls int
 }
 
+type framedConnDiscard struct{}
+
+func (framedConnDiscard) Read([]byte) (int, error)    { return 0, io.EOF }
+func (framedConnDiscard) Write(p []byte) (int, error) { return len(p), nil }
+func (framedConnDiscard) Close() error                { return nil }
+
 func (m *framedConnMockConn) Read(p []byte) (int, error) {
 	m.rCalls++
 	if m.readErrAt > 0 && m.rCalls == m.readErrAt {
@@ -144,6 +150,28 @@ func TestWrite_Success_WithPartialPrefixAndPayload(t *testing.T) {
 	want := mkFrame(payload)
 	if got := mock.writeBuf.Bytes(); !bytes.Equal(want, got) {
 		t.Fatalf("written mismatch:\nwant=%x\ngot =%x", want, got)
+	}
+}
+
+func TestWrite_DoesNotAllocate(t *testing.T) {
+	a, err := NewFramedConn(framedConnDiscard{}, 1500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, 1500)
+
+	var n int
+	allocs := testing.AllocsPerRun(100, func() {
+		n, err = a.Write(payload)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(payload) {
+		t.Fatalf("n=%d want=%d", n, len(payload))
+	}
+	if allocs != 0 {
+		t.Fatalf("Write allocations=%v, want 0", allocs)
 	}
 }
 

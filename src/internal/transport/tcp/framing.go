@@ -7,16 +7,21 @@ import (
 	"io"
 	"math"
 	"net/netip"
+	"sync"
 )
 
 type remoteAddrProvider interface {
 	RemoteAddrPort() netip.AddrPort
 }
 
-// framedConn is not safe for concurrent Read/Write without external synchronization.
+// framedConn serializes calls to Write. Concurrent reads, or adapters that do
+// not support simultaneous Read and Write, still require external synchronization.
 type framedConn struct {
 	adapter  io.ReadWriteCloser
 	frameCap int
+
+	writeMu           sync.Mutex
+	writeHeaderBuffer [2]byte
 
 	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
 	bufReader *bufio.Reader
@@ -54,9 +59,12 @@ func (a *framedConn) Write(data []byte) (int, error) {
 	if len(data) > a.frameCap {
 		return 0, ErrFrameCapExceeded
 	}
-	var header [2]byte
-	binary.BigEndian.PutUint16(header[:], uint16(len(data)))
-	if err := a.writeFull(a.adapter, header[:]); err != nil {
+
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+
+	binary.BigEndian.PutUint16(a.writeHeaderBuffer[:], uint16(len(data)))
+	if err := a.writeFull(a.adapter, a.writeHeaderBuffer[:]); err != nil {
 		return 0, err
 	}
 	if err := a.writeFull(a.adapter, data); err != nil {
