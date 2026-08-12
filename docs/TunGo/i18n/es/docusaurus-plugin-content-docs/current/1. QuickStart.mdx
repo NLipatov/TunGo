@@ -13,13 +13,13 @@ Pon en marcha tu servidor y cliente TunGo en minutos.
    <Tabs>
      <TabItem value="linux" label="Linux amd64" default>
      ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
+     curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 && \
      sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
      ```
      </TabItem>
      <TabItem value="linux-arm64" label="Linux arm64">
      ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
+     curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 && \
      sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
      ```
      </TabItem>
@@ -47,7 +47,7 @@ Consulta <a href="/docs/Advanced/Linux/Setup server systemd unit">esta guía</a>
    <Tabs>
      <TabItem value="linux-amd64" label="Linux amd64" default>
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
+         curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 && \
          sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
          ```
 
@@ -57,7 +57,7 @@ Consulta <a href="/docs/Advanced/Linux/Setup server systemd unit">esta guía</a>
      </TabItem>
      <TabItem value="linux-arm64" label="Linux arm64">
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
+         curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 && \
          sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
          ```
 

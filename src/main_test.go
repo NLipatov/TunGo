@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
-	"tungo/presentation/elevation"
+	"tungo/internal/elevation"
+	"tungo/internal/product"
 )
 
 const runMainVersionEnv = "TUNGO_TEST_RUN_MAIN_VERSION"
@@ -82,6 +82,10 @@ func TestMain_Version(t *testing.T) {
 
 func TestRunCLI_Version(t *testing.T) {
 	setCommandLine(t, "version")
+	previousVersion := product.Version
+	product.Version = "v-test"
+	t.Cleanup(func() { product.Version = previousVersion })
+
 	var runErr error
 	output := captureStdout(t, func() {
 		runErr = runCLI(context.Background())
@@ -90,8 +94,9 @@ func TestRunCLI_Version(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runCLI() error = %v", runErr)
 	}
-	if strings.TrimSpace(output) == "" {
-		t.Fatal("expected version output")
+	want := product.Name + " v-test\n"
+	if output != want {
+		t.Fatalf("version output = %q, want %q", output, want)
 	}
 }
 
@@ -105,12 +110,5 @@ func TestRequireElevationMatchesPlatformState(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "admin privileges") {
 		t.Fatalf("requireElevation() error = %v", err)
-	}
-}
-
-func TestShowFatalInCLIMode(t *testing.T) {
-	setCommandLine(t, "version")
-	if got := showFatal(errors.New("boom")); got != 1 {
-		t.Fatalf("showFatal() = %d, want 1", got)
 	}
 }

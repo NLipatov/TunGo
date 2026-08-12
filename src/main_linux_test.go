@@ -50,7 +50,6 @@ func requireCleanDefaultConfigDirectory(t *testing.T) string {
 		_ = os.Remove(filepath.Join(directory, "client_configuration.json.1"))
 		_ = os.Remove(filepath.Join(directory, "client_configuration.json"))
 		_ = os.Remove(filepath.Join(directory, "server_configuration.json"))
-		_ = os.Remove(filepath.Join(directory, "crash.log"))
 		_ = os.Remove(directory)
 	})
 	return directory

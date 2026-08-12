@@ -6,19 +6,19 @@ import (
 	"log/slog"
 	"os"
 	"time"
-	"tungo/application/commandline"
-	"tungo/application/configuration"
-	"tungo/application/runtime"
-	"tungo/application/version"
-	"tungo/domain/app"
-	"tungo/infrastructure/PAL/exec_commander"
-	"tungo/infrastructure/PAL/service_management/linux/systemd"
-	"tungo/infrastructure/PAL/signal"
-	"tungo/infrastructure/logging"
-	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/presentation/elevation"
-	"tungo/presentation/signals/shutdown"
-	"tungo/presentation/ui/tui"
+
+	"tungo/internal/client"
+	"tungo/internal/commandline"
+	"tungo/internal/config"
+	"tungo/internal/daemon/systemd"
+	"tungo/internal/elevation"
+	"tungo/internal/logging"
+	"tungo/internal/platform/command"
+	"tungo/internal/product"
+	"tungo/internal/server"
+	"tungo/internal/shutdown"
+	"tungo/internal/trafficstats"
+	"tungo/internal/ui/tui"
 )
 
 func main() {
@@ -31,31 +31,25 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	shutdownSignalHandler := shutdown.NewHandler(
-		ctx,
-		cancel,
-		signal.NewDefaultProvider(),
-		shutdown.NewNotifier(),
-	)
-	shutdownSignalHandler.Handle()
-	var err error
-	switch uiMode := app.CurrentUIMode(); uiMode {
-	case app.CLI:
-		err = runCLI(ctx)
-	case app.TUI:
-		err = runTUI(ctx)
-	default:
-		err = fmt.Errorf("unknown UI mode: %v", uiMode)
-	}
-	if err != nil {
-		exitCode = showFatal(err)
+	shutdown.Watch(ctx, cancel)
+
+	if isTUI() {
+		if err := runTUI(ctx); err != nil {
+			tui.ShowFatalError(err.Error())
+			exitCode = 1
+		}
+	} else {
+		if err := runCLI(ctx); err != nil {
+			slog.Error("fatal error", "err", err)
+			exitCode = 1
+		}
 	}
 }
 
 func runCLI(ctx context.Context) error {
 	command, err := commandline.ParseCommand(os.Args[1:])
 	if err != nil {
-		fmt.Print(commandline.CommandUsage(app.Name))
+		fmt.Print(commandline.CommandUsage(product.Name))
 		return fmt.Errorf("configuration error: %w", err)
 	}
 	if command.RequiresElevation {
@@ -65,10 +59,10 @@ func runCLI(ctx context.Context) error {
 	}
 	switch command.Kind {
 	case commandline.CommandVersion:
-		version.Run()
+		fmt.Printf("%s %s\n", product.Name, product.Version)
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		serverControl := configuration.NewDefaultServerControl()
+		serverControl := config.NewServerControl()
 		if serverControl == nil {
 			return fmt.Errorf("server configuration is not supported")
 		}
@@ -79,11 +73,22 @@ func runCLI(ctx context.Context) error {
 		fmt.Println(generated.JSON)
 		return nil
 	case commandline.CommandRuntime:
-		runtimeInstance, err := runtime.New(command.RuntimeMode)
-		if err != nil {
-			return err
+		switch command.RuntimeMode {
+		case config.ModeClient:
+			runningClient, err := client.New()
+			if err != nil {
+				return err
+			}
+			return runningClient.Run(ctx)
+		case config.ModeServer:
+			runningServer, err := server.New()
+			if err != nil {
+				return err
+			}
+			return runningServer.Run(ctx)
+		default:
+			return fmt.Errorf("invalid runtime mode: %v", command.RuntimeMode)
 		}
-		return runtimeInstance.Run(ctx)
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}
@@ -93,9 +98,9 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls := configuration.NewDefaultControls()
+	configurationControls := config.NewControls()
 	var daemonControl systemd.Control
-	systemdControl := systemd.NewUnitInstaller(exec_commander.NewExecCommander())
+	systemdControl := systemd.NewUnitInstaller(command.New())
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}
@@ -118,17 +123,10 @@ func requireElevation() error {
 	}
 	return fmt.Errorf(
 		"%s must be run with admin privileges.\n%s",
-		app.Name, elevation.Hint(),
+		product.Name, elevation.Hint(),
 	)
 }
 
-// showFatal displays a fatal error and returns the exit code.
-// In TUI mode it shows a themed, dismissable screen; in CLI mode it logs.
-func showFatal(err error) int {
-	if app.CurrentUIMode() == app.TUI {
-		tui.ShowFatalError(err.Error())
-	} else {
-		slog.Error("fatal error", "err", err)
-	}
-	return 1
+func isTUI() bool {
+	return len(os.Args) < 2
 }
