@@ -31,9 +31,10 @@ func createTempConfigFile(t *testing.T, data any) string {
 
 func TestRead_Happy_NoEnv_EnsuresDefaults(t *testing.T) {
 	path := createTempConfigFile(t, struct{}{}) // empty JSON
-	r := newDefaultReader(path)
+	r := newReader(path)
 
 	// Ensure no env noise
+	_ = os.Unsetenv("Host")
 	_ = os.Unsetenv("ServerIP")
 	_ = os.Unsetenv("EnableUDP")
 	_ = os.Unsetenv("EnableTCP")
@@ -55,7 +56,7 @@ func TestRead_Happy_NoEnv_EnsuresDefaults(t *testing.T) {
 //
 
 func TestRead_FileDoesNotExist(t *testing.T) {
-	r := newDefaultReader("/definitely/missing/conf.json")
+	r := newReader("/definitely/missing/conf.json")
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("expected 'does not exist', got: %v", err)
@@ -71,7 +72,7 @@ func TestRead_FileUnreadable_IsDirectory(t *testing.T) {
 	if err := os.Mkdir(asDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	r := newDefaultReader(asDir)
+	r := newReader(asDir)
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "is unreadable") {
 		t.Fatalf("expected 'is unreadable', got: %v", err)
@@ -84,7 +85,7 @@ func TestRead_InvalidJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{invalid json"), 0o644); err != nil {
 		t.Fatalf("write invalid json: %v", err)
 	}
-	r := newDefaultReader(path)
+	r := newReader(path)
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "is invalid") {
 		t.Fatalf("expected 'is invalid', got: %v", err)
@@ -109,7 +110,7 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 		},
 	}
 	path := createTempConfigFile(t, initial)
-	r := newDefaultReader(path)
+	r := newReader(path)
 
 	_, err := r.read()
 	if err == nil {
@@ -124,28 +125,83 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 // ---------- Env overrides: unset, empty, invalid, valid(true/false) ----------
 //
 
-func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
+func TestRead_HostEnvPrecedesDeprecatedServerIP(t *testing.T) {
 	initial := Configuration{Host: "1.2.3.4"}
 	path := createTempConfigFile(t, initial)
 
-	// Case 1: set
+	t.Setenv("Host", "vpn.example.com")
 	t.Setenv("ServerIP", "10.0.0.1")
-	conf, err := newDefaultReader(path).read()
+	conf, err := newReader(path).read()
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if conf.Host != "vpn.example.com" {
+		t.Fatalf("Host override failed: %q", conf.Host)
+	}
+}
+
+func TestRead_DeprecatedServerIPEnvFallback(t *testing.T) {
+	initial := Configuration{Host: "1.2.3.4"}
+	path := createTempConfigFile(t, initial)
+
+	t.Setenv("Host", "")
+	t.Setenv("ServerIP", "10.0.0.1")
+	conf, err := newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
 	if conf.Host != "10.0.0.1" {
-		t.Fatalf("ServerIP override failed: %q", conf.Host)
+		t.Fatalf("ServerIP fallback failed: %q", conf.Host)
 	}
+}
 
-	// Case 2: empty string -> ignored (branch env == "")
+func TestRead_EmptyHostEnvsKeepConfig(t *testing.T) {
+	path := createTempConfigFile(t, Configuration{Host: "vpn.example.com"})
+	t.Setenv("Host", "")
 	t.Setenv("ServerIP", "")
-	conf, err = newDefaultReader(path).read()
+
+	conf, err := newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
-	if conf.Host != "1.2.3.4" {
-		t.Fatalf("empty env should not override, got %q", conf.Host)
+	if conf.Host != "vpn.example.com" {
+		t.Fatalf("Host = %q, want configuration value", conf.Host)
+	}
+}
+
+func TestRead_HostConfigPrecedesDeprecatedFallbackServerAddress(t *testing.T) {
+	path := createTempConfigFile(t, struct {
+		Configuration
+		FallbackServerAddress string `json:"FallbackServerAddress"`
+	}{
+		Configuration:         Configuration{Host: "vpn.example.com"},
+		FallbackServerAddress: "192.0.2.1",
+	})
+	t.Setenv("Host", "")
+	t.Setenv("ServerIP", "")
+
+	conf, err := newReader(path).read()
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if conf.Host != "vpn.example.com" {
+		t.Fatalf("Host = %q, want current configuration value", conf.Host)
+	}
+}
+
+func TestRead_DeprecatedFallbackServerAddressConfig(t *testing.T) {
+	path := createTempConfigFile(t, struct {
+		FallbackServerAddress string `json:"FallbackServerAddress"`
+	}{FallbackServerAddress: "vpn.example.com"})
+	t.Setenv("Host", "")
+	t.Setenv("ServerIP", "")
+
+	conf, err := newReader(path).read()
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if conf.Host != "vpn.example.com" {
+		t.Fatalf("Host = %q, want deprecated configuration fallback", conf.Host)
 	}
 }
 
@@ -158,7 +214,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "meh")
 	t.Setenv("EnableTCP", "nope")
 	t.Setenv("EnableWS", "y")
-	conf, err := newDefaultReader(path).read()
+	conf, err := newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -170,7 +226,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "true")
 	t.Setenv("EnableTCP", "true")
 	t.Setenv("EnableWS", "true")
-	conf, err = newDefaultReader(path).read()
+	conf, err = newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -182,7 +238,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "false")
 	t.Setenv("EnableTCP", "false")
 	t.Setenv("EnableWS", "false")
-	conf, err = newDefaultReader(path).read()
+	conf, err = newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -194,7 +250,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	_ = os.Unsetenv("EnableUDP")
 	_ = os.Unsetenv("EnableTCP")
 	_ = os.Unsetenv("EnableWS")
-	conf, err = newDefaultReader(path).read()
+	conf, err = newReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}

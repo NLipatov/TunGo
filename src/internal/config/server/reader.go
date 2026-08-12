@@ -13,33 +13,19 @@ type Reader interface {
 	read() (*Configuration, error)
 }
 
-type defaultReader struct {
+type reader struct {
 	path string
 }
 
-func newDefaultReader(path string) *defaultReader {
-	return &defaultReader{path: path}
+func newReader(path string) *reader {
+	return &reader{path: path}
 }
 
-func (c *defaultReader) read() (*Configuration, error) {
-	fileBytes, err := os.ReadFile(c.path)
+func (c *reader) read() (*Configuration, error) {
+	configuration, err := c.readFromDisk()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("configuration file %q does not exist: %w", c.path, err)
-		}
-		return nil, fmt.Errorf("configuration file %q is unreadable: %w", c.path, err)
+		return nil, err
 	}
-
-	var configuration Configuration
-	if err := json.Unmarshal(fileBytes, &configuration); err != nil {
-		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
-	}
-
-	if err := c.setEnvServerHost(&configuration); err != nil {
-		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
-	}
-	c.setEnvEnabledProtocols(&configuration)
-	configuration.ApplyServerDefaults()
 	if err := Validate(configuration); err != nil {
 		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
 	}
@@ -47,16 +33,48 @@ func (c *defaultReader) read() (*Configuration, error) {
 	return &configuration, nil
 }
 
-func (c *defaultReader) setEnvServerHost(conf *Configuration) error {
-	raw := os.Getenv("ServerIP")
-	if raw == "" {
-		return nil
+func (c *reader) readFromDisk() (Configuration, error) {
+	fileBytes, err := os.ReadFile(c.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Configuration{}, fmt.Errorf("configuration file %q does not exist: %w", c.path, err)
+		}
+		return Configuration{}, fmt.Errorf("configuration file %q is unreadable: %w", c.path, err)
 	}
-	conf.Host = strings.TrimSpace(raw)
-	return nil
+	type configurationWithDeprecatedFields struct {
+		Configuration
+		// FallbackServerAddress is deprecated. Host is used instead.
+		FallbackServerAddress string `json:"FallbackServerAddress"`
+	}
+	var withDeprecated configurationWithDeprecatedFields
+	if err := json.Unmarshal(fileBytes, &withDeprecated); err != nil {
+		return Configuration{}, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
+	}
+	actual := withDeprecated.Configuration
+	if strings.TrimSpace(actual.Host) == "" &&
+		strings.TrimSpace(withDeprecated.FallbackServerAddress) != "" {
+		actual.Host = strings.TrimSpace(withDeprecated.FallbackServerAddress)
+	}
+	c.setEnvServerHost(&actual)
+	c.setEnvEnabledProtocols(&actual)
+	actual.ApplyServerDefaults()
+	return actual, nil
 }
 
-func (c *defaultReader) setEnvEnabledProtocols(conf *Configuration) {
+func (c *reader) setEnvServerHost(conf *Configuration) {
+	host := strings.TrimSpace(os.Getenv("Host"))
+	if len(host) > 0 {
+		conf.Host = host
+		return
+	}
+	// ServerIP is deprecated; keep it as a fallback for existing installations.
+	serverIP := strings.TrimSpace(os.Getenv("ServerIP"))
+	if len(serverIP) > 0 {
+		conf.Host = serverIP
+	}
+}
+
+func (c *reader) setEnvEnabledProtocols(conf *Configuration) {
 	envUDP := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
 	envWS := os.Getenv("EnableWS")

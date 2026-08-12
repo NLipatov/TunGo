@@ -28,7 +28,7 @@ type Manager struct {
 func NewManager(path string) *Manager {
 	return &Manager{
 		writer: newDefaultWriter(path),
-		reader: NewTTLReader(newDefaultReader(path), time.Minute*15),
+		reader: NewTTLReader(newReader(path), time.Minute*15),
 	}
 }
 
