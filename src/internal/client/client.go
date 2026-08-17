@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"tungo/internal/client/resume"
 	"tungo/internal/client/tcp"
 	"tungo/internal/client/udp"
 	"tungo/internal/config"
@@ -17,6 +18,10 @@ import (
 	"tungo/internal/config/settings"
 	"tungo/internal/trafficstats"
 	clienttun "tungo/internal/tun/client"
+)
+
+var (
+	ErrResumeDetected = errors.New("resume detected")
 )
 
 type tunManager interface {
@@ -104,7 +109,22 @@ func (c *Client) runSession(parentCtx context.Context) error {
 	defer cancel()
 
 	c.disposeDevices()
-	return c.forward(ctx)
+	forward := make(chan error)
+	go func() {
+		forward <- c.forward(ctx)
+	}()
+	select {
+	case <-ctx.Done():
+		cancel()
+		<-forward
+		return ctx.Err()
+	case <-resume.Watch(ctx):
+		cancel()
+		<-forward
+		return ErrResumeDetected
+	case err := <-forward:
+		return err
+	}
 }
 
 func (c *Client) forward(ctx context.Context) error {
