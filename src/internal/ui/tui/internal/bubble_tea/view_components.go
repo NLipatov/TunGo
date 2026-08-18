@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"strings"
+	"time"
 )
 
 const runtimeLogViewportSnapshotLimit = 4096
@@ -131,19 +132,116 @@ func renderLogsBody(lines []string, width int, styles uiStyles) []string {
 }
 
 func renderLogsViewportContent(lines []string, width int, styles uiStyles) string {
-	_ = styles
 	if len(lines) == 0 {
 		return "No logs yet"
 	}
-	var body strings.Builder
-	body.Grow(len(lines) * (width + 1))
+
+	rows := make([]string, 0, len(lines))
+	lastDate := ""
 	for i, line := range lines {
 		if i > 0 {
-			body.WriteByte('\n')
+			rows = append(rows, "")
 		}
-		body.WriteString(truncateWithEllipsis(line, width))
+
+		timestamp, level, message, ok := parseSlogTextLine(line)
+		if !ok {
+			rows = append(rows, wrapText(line, width)...)
+			continue
+		}
+
+		date := timestamp.Format("2006-01-02")
+		if date != lastDate {
+			rows = append(rows, styles.meta.Render(renderLogDateDivider(date, width)))
+			lastDate = date
+		}
+		rows = append(rows, renderLogEntry(timestamp, level, message, width)...)
 	}
-	return body.String()
+	return strings.Join(rows, "\n")
+}
+
+func parseSlogTextLine(line string) (time.Time, string, string, bool) {
+	timeField, rest, ok := strings.Cut(line, " ")
+	if !ok || !strings.HasPrefix(timeField, "time=") {
+		return time.Time{}, "", "", false
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(timeField, "time="))
+	if err != nil {
+		return time.Time{}, "", "", false
+	}
+
+	levelField, messageField, ok := strings.Cut(rest, " ")
+	if !ok || !strings.HasPrefix(levelField, "level=") || !strings.HasPrefix(messageField, "msg=") {
+		return time.Time{}, "", "", false
+	}
+
+	level := strings.TrimPrefix(levelField, "level=")
+	message := displaySlogMessage(strings.TrimPrefix(messageField, "msg="))
+	return timestamp, level, message, true
+}
+
+func displaySlogMessage(valueAndAttrs string) string {
+	if len(valueAndAttrs) < 2 || valueAndAttrs[0] != '"' {
+		return valueAndAttrs
+	}
+
+	escaped := false
+	for i := 1; i < len(valueAndAttrs); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case valueAndAttrs[i] == '\\':
+			escaped = true
+		case valueAndAttrs[i] == '"':
+			return valueAndAttrs[1:i] + valueAndAttrs[i+1:]
+		}
+	}
+	return valueAndAttrs
+}
+
+func renderLogDateDivider(date string, width int) string {
+	if width <= len(date)+2 {
+		return truncateWithEllipsis(date, width)
+	}
+
+	ruleWidth := width - len(date) - 2
+	leftWidth := ruleWidth / 2
+	return strings.Repeat("─", leftWidth) + " " + date + " " + strings.Repeat("─", ruleWidth-leftWidth)
+}
+
+func renderLogEntry(timestamp time.Time, level, message string, width int) []string {
+	marker := renderLogLevelMarker(level)
+	prefix := timestamp.Format("15:04:05.000") + " " + padRightVisible(level, 5) + " " + marker + " "
+	prefixWidth := visibleWidthANSI(prefix)
+	if width <= prefixWidth {
+		return wrapText(stripANSI(prefix)+message, width)
+	}
+
+	messageLines := wrapText(message, width-prefixWidth)
+	rows := make([]string, len(messageLines))
+	rows[0] = prefix + messageLines[0]
+	continuationPrefix := strings.Repeat(" ", prefixWidth-2) + marker + " "
+	for i := 1; i < len(messageLines); i++ {
+		rows[i] = continuationPrefix + messageLines[i]
+	}
+	return rows
+}
+
+func renderLogLevelMarker(level string) string {
+	upperLevel := strings.ToUpper(level)
+	color := ""
+	switch {
+	case strings.HasPrefix(upperLevel, "TRACE"), strings.HasPrefix(upperLevel, "DEBUG"):
+		color = ansiFgBrightBlack
+	case strings.HasPrefix(upperLevel, "INFO"):
+		color = ansiFgBrightGreen
+	case strings.HasPrefix(upperLevel, "WARN"):
+		color = ansiFgBrightYellow
+	case strings.HasPrefix(upperLevel, "ERROR"), strings.HasPrefix(upperLevel, "FATAL"):
+		color = ansiFgBrightRed
+	default:
+		return "│"
+	}
+	return color + "│" + ansiReset
 }
 
 func runtimeLogSnapshot(feed RuntimeLogFeed, reusable *[]string) []string {
