@@ -12,7 +12,7 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func TestV4Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
+func TestV4Manager_OpenTunnel_RollbackOnSplitRouteError(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addSplitErr: errors.New("split4 failed")}
 	tunDev := &dualStackTunMock{}
 
@@ -30,7 +30,7 @@ func TestV4Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
-	_, err := m.CreateDevice()
+	_, err := m.OpenTunnel()
 	if err == nil || !strings.Contains(err.Error(), "split4 failed") {
 		t.Fatalf("expected split route error, got %v", err)
 	}
@@ -51,7 +51,7 @@ func TestV4Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
 	}
 }
 
-func TestV6Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
+func TestV6Manager_OpenTunnel_RollbackOnSplitRouteError(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addSplitErr: errors.New("split6 failed")}
 	tunDev := &dualStackTunMock{}
 
@@ -69,7 +69,7 @@ func TestV6Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	_, err := m.CreateDevice()
+	_, err := m.OpenTunnel()
 	if err == nil || !strings.Contains(err.Error(), "split6 failed") {
 		t.Fatalf("expected split route error, got %v", err)
 	}
@@ -264,7 +264,7 @@ func TestV6Manager_AddStaticRouteToServer_UsesResolverAfterRouteEndpointCleared(
 	}
 }
 
-func TestV4Manager_DisposeDevices_CleansDNS(t *testing.T) {
+func TestV4Manager_CloseTunnel_CleansDNS(t *testing.T) {
 	cfg := &dualStackNetCfgMock{}
 	m := newV4Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -272,8 +272,8 @@ func TestV4Manager_DisposeDevices_CleansDNS(t *testing.T) {
 		},
 	}, cfg)
 
-	if err := m.DisposeDevices(); err != nil {
-		t.Fatalf("DisposeDevices unexpected error: %v", err)
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel unexpected error: %v", err)
 	}
 	if cfg.setDNSCalls == 0 {
 		t.Fatal("expected DNS cleanup call on dispose")
@@ -283,7 +283,7 @@ func TestV4Manager_DisposeDevices_CleansDNS(t *testing.T) {
 	}
 }
 
-func TestV6Manager_DisposeDevices_CleansDNS(t *testing.T) {
+func TestV6Manager_CloseTunnel_CleansDNS(t *testing.T) {
 	cfg := &dualStackNetCfgMock{}
 	m := newV6Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -291,8 +291,8 @@ func TestV6Manager_DisposeDevices_CleansDNS(t *testing.T) {
 		},
 	}, cfg)
 
-	if err := m.DisposeDevices(); err != nil {
-		t.Fatalf("DisposeDevices unexpected error: %v", err)
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel unexpected error: %v", err)
 	}
 	if cfg.setDNSCalls == 0 {
 		t.Fatal("expected DNS cleanup call on dispose")
@@ -302,7 +302,7 @@ func TestV6Manager_DisposeDevices_CleansDNS(t *testing.T) {
 	}
 }
 
-func TestV4Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
+func TestV4Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
 		delSplitErr: errors.New("split cleanup fail"),
 		delRouteErr: errors.New("route cleanup fail"),
@@ -317,7 +317,7 @@ func TestV4Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	m.resolvedRouteIf = "eth0"
 	m.tun = &dualStackTunMock{closeErr: errors.New("tun close fail")}
 
-	err := m.DisposeDevices()
+	err := m.CloseTunnel()
 	if err == nil {
 		t.Fatal("expected aggregated cleanup error")
 	}
@@ -334,7 +334,7 @@ func TestV4Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	}
 }
 
-func TestV6Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
+func TestV6Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
 		delSplitErr: errors.New("split cleanup fail"),
 		delRouteErr: errors.New("route cleanup fail"),
@@ -349,7 +349,7 @@ func TestV6Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	m.resolvedRouteIf = "eth0"
 	m.tun = &dualStackTunMock{closeErr: errors.New("tun close fail")}
 
-	err := m.DisposeDevices()
+	err := m.CloseTunnel()
 	if err == nil {
 		t.Fatal("expected aggregated cleanup error")
 	}
@@ -366,7 +366,7 @@ func TestV6Manager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	}
 }
 
-func TestV4Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
+func TestV4Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	tunDev := &dualStackTunMock{}
 
@@ -385,8 +385,8 @@ func TestV4Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice unexpected error: %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel unexpected error: %v", err)
 	}
 	if len(cfg.setDNSValues) == 0 {
 		t.Fatal("expected DNS set call")
@@ -399,7 +399,7 @@ func TestV4Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 }
 
-func TestV6Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
+func TestV6Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	tunDev := &dualStackTunMock{}
 
@@ -418,8 +418,8 @@ func TestV6Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice unexpected error: %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel unexpected error: %v", err)
 	}
 	if len(cfg.setDNSValues) == 0 {
 		t.Fatal("expected DNS set call")
@@ -432,7 +432,7 @@ func TestV6Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 }
 
-func TestV4Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
+func TestV4Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
 		bestRouteIf: "eth0",
 		flushDNSErr: errors.New("flush fail"),
@@ -453,15 +453,15 @@ func TestV4Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice should ignore DNS flush failure, got %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel should ignore DNS flush failure, got %v", err)
 	}
 	if cfg.flushDNSCalls == 0 {
 		t.Fatal("expected DNS flush attempt")
 	}
 }
 
-func TestV6Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
+func TestV6Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
 		bestRouteIf: "eth0",
 		flushDNSErr: errors.New("flush fail"),
@@ -482,8 +482,8 @@ func TestV6Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice should ignore DNS flush failure, got %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel should ignore DNS flush failure, got %v", err)
 	}
 	if cfg.flushDNSCalls == 0 {
 		t.Fatal("expected DNS flush attempt")

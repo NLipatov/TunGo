@@ -42,7 +42,7 @@ func newV4(
 	}
 }
 
-func (m *v4) CreateDevice() (io.ReadWriteCloser, error) {
+func (m *v4) OpenTunnel() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (m *v4) CreateDevice() (io.ReadWriteCloser, error) {
 	m.rawUTUN = raw
 	name, err := raw.Name()
 	if err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
@@ -63,21 +63,21 @@ func (m *v4) CreateDevice() (io.ReadWriteCloser, error) {
 			m.tunDev = utun.NewDarwinTunDevice(raw)
 			return m.tunDev, nil
 		}
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Server, routeErr)
 	}
 	m.resolvedRouteIP = routeIP
 	if getErr := m.rtc.Get(routeIP); getErr != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, getErr)
 	}
 	if assignErr := m.assignIPv4(); assignErr != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, assignErr
 	}
 	_ = m.rtc.DelSplit(m.ifName)
 	if addErr := m.rtc.AddSplit(m.ifName); addErr != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("add v4 split default: %w", addErr)
 	}
 
@@ -85,7 +85,7 @@ func (m *v4) CreateDevice() (io.ReadWriteCloser, error) {
 	return m.tunDev, nil
 }
 
-func (m *v4) DisposeDevices() error {
+func (m *v4) CloseTunnel() error {
 	if m.ifName != "" {
 		_ = m.rtc.DelSplit(m.ifName)
 	}

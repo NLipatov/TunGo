@@ -50,7 +50,7 @@ func newDualStackManager(
 	}
 }
 
-func (m *dualStackManager) CreateDevice() (io.ReadWriteCloser, error) {
+func (m *dualStackManager) OpenTunnel() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -66,31 +66,31 @@ func (m *dualStackManager) CreateDevice() (io.ReadWriteCloser, error) {
 	m.tun = tunDev
 
 	if err = m.addStaticRouteToServer4(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.addStaticRouteToServer6(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.assignIPv4ToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.assignIPv6ToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setDefaultRoutesToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setMTUToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setDNSToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 
@@ -263,7 +263,7 @@ func (m *dualStackManager) setDNSToTunDevice() error {
 	return nil
 }
 
-func (m *dualStackManager) DisposeDevices() error {
+func (m *dualStackManager) CloseTunnel() error {
 	var cleanupErrs []error
 	if err := m.netCfg4.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))

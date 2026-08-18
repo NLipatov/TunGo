@@ -20,11 +20,11 @@ type clientTestTunManager struct {
 	disposeCalls atomic.Int32
 }
 
-func (*clientTestTunManager) CreateDevice() (io.ReadWriteCloser, error) {
+func (*clientTestTunManager) OpenTunnel() (io.ReadWriteCloser, error) {
 	return nil, nil
 }
 
-func (m *clientTestTunManager) DisposeDevices() error {
+func (m *clientTestTunManager) CloseTunnel() error {
 	m.disposeCalls.Add(1)
 	return nil
 }
@@ -61,7 +61,7 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 		t.Fatal("client did not stop after cancellation")
 	}
 	if got := manager.disposeCalls.Load(); got != 2 {
-		t.Fatalf("DisposeDevices() calls = %d, want before attempt and on exit", got)
+		t.Fatalf("CloseTunnel() calls = %d, want before attempt and on exit", got)
 	}
 }
 
@@ -78,7 +78,7 @@ func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("DisposeDevices() calls = %d, want final cleanup", got)
+		t.Fatalf("CloseTunnel() calls = %d, want final cleanup", got)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestRunSessionReturnsForwardError(t *testing.T) {
 		t.Fatalf("runSession() error = %v, want unsupported protocol", err)
 	}
 	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("DisposeDevices() calls = %d, want 1", got)
+		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
 	}
 }
 

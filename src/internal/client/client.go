@@ -25,8 +25,8 @@ var (
 )
 
 type tunManager interface {
-	CreateDevice() (io.ReadWriteCloser, error)
-	DisposeDevices() error
+	OpenTunnel() (io.ReadWriteCloser, error)
+	CloseTunnel() error
 	SetRouteEndpoint(netip.AddrPort)
 }
 
@@ -81,7 +81,7 @@ func (c *Client) Run(ctx context.Context) error {
 }
 
 func (c *Client) run(ctx context.Context) error {
-	defer c.disposeDevices()
+	defer c.closeTunnel()
 
 	for ctx.Err() == nil {
 		err := c.runSession(ctx)
@@ -108,7 +108,7 @@ func (c *Client) runSession(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	c.disposeDevices()
+	c.closeTunnel()
 	forward := make(chan error)
 	go func() {
 		forward <- c.forward(ctx)
@@ -137,9 +137,9 @@ func (c *Client) forward(ctx context.Context) error {
 	defer func() { _ = transport.Close() }()
 	attachRouteEndpoint(transport, c.tunManager)
 
-	device, err := c.tunManager.CreateDevice()
+	device, err := c.tunManager.OpenTunnel()
 	if err != nil {
-		slog.Error("failed to create TUN device", "err", err)
+		slog.Error("failed to open tunnel", "err", err)
 		return err
 	}
 	defer func() { _ = device.Close() }()
@@ -151,9 +151,9 @@ func (c *Client) Ready() bool {
 	return c.ready.Load()
 }
 
-func (c *Client) disposeDevices() {
-	if err := c.tunManager.DisposeDevices(); err != nil {
-		slog.Warn("failed to dispose TUN devices", "err", err)
+func (c *Client) closeTunnel() {
+	if err := c.tunManager.CloseTunnel(); err != nil {
+		slog.Warn("failed to close tunnel", "err", err)
 	}
 }
 

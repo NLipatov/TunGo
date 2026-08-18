@@ -42,9 +42,9 @@ func newV6Manager(
 	}
 }
 
-// CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv6.
+// OpenTunnel creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
-func (m *v6Manager) CreateDevice() (io.ReadWriteCloser, error) {
+func (m *v6Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -60,23 +60,23 @@ func (m *v6Manager) CreateDevice() (io.ReadWriteCloser, error) {
 	m.tun = tunDev
 
 	if err = m.addStaticRouteToServer(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.assignIPToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setRouteToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setMTUToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setDNSToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	return m.tun, nil
@@ -182,8 +182,8 @@ func (m *v6Manager) setDNSToTunDevice() error {
 	return nil
 }
 
-// DisposeDevices reverses CreateDevice in safe order.
-func (m *v6Manager) DisposeDevices() error {
+// CloseTunnel reverses OpenTunnel in safe order.
+func (m *v6Manager) CloseTunnel() error {
 	var cleanupErrs []error
 	if err := m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete default split routes: %w", err))

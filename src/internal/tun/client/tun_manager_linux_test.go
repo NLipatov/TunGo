@@ -207,11 +207,11 @@ func newMgr(
 // ============================ Tests ===========================
 //
 
-func TestCreateDevice_UDP_WithGateway(t *testing.T) {
+func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.CreateDevice()
+	dev, err := m.OpenTunnel()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,11 +226,11 @@ func TestCreateDevice_UDP_WithGateway(t *testing.T) {
 	}
 }
 
-func TestCreateDevice_TCP_NoGateway(t *testing.T) {
+func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
 	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.CreateDevice()
+	dev, err := m.OpenTunnel()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,11 +245,11 @@ func TestCreateDevice_TCP_NoGateway(t *testing.T) {
 	}
 }
 
-func TestCreateDevice_WS_Path(t *testing.T) {
+func TestOpenTunnel_WS_Path(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.2 dev eth0"}
 	m := newMgr(settings.WS, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.CreateDevice()
+	dev, err := m.OpenTunnel()
 	if err != nil {
 		t.Fatalf("WS path failed: %v", err)
 	}
@@ -259,45 +259,45 @@ func TestCreateDevice_WS_Path(t *testing.T) {
 	_ = dev.Close()
 }
 
-func TestCreateDevice_ParseRouteError_NoDev(t *testing.T) {
+func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
 	// Missing "dev" -> parse must fail.
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.CreateDevice(); err == nil {
+	if _, err := m.OpenTunnel(); err == nil {
 		t.Fatal("expected parse error (no dev)")
 	} else if !strings.Contains(err.Error(), "failed to parse route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCreateDevice_RouteGetError_LeadsToParseError(t *testing.T) {
+func TestOpenTunnel_RouteGetError_LeadsToParseError(t *testing.T) {
 	ipMock := &clienttunManagerIPGetErr{}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.CreateDevice(); err == nil {
+	if _, err := m.OpenTunnel(); err == nil {
 		t.Fatal("expected RouteGet error")
 	} else if !strings.Contains(err.Error(), "failed to get route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCreateDevice_OpenTunError(t *testing.T) {
+func TestOpenTunnel_OpenTunError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{openErr: errors.New("open fail")}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.CreateDevice(); err == nil {
+	if _, err := m.OpenTunnel(); err == nil {
 		t.Fatal("expected open TUN error")
 	} else if !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCreateDevice_WrapError(t *testing.T) {
+func TestOpenTunnel_WrapError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{err: errors.New("wrap fail")})
 
-	if _, err := m.CreateDevice(); err == nil {
+	if _, err := m.OpenTunnel(); err == nil {
 		t.Fatal("expected wrapper.Wrap error")
 	}
 }
@@ -307,7 +307,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-		if _, err := m.CreateDevice(); err == nil {
+		if _, err := m.OpenTunnel(); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
 	}
@@ -318,18 +318,18 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-		if _, err := m.CreateDevice(); err == nil {
+		if _, err := m.OpenTunnel(); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
 	}
 }
 
-func TestDisposeDevices_NoErrors(t *testing.T) {
+func TestCloseTunnel_NoErrors(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if err := m.DisposeDevices(); err != nil {
-		t.Fatalf("DisposeDevices error: %v", err)
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel error: %v", err)
 	}
 }
 
@@ -338,7 +338,7 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	mssMock := clienttunManagerMSSMock{installErr: errors.New("iptables fail")}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock, clienttunManagerPlainWrapper{})
 
-	_, err := m.CreateDevice()
+	_, err := m.OpenTunnel()
 	if err == nil {
 		t.Fatal("expected MSS install error")
 	}
@@ -347,7 +347,7 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	}
 }
 
-func TestCreateDevice_IPv6_FullPath(t *testing.T) {
+func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
 	// and add route to IPv6 server.
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
@@ -358,7 +358,7 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 	mgr.connectionSettings.Server.IPv6 = "2001:db8::1"
 
-	dev, err := mgr.CreateDevice()
+	dev, err := mgr.OpenTunnel()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	}
 }
 
-func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
+func TestOpenTunnel_IPv6_AddrAddError(t *testing.T) {
 	// When IPv6 AddrAddDev fails, creation should fail.
 	calls := 0
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
@@ -391,13 +391,13 @@ func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
-	_, err := mgr.CreateDevice()
+	_, err := mgr.OpenTunnel()
 	if err == nil {
 		t.Fatal("expected error on IPv6 addr add failure")
 	}
 }
 
-func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
+func TestOpenTunnel_IPv6_Route6DefaultError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{
 		routeReply: "198.51.100.1 dev eth0",
 		failStep:   "splitdef6",
@@ -406,13 +406,13 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
-	_, err := mgr.CreateDevice()
+	_, err := mgr.OpenTunnel()
 	if err == nil {
 		t.Fatal("expected error on Route6AddSplitDefaultDev failure")
 	}
 }
 
-func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
+func TestCloseTunnel_IPv6HostRouteCleanup(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 	profiles := []*settings.Settings{
@@ -424,7 +424,7 @@ func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 		profile.Server.IPv6 = fmt.Sprintf("2001:db8::%d", i+1)
 	}
 
-	if err := mgr.DisposeDevices(); err != nil {
+	if err := mgr.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -435,14 +435,14 @@ func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	}
 }
 
-func TestDisposeDevicesSkipsProfilesWithoutTunName(t *testing.T) {
+func TestCloseTunnelSkipsProfilesWithoutTunName(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 	mgr.configuration.TCPSettings.TunName = ""
 	mgr.configuration.WSSettings.TunName = ""
 
-	if err := mgr.DisposeDevices(); err != nil {
-		t.Fatalf("DisposeDevices() error = %v", err)
+	if err := mgr.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
 	}
 	if got := strings.Count(ipMock.log.String(), "ldel;"); got != 1 {
 		t.Fatalf("LinkDelete() calls = %d, want 1", got)
@@ -464,14 +464,14 @@ func (m *clienttunManagerIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
 	return nil
 }
 
-func TestDisposeDevices_MSSRemoveError_Logged(t *testing.T) {
-	// MSS remove errors are logged but do NOT cause DisposeDevices to fail.
+func TestCloseTunnel_MSSRemoveError_Logged(t *testing.T) {
+	// MSS remove errors are logged but do NOT cause CloseTunnel to fail.
 	ipMock := &clienttunManagerIPMock{}
 	mssMock := clienttunManagerMSSMock{removeErr: errors.New("cleanup fail")}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock, clienttunManagerPlainWrapper{})
 
 	// Should not return error because MSS remove errors are only logged.
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("expected no error (MSS remove only logged), got %v", err)
 	}
 }

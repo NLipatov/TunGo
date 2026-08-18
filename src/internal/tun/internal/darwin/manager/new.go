@@ -14,8 +14,8 @@ import (
 )
 
 type clientManager interface {
-	CreateDevice() (io.ReadWriteCloser, error)
-	DisposeDevices() error
+	OpenTunnel() (io.ReadWriteCloser, error)
+	CloseTunnel() error
 	SetRouteEndpoint(netip.AddrPort)
 }
 

@@ -41,10 +41,10 @@ func newV4Manager(
 	}
 }
 
-// CreateDevice creates/configures the TUN adapter and system netCfgs/DNS for IPv4.
+// OpenTunnel creates/configures the TUN adapter and system netCfgs/DNS for IPv4.
 // Safe order: create adapter → host netCfg to server → assign IP → split default → MTU → DNS.
-// On any error after adapter creation we call DisposeDevices() to leave the host clean.
-func (m *v4Manager) CreateDevice() (io.ReadWriteCloser, error) {
+// On any error after adapter creation we call CloseTunnel() to leave the host clean.
+func (m *v4Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 	if sErr := m.validateSettings(); sErr != nil {
 		return nil, sErr
 	}
@@ -58,23 +58,23 @@ func (m *v4Manager) CreateDevice() (io.ReadWriteCloser, error) {
 	}
 	m.tun = tunDev
 	if err = m.addStaticRouteToServer(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.assignIPToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setDefaultRouteToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setMTUToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	if err = m.setDNSToTunDevice(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	return m.tun, nil
@@ -186,8 +186,8 @@ func (m *v4Manager) setDNSToTunDevice() error {
 	return nil
 }
 
-// DisposeDevices reverses CreateDevice in safe order.
-func (m *v4Manager) DisposeDevices() error {
+// CloseTunnel reverses OpenTunnel in safe order.
+func (m *v4Manager) CloseTunnel() error {
 	var cleanupErrs []error
 	if err := m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete default split routes: %w", err))

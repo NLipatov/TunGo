@@ -42,7 +42,7 @@ func newV6(
 	}
 }
 
-func (m *v6) CreateDevice() (io.ReadWriteCloser, error) {
+func (m *v6) OpenTunnel() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (m *v6) CreateDevice() (io.ReadWriteCloser, error) {
 
 	name, err := raw.Name()
 	if err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
@@ -66,21 +66,21 @@ func (m *v6) CreateDevice() (io.ReadWriteCloser, error) {
 			m.tunDev = utun.NewDarwinTunDevice(raw)
 			return m.tunDev, nil
 		}
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Server, routeErr)
 	}
 	m.resolvedRouteIP = routeIP
 	if err := m.rt.Get(routeIP); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, err)
 	}
 	if err := m.assignIPv6(); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, err
 	}
 	_ = m.rt.DelSplit(m.ifName)
 	if err := m.rt.AddSplit(m.ifName); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("add v6 split default: %w", err)
 	}
 
@@ -88,7 +88,7 @@ func (m *v6) CreateDevice() (io.ReadWriteCloser, error) {
 	return m.tunDev, nil
 }
 
-func (m *v6) DisposeDevices() error {
+func (m *v6) CloseTunnel() error {
 	if m.ifName != "" {
 		_ = m.rt.DelSplit(m.ifName)
 	}

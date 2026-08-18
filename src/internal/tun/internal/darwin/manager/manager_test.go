@@ -810,10 +810,10 @@ func TestDualStack_SetRouteEndpoint(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DisposeDevices
+// CloseTunnel
 // ---------------------------------------------------------------------------
 
-func TestV4_DisposeDevices_CleanupRoutes(t *testing.T) {
+func TestV4_CloseTunnel_CleanupRoutes(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
@@ -821,7 +821,7 @@ func TestV4_DisposeDevices_CleanupRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -842,13 +842,13 @@ func TestV4_DisposeDevices_CleanupRoutes(t *testing.T) {
 	}
 }
 
-func TestV4_DisposeDevices_NoResolvedRouteIP_SkipsDel(t *testing.T) {
+func TestV4_CloseTunnel_NoResolvedRouteIP_SkipsDel(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
 	m.resolvedRouteIP = ""
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -857,7 +857,7 @@ func TestV4_DisposeDevices_NoResolvedRouteIP_SkipsDel(t *testing.T) {
 	}
 }
 
-func TestV4_DisposeDevices_RawUTUNFallback(t *testing.T) {
+func TestV4_CloseTunnel_RawUTUNFallback(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
@@ -865,7 +865,7 @@ func TestV4_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	m.rawUTUN = raw
 	// tunDev is nil, so raw should be closed directly
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -877,7 +877,7 @@ func TestV4_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	}
 }
 
-func TestV6_DisposeDevices_CleanupRoutes(t *testing.T) {
+func TestV6_CloseTunnel_CleanupRoutes(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
@@ -885,7 +885,7 @@ func TestV6_DisposeDevices_CleanupRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -900,14 +900,14 @@ func TestV6_DisposeDevices_CleanupRoutes(t *testing.T) {
 	}
 }
 
-func TestV6_DisposeDevices_RawUTUNFallback(t *testing.T) {
+func TestV6_CloseTunnel_RawUTUNFallback(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
 	raw := &mockUTUN{}
 	m.rawUTUN = raw
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -916,7 +916,7 @@ func TestV6_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	}
 }
 
-func TestDualStack_DisposeDevices_CleanupAllRoutes(t *testing.T) {
+func TestDualStack_CloseTunnel_CleanupAllRoutes(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
@@ -926,7 +926,7 @@ func TestDualStack_DisposeDevices_CleanupAllRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -956,14 +956,14 @@ func TestDualStack_DisposeDevices_CleanupAllRoutes(t *testing.T) {
 	}
 }
 
-func TestDualStack_DisposeDevices_NoResolvedIPs_SkipsDel(t *testing.T) {
+func TestDualStack_CloseTunnel_NoResolvedIPs_SkipsDel(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
 	m.ifName = "utun42"
 	// No resolved IPs
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -975,7 +975,7 @@ func TestDualStack_DisposeDevices_NoResolvedIPs_SkipsDel(t *testing.T) {
 	}
 }
 
-func TestDualStack_DisposeDevices_RawUTUNFallback(t *testing.T) {
+func TestDualStack_CloseTunnel_RawUTUNFallback(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
@@ -983,7 +983,7 @@ func TestDualStack_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	raw := &mockUTUN{}
 	m.rawUTUN = raw
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -992,7 +992,7 @@ func TestDualStack_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	}
 }
 
-func TestDualStack_DisposeDevices_OnlyV4Resolved(t *testing.T) {
+func TestDualStack_CloseTunnel_OnlyV4Resolved(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
@@ -1000,7 +1000,7 @@ func TestDualStack_DisposeDevices_OnlyV4Resolved(t *testing.T) {
 	m.resolvedRouteIP4 = "198.51.100.1"
 	m.resolvedRouteIP6 = ""
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 
@@ -1152,26 +1152,26 @@ func TestNewDualStack_StoresFields(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DisposeDevices idempotency: disposing a fresh (never-used) manager is safe
+// CloseTunnel idempotency: disposing a fresh (never-used) manager is safe
 // ---------------------------------------------------------------------------
 
-func TestV4_DisposeDevices_Fresh(t *testing.T) {
+func TestV4_CloseTunnel_Fresh(t *testing.T) {
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error disposing fresh v4: %v", err)
 	}
 }
 
-func TestV6_DisposeDevices_Fresh(t *testing.T) {
+func TestV6_CloseTunnel_Fresh(t *testing.T) {
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error disposing fresh v6: %v", err)
 	}
 }
 
-func TestDualStack_DisposeDevices_Fresh(t *testing.T) {
+func TestDualStack_CloseTunnel_Fresh(t *testing.T) {
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error disposing fresh dualStack: %v", err)
 	}
 }
@@ -1204,41 +1204,41 @@ func TestDualStack_ResolveRouteIPv6_FromDualStackServer(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DisposeDevices double-call safety
+// CloseTunnel double-call safety
 // ---------------------------------------------------------------------------
 
-func TestV4_DisposeDevices_DoubleSafe(t *testing.T) {
+func TestV4_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
 	m.resolvedRouteIP = "198.51.100.1"
 	m.tunDev = &mockTunDevice{}
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
 	// Second call should not panic or fail
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
 	}
 }
 
-func TestV6_DisposeDevices_DoubleSafe(t *testing.T) {
+func TestV6_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
 	m.ifName = "utun42"
 	m.resolvedRouteIP = "2001:db8::1"
 	m.tunDev = &mockTunDevice{}
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
 	}
 }
 
-func TestDualStack_DisposeDevices_DoubleSafe(t *testing.T) {
+func TestDualStack_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
@@ -1247,10 +1247,10 @@ func TestDualStack_DisposeDevices_DoubleSafe(t *testing.T) {
 	m.resolvedRouteIP6 = "2001:db8::1"
 	m.tunDev = &mockTunDevice{}
 
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
-	if err := m.DisposeDevices(); err != nil {
+	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
 	}
 }

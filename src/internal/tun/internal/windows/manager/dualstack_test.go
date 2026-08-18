@@ -276,7 +276,7 @@ func TestDualStackManager_AddStaticRoute_UsesResolverAfterRouteEndpointCleared(t
 	}
 }
 
-func TestDualStackManager_CreateDevice_RollbackOnIPv6SplitRouteError(t *testing.T) {
+func TestDualStackManager_OpenTunnel_RollbackOnIPv6SplitRouteError(t *testing.T) {
 	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	cfg6 := &dualStackNetCfgMock{bestRouteIf: "eth0", addSplitErr: errors.New("split6 failed")}
 	tunDev := &dualStackTunMock{}
@@ -298,7 +298,7 @@ func TestDualStackManager_CreateDevice_RollbackOnIPv6SplitRouteError(t *testing.
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	_, err := m.CreateDevice()
+	_, err := m.OpenTunnel()
 	if err == nil || !strings.Contains(err.Error(), "split6 failed") {
 		t.Fatalf("expected IPv6 split route error, got %v", err)
 	}
@@ -325,7 +325,7 @@ func TestDualStackManager_CreateDevice_RollbackOnIPv6SplitRouteError(t *testing.
 	}
 }
 
-func TestDualStackManager_CreateDevice_RollbackClearsDNSOnIPv6DNSError(t *testing.T) {
+func TestDualStackManager_OpenTunnel_RollbackClearsDNSOnIPv6DNSError(t *testing.T) {
 	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	cfg6 := &dualStackNetCfgMock{bestRouteIf: "eth0", setDNSErr: errors.New("dns6 failed")}
 	tunDev := &dualStackTunMock{}
@@ -347,7 +347,7 @@ func TestDualStackManager_CreateDevice_RollbackClearsDNSOnIPv6DNSError(t *testin
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	_, err := m.CreateDevice()
+	_, err := m.OpenTunnel()
 	if err == nil || !strings.Contains(err.Error(), "dns6 failed") {
 		t.Fatalf("expected IPv6 DNS error, got %v", err)
 	}
@@ -365,7 +365,7 @@ func TestDualStackManager_CreateDevice_RollbackClearsDNSOnIPv6DNSError(t *testin
 	}
 }
 
-func TestDualStackManager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
+func TestDualStackManager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 	cfg4 := &dualStackNetCfgMock{
 		delSplitErr: errors.New("split4 cleanup fail"),
 		delRouteErr: errors.New("route4 cleanup fail"),
@@ -387,7 +387,7 @@ func TestDualStackManager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	m.resolvedRouteIf6 = "eth0"
 	m.tun = &dualStackTunMock{closeErr: errors.New("tun close fail")}
 
-	err := m.DisposeDevices()
+	err := m.CloseTunnel()
 	if err == nil {
 		t.Fatal("expected aggregated cleanup error")
 	}
@@ -407,7 +407,7 @@ func TestDualStackManager_DisposeDevices_ReturnsCleanupErrors(t *testing.T) {
 	}
 }
 
-func TestDualStackManager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
+func TestDualStackManager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	cfg6 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	tunDev := &dualStackTunMock{}
@@ -431,8 +431,8 @@ func TestDualStackManager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice unexpected error: %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel unexpected error: %v", err)
 	}
 	if len(cfg4.setDNSValues) == 0 || len(cfg6.setDNSValues) == 0 {
 		t.Fatalf("expected both DNS set calls, got v4=%d v6=%d", len(cfg4.setDNSValues), len(cfg6.setDNSValues))
@@ -448,7 +448,7 @@ func TestDualStackManager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 }
 
-func TestDualStackManager_CreateDevice_IgnoresDNSErrorOnIPv6FlushFailure(t *testing.T) {
+func TestDualStackManager_OpenTunnel_IgnoresDNSErrorOnIPv6FlushFailure(t *testing.T) {
 	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	cfg6 := &dualStackNetCfgMock{bestRouteIf: "eth0", flushDNSErr: errors.New("flush6 fail")}
 	tunDev := &dualStackTunMock{}
@@ -470,8 +470,8 @@ func TestDualStackManager_CreateDevice_IgnoresDNSErrorOnIPv6FlushFailure(t *test
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.CreateDevice(); err != nil {
-		t.Fatalf("CreateDevice should ignore IPv6 DNS flush failure, got %v", err)
+	if _, err := m.OpenTunnel(); err != nil {
+		t.Fatalf("OpenTunnel should ignore IPv6 DNS flush failure, got %v", err)
 	}
 	if cfg4.flushDNSCalls == 0 || cfg6.flushDNSCalls == 0 {
 		t.Fatalf("expected flush attempts for both families, got v4=%d v6=%d", cfg4.flushDNSCalls, cfg6.flushDNSCalls)

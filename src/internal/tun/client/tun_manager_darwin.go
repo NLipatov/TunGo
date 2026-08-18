@@ -12,8 +12,8 @@ import (
 )
 
 type clientManager interface {
-	CreateDevice() (io.ReadWriteCloser, error)
-	DisposeDevices() error
+	OpenTunnel() (io.ReadWriteCloser, error)
+	CloseTunnel() error
 	SetRouteEndpoint(netip.AddrPort)
 }
 
@@ -39,12 +39,12 @@ func New(conf *clientconfig.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) CreateDevice() (io.ReadWriteCloser, error) {
-	return m.manager.CreateDevice()
+func (m *Manager) OpenTunnel() (io.ReadWriteCloser, error) {
+	return m.manager.OpenTunnel()
 }
 
-func (m *Manager) DisposeDevices() error {
-	activeErr := m.manager.DisposeDevices()
+func (m *Manager) CloseTunnel() error {
+	activeErr := m.manager.CloseTunnel()
 	m.disposeStale(m.configuration.TCPSettings)
 	m.disposeStale(m.configuration.UDPSettings)
 	m.disposeStale(m.configuration.WSSettings)
@@ -60,7 +60,7 @@ func (m *Manager) disposeStale(s settings.Settings) {
 		slog.Warn("failed to prepare stale TUN cleanup", "name", s.TunName, "err", err)
 		return
 	}
-	if err := cleanupManager.DisposeDevices(); err != nil {
+	if err := cleanupManager.CloseTunnel(); err != nil {
 		slog.Warn("failed to clean stale TUN configuration", "name", s.TunName, "err", err)
 	}
 }

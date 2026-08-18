@@ -47,7 +47,7 @@ func New(conf *clientconfig.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (t *Manager) CreateDevice() (io.ReadWriteCloser, error) {
+func (t *Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 	connectionSettings := t.connectionSettings
 
 	// configureTUN client
@@ -217,7 +217,7 @@ func (t *Manager) configureTUN(connSettings settings.Settings) error {
 	return nil
 }
 
-func (t *Manager) DisposeDevices() error {
+func (t *Manager) CloseTunnel() error {
 	t.disposeDevice(t.configuration.TCPSettings)
 	t.disposeDevice(t.configuration.UDPSettings)
 	t.disposeDevice(t.configuration.WSSettings)

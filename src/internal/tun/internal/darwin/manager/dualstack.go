@@ -52,7 +52,7 @@ func newDualStack(
 	}
 }
 
-func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
+func (m *dualStack) OpenTunnel() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 
 	name, err := raw.Name()
 	if err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
@@ -75,11 +75,11 @@ func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 	if route4Err == nil {
 		m.resolvedRouteIP4 = routeIP4
 		if err := m.rtc4.Get(routeIP4); err != nil {
-			_ = m.DisposeDevices()
+			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Server, err)
 		}
 	} else if !shouldSkipDarwinIPv4Route(route4Err) {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Server, route4Err)
 	}
 
@@ -88,18 +88,18 @@ func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 	if route6Err == nil {
 		m.resolvedRouteIP6 = routeIP6
 		if err := m.rtc6.Get(routeIP6); err != nil {
-			_ = m.DisposeDevices()
+			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", m.s.Server, err)
 		}
 	} else if !shouldSkipDarwinIPv6Route(route6Err) {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Server, route6Err)
 	}
 
 	// Assign IPv4 address.
 	cidr4 := fmt.Sprintf("%s/32", m.s.IPv4)
 	if err := m.ifc4.LinkAddrAdd(m.ifName, cidr4); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: set v4 addr %s on %s: %w", cidr4, m.ifName, err)
 	}
 
@@ -109,19 +109,19 @@ func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 		cidr6 = fmt.Sprintf("%s/128", m.s.IPv6)
 	}
 	if err := m.ifc6.LinkAddrAdd(m.ifName, cidr6); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: set v6 addr %s on %s: %w", cidr6, m.ifName, err)
 	}
 
 	// Install split routes for both families.
 	_ = m.rtc4.DelSplit(m.ifName)
 	if err := m.rtc4.AddSplit(m.ifName); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: add v4 split: %w", err)
 	}
 	_ = m.rtc6.DelSplit(m.ifName)
 	if err := m.rtc6.AddSplit(m.ifName); err != nil {
-		_ = m.DisposeDevices()
+		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("dualstack: add v6 split: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 	return m.tunDev, nil
 }
 
-func (m *dualStack) DisposeDevices() error {
+func (m *dualStack) CloseTunnel() error {
 	if m.ifName != "" {
 		_ = m.rtc4.DelSplit(m.ifName)
 		_ = m.rtc6.DelSplit(m.ifName)
