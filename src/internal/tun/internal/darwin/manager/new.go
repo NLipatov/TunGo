@@ -24,7 +24,7 @@ type interfaceConfigurator interface {
 }
 
 type routeConfigurator interface {
-	Get(destIP string) error
+	Add(destIP string) error
 	AddSplit(ifName string) error
 	DelSplit(ifName string) error
 	Del(destIP string) error

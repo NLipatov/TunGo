@@ -51,15 +51,12 @@ func (m *clienttunManagerIPMock) mark(s string) error {
 	return nil
 }
 
-func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error            { return m.mark("add") }
-func (m *clienttunManagerIPMock) LinkDelete(string) error                 { m.log.WriteString("ldel;"); return nil }
-func (m *clienttunManagerIPMock) LinkSetDevUp(string) error               { return m.mark("up") }
-func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error         { return m.mark("mtu") }
-func (m *clienttunManagerIPMock) AddrAddDev(string, string) error         { return m.mark("addr") }
-func (m *clienttunManagerIPMock) AddrShowDev(int, string) (string, error) { return "", nil }
-func (m *clienttunManagerIPMock) RouteDefault() (string, error)           { return "eth0", nil }
-func (m *clienttunManagerIPMock) RouteAddDefaultDev(string) error         { return m.mark("def") }
-func (m *clienttunManagerIPMock) Route6AddDefaultDev(string) error        { return m.mark("def6") }
+func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error    { return m.mark("add") }
+func (m *clienttunManagerIPMock) LinkDelete(string) error         { m.log.WriteString("ldel;"); return nil }
+func (m *clienttunManagerIPMock) LinkSetDevUp(string) error       { return m.mark("up") }
+func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
+func (m *clienttunManagerIPMock) AddrAddDev(string, string) error { return m.mark("addr") }
+func (m *clienttunManagerIPMock) RouteDefault() (string, error)   { return "eth0", nil }
 func (m *clienttunManagerIPMock) RouteGet(target string) (string, error) {
 	m.routeGetTargets = append(m.routeGetTargets, target)
 	return m.routeReply, nil
@@ -142,10 +139,7 @@ func newMgr(
 		LinkSetDevUp(string) error
 		LinkSetDevMTU(string, int) error
 		AddrAddDev(string, string) error
-		AddrShowDev(int, string) (string, error)
 		RouteDefault() (string, error)
-		RouteAddDefaultDev(string) error
-		Route6AddDefaultDev(string) error
 		RouteAddSplitDefaultDev(string) error
 		Route6AddSplitDefaultDev(string) error
 		RouteDelSplitDefault(string) error

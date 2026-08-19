@@ -3,7 +3,6 @@
 package ipcfg
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -58,22 +57,6 @@ func (v *V4) SetAddressStatic(ifName string, prefix netip.Prefix) error {
 	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET), []netip.Prefix{prefix})
 }
 
-func (v *V4) DeleteAddress(ifName, interfaceAddress string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	ip, ipErr := netip.ParseAddr(strings.TrimSpace(interfaceAddress))
-	if ipErr != nil || !ip.Is4() {
-		return fmt.Errorf("DeleteAddress: not an IPv4: %q", interfaceAddress)
-	}
-	row, err := luid.IPAddress(ip)
-	if err != nil {
-		return fmt.Errorf("DeleteAddress: lookup failed: %w", err)
-	}
-	return row.Delete()
-}
-
 func (v *V4) SetDNS(ifName string, dnsServers []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
@@ -122,27 +105,6 @@ func (v *V4) SetMTU(ifName string, mtu int) error {
 		iFace.Metric = 1
 	}
 	return iFace.Set()
-}
-
-func (v *V4) DeleteDefaultRoute(ifName string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	table, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET))
-	if err != nil {
-		return err
-	}
-	var last error
-	for i := range table {
-		r := &table[i]
-		if r.InterfaceLUID == luid && r.DestinationPrefix.PrefixLength == 0 {
-			if err := r.Delete(); err != nil {
-				last = err
-			}
-		}
-	}
-	return last
 }
 
 func (v *V4) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error {
@@ -263,36 +225,6 @@ func (v *V4) DeleteRouteOnInterface(destination netip.Addr, ifName string) error
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// Print returns a human-readable dump of the IPv4 route table.
-// If t is non-empty, only lines containing t are included (substring match).
-func (v *V4) Print(t string) ([]byte, error) {
-	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET))
-	if err != nil {
-		return nil, fmt.Errorf("GetIPForwardTable2: %w", err)
-	}
-	var b bytes.Buffer
-	b.WriteString("DestPrefix\tNextHop\tIfAlias\tIfIndex\tMetric\n")
-	for i := range rows {
-		r := &rows[i]
-		dp := r.DestinationPrefix.Prefix()
-		if !dp.Addr().Is4() {
-			continue
-		}
-		nh := r.NextHop.Addr()
-		nextHop := "on-link"
-		if nh.IsValid() && nh.Is4() && !nh.IsUnspecified() {
-			nextHop = nh.String()
-		}
-		alias := v.resolver.NetworkInterfaceName(r.InterfaceLUID)
-		line := fmt.Sprintf("%s\t%s\t%s\t%d\t%d\n",
-			dp.String(), nextHop, alias, r.InterfaceIndex, r.Metric)
-		if t == "" || strings.Contains(line, t) {
-			b.WriteString(line)
-		}
-	}
-	return b.Bytes(), nil
 }
 
 // BestRoute returns (gateway, interfaceAlias, interfaceIndex, routeMetric) for IPv4.

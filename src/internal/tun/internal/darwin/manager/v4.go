@@ -49,11 +49,14 @@ func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
+	// The server address belongs to the outer transport and may use a
+	// different IP family than the TUN. Pin it only when this manager's
+	// split routes cover that family.
 	if serverAddr.Is4() {
 		routeIP := serverAddr.String()
-		if getErr := m.rtc.Get(routeIP); getErr != nil {
+		if addErr := m.rtc.Add(routeIP); addErr != nil {
 			_ = m.CloseTunnel()
-			return nil, fmt.Errorf("route to server %s: %w", routeIP, getErr)
+			return nil, fmt.Errorf("route to server %s: %w", routeIP, addErr)
 		}
 		m.resolvedRouteIP = routeIP
 	}

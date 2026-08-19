@@ -32,13 +32,14 @@ func NewV6(commander command.Runner) *V6 {
 	return &V6{commander: commander}
 }
 
-func (v *V6) Get(destIP string) error {
+// Add installs a host route to destIP using its current gateway or interface.
+func (v *V6) Add(destIP string) error {
 	if ip, ipErr := netip.ParseAddr(destIP); ipErr != nil {
-		return fmt.Errorf("v6.Get: invalid IP %q: %w", destIP, ipErr)
+		return fmt.Errorf("v6.Add: invalid IP %q: %w", destIP, ipErr)
 	} else if !ip.Is6() {
-		return fmt.Errorf("v6.Get: non-IPv6 dest %q", destIP)
+		return fmt.Errorf("v6.Add: non-IPv6 dest %q", destIP)
 	} else if ip.IsLoopback() {
-		return fmt.Errorf("v6.Get: invalid IP: loopback %q", destIP)
+		return fmt.Errorf("v6.Add: invalid IP: loopback %q", destIP)
 	}
 	gateway, iFace, err := v.parseRoute(destIP)
 	if err != nil {
@@ -54,10 +55,10 @@ func (v *V6) Get(destIP string) error {
 	}
 	// If still loopback after fallback – treat as an error.
 	if v.isLoop(gateway, iFace) {
-		return fmt.Errorf("v6.Get: no non-loopback route found for destination: %q", destIP)
+		return fmt.Errorf("v6.Add: no non-loopback route found for destination: %q", destIP)
 	}
 	// Delete old route to destIP, ignore possible errors.
-	_ = v.deleteQuiet(destIP)
+	_ = v.Del(destIP)
 	// For link-local gateways add interface scope if missing.
 	if strings.HasPrefix(gateway, linkLocalPrefixV6) &&
 		!strings.Contains(gateway, "%") &&
@@ -65,10 +66,10 @@ func (v *V6) Get(destIP string) error {
 		gateway = gateway + "%" + iFace
 	}
 	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
-		return v.addViaGatewayQuiet(destIP, gateway)
+		return v.addViaGateway(destIP, gateway)
 	}
 	if iFace != "" {
-		return v.addOnLinkQuiet(destIP, iFace)
+		return v.addOnLink(destIP, iFace)
 	}
 	return fmt.Errorf("no route found for %s", destIP)
 }
@@ -95,16 +96,6 @@ func (v *V6) parseRoute(target string) (gw, iFace string, err error) {
 		}
 	}
 	return gw, iFace, nil
-}
-
-func (v *V6) Add(ip, iface string) error {
-	_ = v.deleteQuiet(ip)
-	return v.addOnLinkQuiet(ip, iface)
-}
-
-func (v *V6) AddViaGateway(ip, gw string) error {
-	_ = v.deleteQuiet(ip)
-	return v.addViaGatewayQuiet(ip, gw)
 }
 
 func (v *V6) Del(destIP string) error {
@@ -139,29 +130,7 @@ func (v *V6) DelSplit(dev string) error {
 	return eg.Wait()
 }
 
-func (v *V6) DefaultGateway() (string, error) {
-	out, err := v.commander.CombinedOutput("route", "-n", "-inet6", "get", "default")
-	if err != nil {
-		return "", fmt.Errorf("defaultGateway(v6): %v (%s)", err, out)
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) == 2 && f[0] == "gateway:" {
-			return f[1], nil
-		}
-	}
-	return "", fmt.Errorf("defaultGateway(v6): no gateway found")
-}
-
-func (v *V6) deleteQuiet(ip string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", "-inet6", ip)
-	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
-		return fmt.Errorf("route delete %s failed: %v (%s)", ip, err, out)
-	}
-	return nil
-}
-
-func (v *V6) addOnLinkQuiet(ip, iface string) error {
+func (v *V6) addOnLink(ip, iface string) error {
 	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, "-interface", iface)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iface, err, out)
@@ -169,7 +138,7 @@ func (v *V6) addOnLinkQuiet(ip, iface string) error {
 	return nil
 }
 
-func (v *V6) addViaGatewayQuiet(ip, gw string) error {
+func (v *V6) addViaGateway(ip, gw string) error {
 	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)

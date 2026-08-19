@@ -89,29 +89,6 @@ func (i *Wrapper) parseDefaultRoute(name string, args ...string) (string, error)
 	return "", fmt.Errorf("no default route found")
 }
 
-// RouteAddDefaultDev Sets a default network device
-func (i *Wrapper) RouteAddDefaultDev(devName string) error {
-	output, setAsDefaultGatewayErr := i.commander.CombinedOutput("ip", "route",
-		"add", "default", "dev", devName)
-	if setAsDefaultGatewayErr != nil {
-		return fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s",
-			devName, setAsDefaultGatewayErr, output)
-	}
-
-	return nil
-}
-
-// Route6AddDefaultDev sets a default IPv6 route through the given device
-func (i *Wrapper) Route6AddDefaultDev(devName string) error {
-	output, err := i.commander.CombinedOutput("ip", "-6", "route",
-		"add", "default", "dev", devName)
-	if err != nil {
-		return fmt.Errorf("failed to set IPv6 default gateway %v: %v, output: %s",
-			devName, err, output)
-	}
-	return nil
-}
-
 // RouteAddSplitDefaultDev adds IPv4 split default routes (0.0.0.0/1 + 128.0.0.0/1)
 // through the given device. These are more specific than 0.0.0.0/0 so they take
 // priority without replacing the original default route. When the TUN device is
@@ -201,21 +178,4 @@ func (i *Wrapper) LinkSetDevMTU(devName string, mtu int) error {
 		return fmt.Errorf("failed to set mtu: %s, output: %s", err, output)
 	}
 	return err
-}
-
-// AddrShowDev resolves an IP address (IPv4 or IPv6) assigned to interface
-func (i *Wrapper) AddrShowDev(ipV int, ifName string) (string, error) {
-	output, err := i.commander.CombinedOutput("sh", "-c", fmt.Sprintf(
-		`ip -%v -o addr show dev %v | awk '{print $4}' | cut -d'/' -f1`, ipV, ifName))
-	if err != nil {
-		return "", fmt.Errorf(
-			"failed to get IP for interface %s: %v (%s)", ifName, err, strings.TrimSpace(string(output)))
-	}
-
-	ip := strings.TrimSpace(string(output))
-	if ip == "" {
-		return "", fmt.Errorf("no IP address found for interface %s", ifName)
-	}
-
-	return ip, nil
 }

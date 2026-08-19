@@ -143,36 +143,6 @@ func TestRouteDefault(t *testing.T) {
 	})
 }
 
-func TestRouteAddDefaultDev(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		err := newWrapper(true, "", nil).RouteAddDefaultDev("tun0")
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("error", func(t *testing.T) {
-		err := newWrapper(false, "output", errors.New("fail")).RouteAddDefaultDev("tun0")
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-}
-
-func TestRoute6AddDefaultDev(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		err := newWrapper(true, "", nil).Route6AddDefaultDev("tun0")
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("error", func(t *testing.T) {
-		err := newWrapper(false, "output", errors.New("fail")).Route6AddDefaultDev("tun0")
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-}
-
 func TestRouteAddSplitDefaultDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		rec := &recordingCommander{}
@@ -328,30 +298,6 @@ func TestLinkSetDevMTU(t *testing.T) {
 	})
 	t.Run("error", func(t *testing.T) {
 		err := newWrapper(false, "output", errors.New("fail")).LinkSetDevMTU("tun0", 1400)
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-}
-
-func TestAddrShowDev(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		w := newWrapper(false, "10.0.0.1\n", nil)
-		ipStr, err := w.AddrShowDev(4, "tun0")
-		if err != nil || ipStr != "10.0.0.1" {
-			t.Fatal("unexpected ip:", ipStr, err)
-		}
-	})
-	t.Run("empty ip", func(t *testing.T) {
-		w := newWrapper(false, "\n", nil)
-		_, err := w.AddrShowDev(4, "tun0")
-		if err == nil {
-			t.Fatal("expected error on empty IP")
-		}
-	})
-	t.Run("command error", func(t *testing.T) {
-		w := newWrapper(false, "error", errors.New("fail"))
-		_, err := w.AddrShowDev(4, "tun0")
 		if err == nil {
 			t.Fatal("expected error")
 		}

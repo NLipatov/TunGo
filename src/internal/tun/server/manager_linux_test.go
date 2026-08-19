@@ -34,7 +34,6 @@ type testPlainDev struct{ f *os.File }
 func (d *testPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
 func (d *testPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
 func (d *testPlainDev) Close() error                { return d.f.Close() }
-func (d *testPlainDev) Fd() uintptr                 { return d.f.Fd() }
 
 // testPlainWrapper injects a plain file-backed device.
 func (testPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
@@ -44,24 +43,21 @@ func (testPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
 // TunFactoryMockIP implements ip.Contract (only the methods we need in tests).
 type TunFactoryMockIP struct{ log bytes.Buffer }
 
-func (m *TunFactoryMockIP) add(tag string)                              { m.log.WriteString(tag + ";") }
-func (m *TunFactoryMockIP) TunTapAddDevTun(_ string) error              { m.add("add"); return nil }
-func (m *TunFactoryMockIP) LinkDelete(_ string) error                   { m.add("del"); return nil }
-func (m *TunFactoryMockIP) LinkSetDevUp(_ string) error                 { m.add("up"); return nil }
-func (m *TunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error         { m.add("mtu"); return nil }
-func (m *TunFactoryMockIP) AddrAddDev(_, _ string) error                { m.add("addr"); return nil }
-func (m *TunFactoryMockIP) AddrShowDev(_ int, _ string) (string, error) { return "", nil }
-func (m *TunFactoryMockIP) RouteDefault() (string, error)               { m.add("route"); return "eth0", nil }
-func (m *TunFactoryMockIP) RouteAddDefaultDev(_ string) error           { return nil }
-func (m *TunFactoryMockIP) Route6AddDefaultDev(_ string) error          { return nil }
-func (m *TunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error      { return nil }
-func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error     { return nil }
-func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string) error         { return nil }
-func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string) error        { return nil }
-func (m *TunFactoryMockIP) RouteGet(_ string) (string, error)           { return "", nil }
-func (m *TunFactoryMockIP) RouteAddDev(_, _ string) error               { return nil }
-func (m *TunFactoryMockIP) RouteAddViaDev(_, _, _ string) error         { return nil }
-func (m *TunFactoryMockIP) RouteDel(_ string) error                     { return nil }
+func (m *TunFactoryMockIP) add(tag string)                          { m.log.WriteString(tag + ";") }
+func (m *TunFactoryMockIP) TunTapAddDevTun(_ string) error          { m.add("add"); return nil }
+func (m *TunFactoryMockIP) LinkDelete(_ string) error               { m.add("del"); return nil }
+func (m *TunFactoryMockIP) LinkSetDevUp(_ string) error             { m.add("up"); return nil }
+func (m *TunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error     { m.add("mtu"); return nil }
+func (m *TunFactoryMockIP) AddrAddDev(_, _ string) error            { m.add("addr"); return nil }
+func (m *TunFactoryMockIP) RouteDefault() (string, error)           { m.add("route"); return "eth0", nil }
+func (m *TunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error  { return nil }
+func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error { return nil }
+func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string) error     { return nil }
+func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string) error    { return nil }
+func (m *TunFactoryMockIP) RouteGet(_ string) (string, error)       { return "", nil }
+func (m *TunFactoryMockIP) RouteAddDev(_, _ string) error           { return nil }
+func (m *TunFactoryMockIP) RouteAddViaDev(_, _, _ string) error     { return nil }
+func (m *TunFactoryMockIP) RouteDel(_ string) error                 { return nil }
 
 // Variant: RouteDefault returns empty iface (to hit "skipping iptables forwarding disable").
 type TunFactoryMockIPRouteEmpty struct{ TunFactoryMockIP }
@@ -916,49 +912,6 @@ func TestIsBenignInterfaceError(t *testing.T) {
 	}
 	if f.isBenignInterfaceError(errors.New("permission denied")) {
 		t.Errorf("unexpected benign for non-matching error")
-	}
-}
-
-func TestTunFactoryMockIP_ExerciseAllStubs(t *testing.T) {
-	m := &TunFactoryMockIP{}
-
-	// Exercise previously uncovered stubs
-	if _, err := m.AddrShowDev(0, "dummy"); err != nil {
-		t.Fatalf("AddrShowDev: %v", err)
-	}
-	if err := m.RouteAddDefaultDev("eth0"); err != nil {
-		t.Fatalf("RouteAddDefaultDev: %v", err)
-	}
-	if _, err := m.RouteGet("1.2.3.4/32"); err != nil {
-		t.Fatalf("RouteGet: %v", err)
-	}
-	if err := m.RouteAddDev("dev0", "10.0.0.0/24"); err != nil {
-		t.Fatalf("RouteAddDev: %v", err)
-	}
-	if err := m.RouteAddViaDev("10.0.1.0/24", "10.0.0.1", "dev0"); err != nil {
-		t.Fatalf("RouteAddViaDev: %v", err)
-	}
-	if err := m.RouteDel("10.0.0.0/24"); err != nil {
-		t.Fatalf("RouteDel: %v", err)
-	}
-
-	// Also tick the simple helpers
-	_ = m.TunTapAddDevTun("tunX")
-	_ = m.LinkDelete("tunX")
-	_ = m.LinkSetDevUp("tunX")
-	_ = m.LinkSetDevMTU("tunX", 1500)
-	_ = m.AddrAddDev("tunX", "10.0.0.1/24")
-
-	iface, err := m.RouteDefault()
-	if err != nil || iface == "" {
-		t.Fatalf("RouteDefault: iface=%q err=%v", iface, err)
-	}
-
-	got := m.log.String()
-	for _, tag := range []string{"add", "del", "up", "mtu", "addr", "route"} {
-		if !strings.Contains(got, tag+";") {
-			t.Errorf("expected tag %q in log, got: %q", tag, got)
-		}
 	}
 }
 

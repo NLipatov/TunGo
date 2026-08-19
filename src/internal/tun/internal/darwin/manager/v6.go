@@ -52,9 +52,12 @@ func (m *v6) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
 	}
 	m.ifName = name
 
+	// The server address belongs to the outer transport and may use a
+	// different IP family than the TUN. Pin it only when this manager's
+	// split routes cover that family.
 	if !serverAddr.Is4() {
 		routeIP := serverAddr.String()
-		if err := m.rt.Get(routeIP); err != nil {
+		if err := m.rt.Add(routeIP); err != nil {
 			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("route to server %s: %w", routeIP, err)
 		}

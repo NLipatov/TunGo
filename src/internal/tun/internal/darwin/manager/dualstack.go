@@ -63,14 +63,14 @@ func (m *dualStack) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error
 
 	if serverAddr.Is4() {
 		routeIP := serverAddr.String()
-		if err := m.rtc4.Get(routeIP); err != nil {
+		if err := m.rtc4.Add(routeIP); err != nil {
 			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", routeIP, err)
 		}
 		m.resolvedRouteIP4 = routeIP
 	} else {
 		routeIP := serverAddr.String()
-		if err := m.rtc6.Get(routeIP); err != nil {
+		if err := m.rtc6.Add(routeIP); err != nil {
 			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", routeIP, err)
 		}

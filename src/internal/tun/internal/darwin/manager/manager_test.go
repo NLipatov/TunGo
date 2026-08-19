@@ -42,20 +42,20 @@ func (m *mockIfconfig) SetMTU(ifName string, mtu int) error {
 }
 
 type mockRoute struct {
-	getCalls      []string
+	addCalls      []string
 	addSplitCalls []string
 	delSplitCalls []string
 	delCalls      []string
 
-	getErr      error
+	addErr      error
 	addSplitErr error
 	delSplitErr error
 	delErr      error
 }
 
-func (m *mockRoute) Get(destIP string) error {
-	m.getCalls = append(m.getCalls, destIP)
-	return m.getErr
+func (m *mockRoute) Add(destIP string) error {
+	m.addCalls = append(m.addCalls, destIP)
+	return m.addErr
 }
 
 func (m *mockRoute) AddSplit(dev string) error {

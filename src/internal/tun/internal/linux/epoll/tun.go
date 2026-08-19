@@ -192,8 +192,6 @@ func (w *tun) Close() error {
 	return firstErr
 }
 
-func (w *tun) Fd() uintptr { return uintptr(w.fd) }
-
 func (w *tun) waitRead() error {
 	var evs [1]unix.EpollEvent
 	for {

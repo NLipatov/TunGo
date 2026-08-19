@@ -3,7 +3,6 @@
 package ipcfg
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -58,22 +57,6 @@ func (v *V6) SetAddressStatic(ifName string, prefix netip.Prefix) error {
 	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{prefix})
 }
 
-func (v *V6) DeleteAddress(ifName, interfaceAddress string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	ip, ipErr := netip.ParseAddr(strings.TrimSpace(interfaceAddress))
-	if ipErr != nil || !ip.Is6() {
-		return fmt.Errorf("DeleteAddress(v6): not IPv6: %q", interfaceAddress)
-	}
-	row, err := luid.IPAddress(ip)
-	if err != nil {
-		return fmt.Errorf("DeleteAddress(v6): lookup failed: %w", err)
-	}
-	return row.Delete()
-}
-
 func (v *V6) SetDNS(ifName string, dnsServers []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
@@ -123,27 +106,6 @@ func (v *V6) SetMTU(ifName string, mtu int) error {
 		row.Metric = 1
 	}
 	return row.Set()
-}
-
-func (v *V6) DeleteDefaultRoute(ifName string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	tab, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
-	if err != nil {
-		return err
-	}
-	var last error
-	for i := range tab {
-		r := &tab[i]
-		if r.InterfaceLUID == luid && r.DestinationPrefix.PrefixLength == 0 {
-			if err := r.Delete(); err != nil {
-				last = err
-			}
-		}
-	}
-	return last
 }
 
 func (v *V6) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error {
@@ -261,36 +223,6 @@ func (v *V6) DeleteRouteOnInterface(destination netip.Addr, ifName string) error
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// Print returns a human-readable dump of the IPv6 route table.
-// If t is non-empty, only lines containing t are included (substring match).
-func (v *V6) Print(t string) ([]byte, error) {
-	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
-	if err != nil {
-		return nil, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
-	}
-	var b bytes.Buffer
-	b.WriteString("DestPrefix\tNextHop\tIfAlias\tIfIndex\tMetric\n")
-	for i := range rows {
-		r := &rows[i]
-		dp := r.DestinationPrefix.Prefix()
-		if !dp.Addr().Is6() {
-			continue
-		}
-		nh := r.NextHop.Addr()
-		nextHop := "on-link"
-		if nh.IsValid() && nh.Is6() && !nh.IsUnspecified() {
-			nextHop = nh.String()
-		}
-		alias := v.resolver.NetworkInterfaceName(r.InterfaceLUID)
-		line := fmt.Sprintf("%s\t%s\t%s\t%d\t%d\n",
-			dp.String(), nextHop, alias, r.InterfaceIndex, r.Metric)
-		if t == "" || strings.Contains(line, t) {
-			b.WriteString(line)
-		}
-	}
-	return b.Bytes(), nil
 }
 
 // BestRoute returns (gateway, interfaceAlias, interfaceIndex, routeMetric) for IPv6.
