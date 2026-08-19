@@ -80,8 +80,7 @@ func (m *clienttunManagerIPMock) Route6DelSplitDefault(string) error {
 }
 func (m *clienttunManagerIPMock) RouteDel(target string) error {
 	m.routeDelTargets = append(m.routeDelTargets, target)
-	m.log.WriteString("rdel;")
-	return nil
+	return m.mark("rdel")
 }
 
 // clienttunManagerIPGetErr forces RouteGet to error (code ignores err, falls to parse error).
@@ -450,6 +449,37 @@ func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
 	}
 	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4.String() {
 		t.Fatalf("deleted host routes = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
+	}
+}
+
+func TestCloseTunnelRetriesServerRouteDeletion(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{
+		routeReply: "198.51.100.1 dev eth0",
+		failStep:   "rdel",
+	}
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	dev, err := mgr.OpenTunnel(testServerAddrV4)
+	if err != nil {
+		t.Fatalf("OpenTunnel() error = %v", err)
+	}
+	_ = dev.Close()
+
+	if err := mgr.CloseTunnel(); err == nil {
+		t.Fatal("CloseTunnel() error = nil, want route deletion error")
+	}
+	if mgr.serverAddr != testServerAddrV4 {
+		t.Fatalf("serverAddr = %s, want retained %s", mgr.serverAddr, testServerAddrV4)
+	}
+
+	ipMock.failStep = ""
+	if err := mgr.CloseTunnel(); err != nil {
+		t.Fatalf("retry CloseTunnel() error = %v", err)
+	}
+	if mgr.serverAddr.IsValid() {
+		t.Fatalf("serverAddr = %s, want cleared address", mgr.serverAddr)
+	}
+	if len(ipMock.routeDelTargets) != 2 {
+		t.Fatalf("route deletion attempts = %d, want 2", len(ipMock.routeDelTargets))
 	}
 }
 

@@ -172,7 +172,9 @@ func (t *Manager) CloseTunnel() error {
 	t.disposeDevice(t.configuration.UDPSettings)
 	t.disposeDevice(t.configuration.WSSettings)
 	if t.serverAddr.IsValid() {
-		_ = t.ip.RouteDel(t.serverAddr.String())
+		if err := t.ip.RouteDel(t.serverAddr.String()); err != nil {
+			return fmt.Errorf("delete route to server %s: %w", t.serverAddr, err)
+		}
 		t.serverAddr = netip.Addr{}
 	}
 	return nil
