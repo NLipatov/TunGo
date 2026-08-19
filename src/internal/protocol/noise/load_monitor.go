@@ -50,13 +50,3 @@ func (lm *LoadMonitor) RecordHandshake() {
 func (lm *LoadMonitor) UnderLoad() bool {
 	return lm.handshakesPerSecond.Load() > lm.threshold.Load()
 }
-
-// HandshakesPerSecond returns the current handshake rate.
-func (lm *LoadMonitor) HandshakesPerSecond() int64 {
-	return lm.handshakesPerSecond.Load()
-}
-
-// SetThreshold updates the load threshold.
-func (lm *LoadMonitor) SetThreshold(threshold int64) {
-	lm.threshold.Store(threshold)
-}

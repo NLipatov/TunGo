@@ -1,28 +1,40 @@
 package systemd
 
 import (
-	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestAvailable(t *testing.T) {
-	hooks := Hooks{
-		Stat:     func(string) (os.FileInfo, error) { return nil, nil },
-		LookPath: func(string) (string, error) { return "/bin/systemctl", nil },
-	}
-	if !Available(hooks, "/run/systemd/system") {
-		t.Fatal("expected available=true")
-	}
+	t.Run("runtime directory missing", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if available(filepath.Join(t.TempDir(), "missing")) {
+			t.Fatal("available() = true")
+		}
+	})
 
-	hooks.Stat = func(string) (os.FileInfo, error) { return nil, errors.New("missing") }
-	if Available(hooks, "/run/systemd/system") {
-		t.Fatal("expected available=false when runtime dir missing")
-	}
+	t.Run("systemctl missing", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if available(t.TempDir()) {
+			t.Fatal("available() = true")
+		}
+	})
 
-	hooks.Stat = func(string) (os.FileInfo, error) { return nil, nil }
-	hooks.LookPath = func(string) (string, error) { return "", errors.New("missing") }
-	if Available(hooks, "/run/systemd/system") {
-		t.Fatal("expected available=false when systemctl missing")
-	}
+	t.Run("available", func(t *testing.T) {
+		binDir := t.TempDir()
+		name := "systemctl"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		path := filepath.Join(binDir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", binDir)
+		if !available(t.TempDir()) {
+			t.Fatal("available() = false")
+		}
+	})
 }

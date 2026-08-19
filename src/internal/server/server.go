@@ -119,7 +119,7 @@ func (s *Server) run(ctx context.Context) error {
 func (s *Server) cleanup() error {
 	var group errgroup.Group
 	for _, profile := range s.configuration.Profiles() {
-		group.Go(func() error { return s.tunManager.DisposeDevices(profile.Settings) })
+		group.Go(func() error { return s.tunManager.CloseTunnel(profile.Settings) })
 	}
 	return group.Wait()
 }
@@ -128,7 +128,7 @@ func (s *Server) createTunnel(
 	ctx context.Context,
 	workerSettings settings.Settings,
 ) (protocolTunnel, io.ReadWriteCloser, error) {
-	device, err := s.tunManager.CreateDevice(workerSettings)
+	device, err := s.tunManager.OpenTunnel(workerSettings)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error creating tun device: %w", err)
 	}

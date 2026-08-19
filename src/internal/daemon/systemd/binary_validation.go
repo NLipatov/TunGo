@@ -7,8 +7,8 @@ import (
 	"reflect"
 )
 
-func ValidateTungoBinaryForSystemd(h Hooks, binaryPath string) error {
-	info, err := h.Lstat(binaryPath)
+func validateTungoBinaryForSystemd(binaryPath string) error {
+	info, err := os.Lstat(binaryPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("tungo executable is not installed at %s; install it using the official Linux guide", binaryPath)
@@ -18,6 +18,10 @@ func ValidateTungoBinaryForSystemd(h Hooks, binaryPath string) error {
 	if info == nil {
 		return fmt.Errorf("failed to lstat %s: empty file info", binaryPath)
 	}
+	return validateTungoBinaryInfo(info, binaryPath)
+}
+
+func validateTungoBinaryInfo(info os.FileInfo, binaryPath string) error {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%s must not be a symlink", binaryPath)
 	}

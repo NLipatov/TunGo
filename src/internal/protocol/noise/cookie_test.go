@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"net/netip"
 	"testing"
-	"time"
 )
+
+func cookieManagerWithSecret(secret [32]byte) *CookieManager {
+	return &CookieManager{secret: secret}
+}
 
 func TestCookie_ValueComputation(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("192.168.1.100")
 	cookie := cm.ComputeCookieValue(clientIP)
@@ -99,7 +102,7 @@ func TestCookie_BoundToClientEphemeral(t *testing.T) {
 func TestCookie_Expiry_CurrentBucket(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("10.0.0.5")
 	cookie := cm.ComputeCookieValue(clientIP)
@@ -112,19 +115,13 @@ func TestCookie_Expiry_CurrentBucket(t *testing.T) {
 func TestCookie_Expiry_PreviousBucket(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("10.0.0.5")
 
-	// Generate cookie at a fixed time
-	fixedTime := time.Unix(1000*CookieBucketSeconds, 0)
-	cm.now = func() time.Time { return fixedTime }
-	cookie := cm.ComputeCookieValue(clientIP)
+	const bucket = 1000
+	cookie := computeCookieValue(secret, clientIP, bucket)
 
-	// Move to next bucket
-	cm.now = func() time.Time { return fixedTime.Add(time.Duration(CookieBucketSeconds) * time.Second) }
-
-	if !cm.ValidateCookie(clientIP, cookie) {
+	if !validateCookie(secret, clientIP, cookie, bucket+1) {
 		t.Fatal("cookie should be valid in previous bucket (transition period)")
 	}
 }
@@ -132,19 +129,13 @@ func TestCookie_Expiry_PreviousBucket(t *testing.T) {
 func TestCookie_Expiry_TooOld(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("10.0.0.5")
 
-	// Generate cookie at a fixed time
-	fixedTime := time.Unix(1000*CookieBucketSeconds, 0)
-	cm.now = func() time.Time { return fixedTime }
-	cookie := cm.ComputeCookieValue(clientIP)
+	const bucket = 1000
+	cookie := computeCookieValue(secret, clientIP, bucket)
 
-	// Move two buckets ahead (too old)
-	cm.now = func() time.Time { return fixedTime.Add(time.Duration(2*CookieBucketSeconds) * time.Second) }
-
-	if cm.ValidateCookie(clientIP, cookie) {
+	if validateCookie(secret, clientIP, cookie, bucket+2) {
 		t.Fatal("cookie should be invalid when too old")
 	}
 }
@@ -258,7 +249,7 @@ func TestDecryptCookieReply_ExactMinSize(t *testing.T) {
 func TestCookie_ValidateCookie_WrongIP_Fails(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("10.0.0.1")
 	wrongIP := netip.MustParseAddr("10.0.0.2")
@@ -272,7 +263,7 @@ func TestCookie_ValidateCookie_WrongIP_Fails(t *testing.T) {
 func TestCookie_ValidateCookie_GarbageCookie_Fails(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	clientIP := netip.MustParseAddr("10.0.0.1")
 	garbage := make([]byte, CookieSize)
@@ -311,7 +302,7 @@ func TestCookie_IPv6Client(t *testing.T) {
 func TestCookie_IPv6MappedIPv4(t *testing.T) {
 	var secret [32]byte
 	secret[0] = 1
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	mapped := netip.MustParseAddr("::ffff:192.0.2.1")
 	native := netip.MustParseAddr("192.0.2.1")
@@ -330,8 +321,8 @@ func TestCookie_DifferentSecrets_ProduceDifferentCookies(t *testing.T) {
 	var s1, s2 [32]byte
 	s1[0] = 1
 	s2[0] = 2
-	cm1 := NewCookieManagerWithSecret(s1)
-	cm2 := NewCookieManagerWithSecret(s2)
+	cm1 := cookieManagerWithSecret(s1)
+	cm2 := cookieManagerWithSecret(s2)
 
 	ip := netip.MustParseAddr("10.0.0.1")
 	c1 := cm1.ComputeCookieValue(ip)
