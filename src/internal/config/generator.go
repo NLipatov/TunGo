@@ -167,7 +167,10 @@ func deriveClientSettings(
 ) (settings.Settings, error) {
 	mtu := serverSettings.MTU
 	if protocol == settings.UDP {
-		mtu = settings.SafeMTU
+		mtu = settings.DefaultIPv4MTU
+		if serverSettings.IPv6Subnet.IsValid() && !serverSettings.IPv6Subnet.Addr().Is4() {
+			mtu = settings.DefaultIPv6MTU
+		}
 	}
 	tunName, err := deriveClientTunName(protocol)
 	if err != nil {

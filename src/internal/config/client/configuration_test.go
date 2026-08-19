@@ -91,3 +91,45 @@ func TestConfiguration_ActiveSettingsDerivesLegacyClientAddress(t *testing.T) {
 		t.Fatalf("IPv4 = %v, want %v", active.IPv4, want)
 	}
 }
+
+func TestConfiguration_ApplyClientDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		s    settings.Settings
+		want int
+	}{
+		{
+			name: "IPv4",
+			s: settings.Settings{Addressing: settings.Addressing{
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+			}},
+			want: settings.DefaultIPv4MTU,
+		},
+		{
+			name: "dual stack",
+			s: settings.Settings{Addressing: settings.Addressing{
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+			}},
+			want: settings.DefaultIPv6MTU,
+		},
+		{
+			name: "explicit MTU",
+			s: settings.Settings{
+				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:        1400,
+			},
+			want: 1400,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Configuration{Protocol: settings.UDP, UDPSettings: tt.s}
+			cfg.ApplyClientDefaults()
+			if cfg.UDPSettings.MTU != tt.want {
+				t.Fatalf("MTU = %d, want %d", cfg.UDPSettings.MTU, tt.want)
+			}
+		})
+	}
+}

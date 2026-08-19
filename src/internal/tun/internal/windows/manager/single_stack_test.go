@@ -4,7 +4,6 @@ package manager
 
 import (
 	"errors"
-	"io"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -12,85 +11,7 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func TestV4Manager_OpenTunnel_RollbackOnSplitRouteError(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addSplitErr: errors.New("split4 failed")}
-	tunDev := &dualStackTunMock{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    "tun0",
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			Server:     mustHost(t, "198.51.100.10"),
-		},
-		MTU: settings.SafeMTU,
-	}
-
-	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
-
-	_, err := m.OpenTunnel()
-	if err == nil || !strings.Contains(err.Error(), "split4 failed") {
-		t.Fatalf("expected split route error, got %v", err)
-	}
-	if !tunDev.closed {
-		t.Fatal("expected tun device to be closed on rollback")
-	}
-	if cfg.deleteDefaultSplitCalls == 0 {
-		t.Fatal("expected split routes cleanup")
-	}
-	if len(cfg.deletedRoutes) == 0 {
-		t.Fatal("expected host route cleanup")
-	}
-	if !containsRouteDelete(cfg.deletedRoutes, "198.51.100.10@eth0") {
-		t.Fatalf("expected route cleanup on best-route interface, got %v", cfg.deletedRoutes)
-	}
-	if !containsRouteDelete(cfg.deletedRoutes, "198.51.100.10") {
-		t.Fatalf("expected stale route cleanup before add, got %v", cfg.deletedRoutes)
-	}
-}
-
-func TestV6Manager_OpenTunnel_RollbackOnSplitRouteError(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addSplitErr: errors.New("split6 failed")}
-	tunDev := &dualStackTunMock{}
-
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    "tun0",
-			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
-			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "2001:db8::1"),
-		},
-		MTU: settings.SafeMTU,
-	}
-
-	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
-
-	_, err := m.OpenTunnel()
-	if err == nil || !strings.Contains(err.Error(), "split6 failed") {
-		t.Fatalf("expected split route error, got %v", err)
-	}
-	if !tunDev.closed {
-		t.Fatal("expected tun device to be closed on rollback")
-	}
-	if cfg.deleteDefaultSplitCalls == 0 {
-		t.Fatal("expected split routes cleanup")
-	}
-	if len(cfg.deletedRoutes) == 0 {
-		t.Fatal("expected host route cleanup")
-	}
-	if !containsRouteDelete(cfg.deletedRoutes, "2001:db8::1@eth0") {
-		t.Fatalf("expected route cleanup on best-route interface, got %v", cfg.deletedRoutes)
-	}
-	if !containsRouteDelete(cfg.deletedRoutes, "2001:db8::1") {
-		t.Fatalf("expected stale route cleanup before add, got %v", cfg.deletedRoutes)
-	}
-}
-
-func TestV4Manager_AddStaticRouteToServer_UsesRouteEndpoint(t *testing.T) {
+func TestV4Manager_AddStaticRouteToServer_UsesPassedServerAddr(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	m := newV4Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -100,18 +21,16 @@ func TestV4Manager_AddStaticRouteToServer_UsesRouteEndpoint(t *testing.T) {
 			Server:     mustHost(t, "198.51.100.10"),
 		},
 	}, cfg)
-	m.SetRouteEndpoint(netip.MustParseAddrPort("203.0.113.11:443"))
-	m.resolveRouteIPv4Fn = func() (string, error) { return "", errors.New("should not be called") }
 
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected success using route endpoint, got %v", err)
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("203.0.113.11")); err != nil {
+		t.Fatalf("expected success using passed server address, got %v", err)
 	}
-	if m.resolvedRouteIP != "203.0.113.11" {
+	if m.resolvedRouteIP != netip.MustParseAddr("203.0.113.11") {
 		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
 	}
 }
 
-func TestV6Manager_AddStaticRouteToServer_UsesRouteEndpoint(t *testing.T) {
+func TestV6Manager_AddStaticRouteToServer_UsesPassedServerAddr(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	m := newV6Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -121,13 +40,11 @@ func TestV6Manager_AddStaticRouteToServer_UsesRouteEndpoint(t *testing.T) {
 			Server:     mustHost(t, "2001:db8::1"),
 		},
 	}, cfg)
-	m.SetRouteEndpoint(netip.MustParseAddrPort("[2001:db8::5]:443"))
-	m.resolveRouteIPv6Fn = func() (string, error) { return "", errors.New("should not be called") }
 
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected success using route endpoint, got %v", err)
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("2001:db8::5")); err != nil {
+		t.Fatalf("expected success using passed server address, got %v", err)
 	}
-	if m.resolvedRouteIP != "2001:db8::5" {
+	if m.resolvedRouteIP != netip.MustParseAddr("2001:db8::5") {
 		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
 	}
 }
@@ -142,9 +59,7 @@ func TestV4Manager_AddStaticRouteToServer_UsesInterfaceIndexWhenAliasEmpty(t *te
 			Server:     mustHost(t, "198.51.100.10"),
 		},
 	}, cfg)
-	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
-
-	if err := m.addStaticRouteToServer(); err != nil {
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("198.51.100.10")); err != nil {
 		t.Fatalf("expected success with interface index fallback, got %v", err)
 	}
 	if m.resolvedRouteIf != "12" {
@@ -168,9 +83,7 @@ func TestV6Manager_AddStaticRouteToServer_UsesInterfaceIndexWhenAliasEmpty(t *te
 			Server:     mustHost(t, "2001:db8::1"),
 		},
 	}, cfg)
-	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
-
-	if err := m.addStaticRouteToServer(); err != nil {
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("2001:db8::1")); err != nil {
 		t.Fatalf("expected success with interface index fallback, got %v", err)
 	}
 	if m.resolvedRouteIf != "34" {
@@ -184,41 +97,7 @@ func TestV6Manager_AddStaticRouteToServer_UsesInterfaceIndexWhenAliasEmpty(t *te
 	}
 }
 
-func TestV4Manager_AddStaticRouteToServer_SkipsWhenRouteEndpointIsIPv6(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
-	m := newV4Manager(settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    "tun0",
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			Server:     mustHost(t, "198.51.100.10"),
-		},
-	}, cfg)
-	m.SetRouteEndpoint(netip.MustParseAddrPort("[2001:db8::5]:443"))
-
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected skip without error, got %v", err)
-	}
-}
-
-func TestV6Manager_AddStaticRouteToServer_SkipsWhenRouteEndpointIsIPv4(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
-	m := newV6Manager(settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    "tun0",
-			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
-			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "2001:db8::1"),
-		},
-	}, cfg)
-	m.SetRouteEndpoint(netip.MustParseAddrPort("203.0.113.11:443"))
-
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected skip without error, got %v", err)
-	}
-}
-
-func TestV4Manager_AddStaticRouteToServer_UsesResolverAfterRouteEndpointCleared(t *testing.T) {
+func TestV4Manager_AddStaticRouteToServer_SkipsIPv6Server(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	m := newV4Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -229,19 +108,12 @@ func TestV4Manager_AddStaticRouteToServer_UsesResolverAfterRouteEndpointCleared(
 		},
 	}, cfg)
 
-	m.SetRouteEndpoint(netip.MustParseAddrPort("203.0.113.11:443"))
-	m.SetRouteEndpoint(netip.AddrPort{})
-	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
-
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected resolver path after route endpoint clear, got %v", err)
-	}
-	if m.resolvedRouteIP != "198.51.100.10" {
-		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("2001:db8::5")); err != nil {
+		t.Fatalf("expected skip without error, got %v", err)
 	}
 }
 
-func TestV6Manager_AddStaticRouteToServer_UsesResolverAfterRouteEndpointCleared(t *testing.T) {
+func TestV6Manager_AddStaticRouteToServer_SkipsIPv4Server(t *testing.T) {
 	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
 	m := newV6Manager(settings.Settings{
 		Addressing: settings.Addressing{
@@ -252,15 +124,8 @@ func TestV6Manager_AddStaticRouteToServer_UsesResolverAfterRouteEndpointCleared(
 		},
 	}, cfg)
 
-	m.SetRouteEndpoint(netip.MustParseAddrPort("[2001:db8::5]:443"))
-	m.SetRouteEndpoint(netip.AddrPort{})
-	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
-
-	if err := m.addStaticRouteToServer(); err != nil {
-		t.Fatalf("expected resolver path after route endpoint clear, got %v", err)
-	}
-	if m.resolvedRouteIP != "2001:db8::1" {
-		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
+	if err := m.addStaticRouteToServer(netip.MustParseAddr("203.0.113.11")); err != nil {
+		t.Fatalf("expected skip without error, got %v", err)
 	}
 }
 
@@ -302,6 +167,106 @@ func TestV6Manager_CloseTunnel_CleansDNS(t *testing.T) {
 	}
 }
 
+func TestV4Manager_CloseTunnel_ClearsRouteStateAfterSuccessfulDelete(t *testing.T) {
+	cfg := &dualStackNetCfgMock{}
+	m := newV4Manager(settings.Settings{
+		Addressing: settings.Addressing{TunName: "tun0"},
+	}, cfg)
+	m.resolvedRouteIP = netip.MustParseAddr("198.51.100.10")
+	m.resolvedRouteIf = "eth0"
+
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+		t.Fatalf("route state was not cleared: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("second CloseTunnel() error = %v", err)
+	}
+	if got := len(cfg.deletedRoutes); got != 1 {
+		t.Fatalf("route deletion calls = %d, want 1", got)
+	}
+}
+
+func TestV4Manager_CloseTunnel_KeepsRouteStateAfterDeleteError(t *testing.T) {
+	deleteErr := errors.New("route cleanup fail")
+	cfg := &dualStackNetCfgMock{delRouteErr: deleteErr}
+	m := newV4Manager(settings.Settings{
+		Addressing: settings.Addressing{TunName: "tun0"},
+	}, cfg)
+	m.resolvedRouteIP = netip.MustParseAddr("198.51.100.10")
+	m.resolvedRouteIf = "eth0"
+
+	if err := m.CloseTunnel(); !errors.Is(err, deleteErr) {
+		t.Fatalf("CloseTunnel() error = %v, want %v", err, deleteErr)
+	}
+	if m.resolvedRouteIP != netip.MustParseAddr("198.51.100.10") || m.resolvedRouteIf != "eth0" {
+		t.Fatalf("route state was not preserved: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+
+	cfg.delRouteErr = nil
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("retry CloseTunnel() error = %v", err)
+	}
+	if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+		t.Fatalf("route state was not cleared after retry: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+	if got := len(cfg.deletedRoutes); got != 2 {
+		t.Fatalf("route deletion calls = %d, want 2", got)
+	}
+}
+
+func TestV6Manager_CloseTunnel_ClearsRouteStateAfterSuccessfulDelete(t *testing.T) {
+	cfg := &dualStackNetCfgMock{}
+	m := newV6Manager(settings.Settings{
+		Addressing: settings.Addressing{TunName: "tun0"},
+	}, cfg)
+	m.resolvedRouteIP = netip.MustParseAddr("2001:db8::1")
+	m.resolvedRouteIf = "eth0"
+
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+		t.Fatalf("route state was not cleared: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("second CloseTunnel() error = %v", err)
+	}
+	if got := len(cfg.deletedRoutes); got != 1 {
+		t.Fatalf("route deletion calls = %d, want 1", got)
+	}
+}
+
+func TestV6Manager_CloseTunnel_KeepsRouteStateAfterDeleteError(t *testing.T) {
+	deleteErr := errors.New("route cleanup fail")
+	cfg := &dualStackNetCfgMock{delRouteErr: deleteErr}
+	m := newV6Manager(settings.Settings{
+		Addressing: settings.Addressing{TunName: "tun0"},
+	}, cfg)
+	m.resolvedRouteIP = netip.MustParseAddr("2001:db8::1")
+	m.resolvedRouteIf = "eth0"
+
+	if err := m.CloseTunnel(); !errors.Is(err, deleteErr) {
+		t.Fatalf("CloseTunnel() error = %v, want %v", err, deleteErr)
+	}
+	if m.resolvedRouteIP != netip.MustParseAddr("2001:db8::1") || m.resolvedRouteIf != "eth0" {
+		t.Fatalf("route state was not preserved: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+
+	cfg.delRouteErr = nil
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("retry CloseTunnel() error = %v", err)
+	}
+	if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+		t.Fatalf("route state was not cleared after retry: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+	}
+	if got := len(cfg.deletedRoutes); got != 2 {
+		t.Fatalf("route deletion calls = %d, want 2", got)
+	}
+}
+
 func TestV4Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
 		delSplitErr: errors.New("split cleanup fail"),
@@ -313,7 +278,7 @@ func TestV4Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 			TunName: "tun0",
 		},
 	}, cfg)
-	m.resolvedRouteIP = "198.51.100.10"
+	m.resolvedRouteIP = netip.MustParseAddr("198.51.100.10")
 	m.resolvedRouteIf = "eth0"
 	m.tun = &dualStackTunMock{closeErr: errors.New("tun close fail")}
 
@@ -345,7 +310,7 @@ func TestV6Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 			TunName: "tun0",
 		},
 	}, cfg)
-	m.resolvedRouteIP = "2001:db8::1"
+	m.resolvedRouteIP = netip.MustParseAddr("2001:db8::1")
 	m.resolvedRouteIf = "eth0"
 	m.tun = &dualStackTunMock{closeErr: errors.New("tun close fail")}
 
@@ -366,9 +331,8 @@ func TestV6Manager_CloseTunnel_ReturnsCleanupErrors(t *testing.T) {
 	}
 }
 
-func TestV4Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
-	tunDev := &dualStackTunMock{}
+func TestV4Manager_SetDNSToTunDevice_UsesConfiguredDNS(t *testing.T) {
+	cfg := &dualStackNetCfgMock{}
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
@@ -378,15 +342,13 @@ func TestV4Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 			Server:     mustHost(t, "198.51.100.10"),
 			DNSv4:      []string{"9.9.9.9", "1.0.0.1"},
 		},
-		MTU: settings.SafeMTU,
+		MTU: settings.DefaultIPv4MTU,
 	}
 
 	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
-	if _, err := m.OpenTunnel(); err != nil {
-		t.Fatalf("OpenTunnel unexpected error: %v", err)
+	if err := m.setDNSToTunDevice(); err != nil {
+		t.Fatalf("setDNSToTunDevice() error = %v", err)
 	}
 	if len(cfg.setDNSValues) == 0 {
 		t.Fatal("expected DNS set call")
@@ -399,9 +361,8 @@ func TestV4Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 	}
 }
 
-func TestV6Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
-	tunDev := &dualStackTunMock{}
+func TestV6Manager_SetDNSToTunDevice_UsesConfiguredDNS(t *testing.T) {
+	cfg := &dualStackNetCfgMock{}
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
@@ -411,15 +372,13 @@ func TestV6Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 			Server:     mustHost(t, "2001:db8::1"),
 			DNSv6:      []string{"2606:4700:4700::1111", "2620:fe::9"},
 		},
-		MTU: settings.SafeMTU,
+		MTU: settings.DefaultIPv6MTU,
 	}
 
 	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.OpenTunnel(); err != nil {
-		t.Fatalf("OpenTunnel unexpected error: %v", err)
+	if err := m.setDNSToTunDevice(); err != nil {
+		t.Fatalf("setDNSToTunDevice() error = %v", err)
 	}
 	if len(cfg.setDNSValues) == 0 {
 		t.Fatal("expected DNS set call")
@@ -432,12 +391,10 @@ func TestV6Manager_OpenTunnel_UsesConfiguredDNS(t *testing.T) {
 	}
 }
 
-func TestV4Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
+func TestV4Manager_SetDNSToTunDevice_IgnoresFlushFailure(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
-		bestRouteIf: "eth0",
 		flushDNSErr: errors.New("flush fail"),
 	}
-	tunDev := &dualStackTunMock{}
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
@@ -446,27 +403,23 @@ func TestV4Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			Server:     mustHost(t, "198.51.100.10"),
 		},
-		MTU: settings.SafeMTU,
+		MTU: settings.DefaultIPv4MTU,
 	}
 
 	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
-	if _, err := m.OpenTunnel(); err != nil {
-		t.Fatalf("OpenTunnel should ignore DNS flush failure, got %v", err)
+	if err := m.setDNSToTunDevice(); err != nil {
+		t.Fatalf("setDNSToTunDevice() should ignore flush failure, got %v", err)
 	}
 	if cfg.flushDNSCalls == 0 {
 		t.Fatal("expected DNS flush attempt")
 	}
 }
 
-func TestV6Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
+func TestV6Manager_SetDNSToTunDevice_IgnoresFlushFailure(t *testing.T) {
 	cfg := &dualStackNetCfgMock{
-		bestRouteIf: "eth0",
 		flushDNSErr: errors.New("flush fail"),
 	}
-	tunDev := &dualStackTunMock{}
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
@@ -475,15 +428,13 @@ func TestV6Manager_OpenTunnel_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 			IPv6:       netip.MustParseAddr("fd00::2"),
 			Server:     mustHost(t, "2001:db8::1"),
 		},
-		MTU: settings.SafeMTU,
+		MTU: settings.DefaultIPv6MTU,
 	}
 
 	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
-	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
-	if _, err := m.OpenTunnel(); err != nil {
-		t.Fatalf("OpenTunnel should ignore DNS flush failure, got %v", err)
+	if err := m.setDNSToTunDevice(); err != nil {
+		t.Fatalf("setDNSToTunDevice() should ignore flush failure, got %v", err)
 	}
 	if cfg.flushDNSCalls == 0 {
 		t.Fatal("expected DNS flush attempt")

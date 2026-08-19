@@ -1,17 +1,15 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/netip"
 	"os"
 	"strings"
-	clientconfig "tungo/internal/config/client"
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/platform/command"
-	"tungo/internal/transport/host"
 	"tungo/internal/tun/internal/linux/epoll"
 	"tungo/internal/tun/internal/linux/ioctl"
 	"tungo/internal/tun/internal/linux/ip"
@@ -24,15 +22,15 @@ type tunWrapper interface {
 
 type Manager struct {
 	connectionSettings settings.Settings
-	configuration      *clientconfig.Configuration
+	configuration      *client.Configuration
 	ip                 ip.Contract
 	ioctl              ioctl.Contract
 	mss                mssclamp.Contract
 	wrapper            tunWrapper
-	routeEndpoint      netip.AddrPort
+	serverAddr         netip.Addr
 }
 
-func New(conf *clientconfig.Configuration) (*Manager, error) {
+func New(conf *client.Configuration) (*Manager, error) {
 	connectionSettings, err := conf.ActiveSettings()
 	if err != nil {
 		return nil, err
@@ -47,11 +45,15 @@ func New(conf *clientconfig.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (t *Manager) OpenTunnel() (io.ReadWriteCloser, error) {
+func (t *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("invalid server address %q", serverAddr)
+	}
+	serverAddr = serverAddr.Unmap()
 	connectionSettings := t.connectionSettings
 
 	// configureTUN client
-	if udpConfigurationErr := t.configureTUN(connectionSettings); udpConfigurationErr != nil {
+	if udpConfigurationErr := t.configureTUN(connectionSettings, serverAddr); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
@@ -64,12 +66,8 @@ func (t *Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 	return t.wrapper.Wrap(tunFile)
 }
 
-func (t *Manager) SetRouteEndpoint(addr netip.AddrPort) {
-	t.routeEndpoint = addr
-}
-
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
-func (t *Manager) configureTUN(connSettings settings.Settings) error {
+func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.Addr) error {
 	err := t.ip.TunTapAddDevTun(connSettings.TunName)
 	if err != nil {
 		return err
@@ -104,25 +102,10 @@ func (t *Manager) configureTUN(connSettings settings.Settings) error {
 		slog.Info("assigned IPv6 to interface", "cidr", cidr6, "name", connSettings.TunName)
 	}
 
-	serverIP := ""
-	if t.routeEndpoint.IsValid() {
-		ip := t.routeEndpoint.Addr()
-		if ip.Unmap().Is4() {
-			serverIP = ip.Unmap().String()
-		} else {
-			serverIP = ip.String()
-		}
-	}
-	if serverIP == "" {
-		var hostErr error
-		serverIP, hostErr = host.ResolveIP(context.Background(), connSettings.Server)
-		if hostErr != nil {
-			return fmt.Errorf("failed to resolve route target host: %w", hostErr)
-		}
-	}
+	serverAddrString := serverAddr.String()
 
 	// Get routing information
-	routeInfo, err := t.ip.RouteGet(serverIP)
+	routeInfo, err := t.ip.RouteGet(serverAddrString)
 	if err != nil {
 		return err
 	}
@@ -142,48 +125,15 @@ func (t *Manager) configureTUN(connSettings settings.Settings) error {
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = t.ip.RouteAddDev(serverIP, devInterface)
+		err = t.ip.RouteAddDev(serverAddrString, devInterface)
 	} else {
-		err = t.ip.RouteAddViaDev(serverIP, devInterface, viaGateway)
+		err = t.ip.RouteAddViaDev(serverAddrString, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
-	slog.Info("added route to server", "server_ip", serverIP, "via", viaGateway, "device", devInterface)
-
-	// Add route for IPv6 server address (if available)
-	if connSettings.Server.IPv6 != "" || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
-		serverIPv6 := ""
-		if t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4() {
-			serverIPv6 = t.routeEndpoint.Addr().String()
-		}
-		if serverIPv6 == "" {
-			serverIPv6, _ = host.ResolveIPv6(context.Background(), connSettings.Server)
-		}
-		if serverIPv6 != "" {
-			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
-			if routeErr6 == nil {
-				var via6, dev6 string
-				fields6 := strings.Fields(routeInfo6)
-				for i, field := range fields6 {
-					if field == "via" && i+1 < len(fields6) {
-						via6 = fields6[i+1]
-					}
-					if field == "dev" && i+1 < len(fields6) {
-						dev6 = fields6[i+1]
-					}
-				}
-				if dev6 != "" {
-					if via6 == "" {
-						_ = t.ip.RouteAddDev(serverIPv6, dev6)
-					} else {
-						_ = t.ip.RouteAddViaDev(serverIPv6, dev6, via6)
-					}
-					slog.Info("added route to IPv6 server", "server_ip", serverIPv6, "via", via6, "device", dev6)
-				}
-			}
-		}
-	}
+	t.serverAddr = serverAddr
+	slog.Info("added route to server", "server_ip", serverAddrString, "via", viaGateway, "device", devInterface)
 
 	// Set split default routes — more specific than 0.0.0.0/0 so they take
 	// priority without destroying the original default route. On crash or
@@ -221,6 +171,10 @@ func (t *Manager) CloseTunnel() error {
 	t.disposeDevice(t.configuration.TCPSettings)
 	t.disposeDevice(t.configuration.UDPSettings)
 	t.disposeDevice(t.configuration.WSSettings)
+	if t.serverAddr.IsValid() {
+		_ = t.ip.RouteDel(t.serverAddr.String())
+		t.serverAddr = netip.Addr{}
+	}
 	return nil
 }
 
@@ -234,13 +188,5 @@ func (t *Manager) disposeDevice(s settings.Settings) {
 	// Remove split routes before deleting the device
 	_ = t.ip.RouteDelSplitDefault(s.TunName)
 	_ = t.ip.Route6DelSplitDefault(s.TunName)
-	if routeTarget, routeErr := host.ResolveIP(context.Background(), s.Server); routeErr == nil {
-		_ = t.ip.RouteDel(routeTarget)
-	}
-	if s.Server.IPv6 != "" {
-		if routeTarget, routeErr := host.ResolveIPv6(context.Background(), s.Server); routeErr == nil {
-			_ = t.ip.RouteDel(routeTarget)
-		}
-	}
 	_ = t.ip.LinkDelete(s.TunName)
 }

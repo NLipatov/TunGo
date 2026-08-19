@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	clientconfig "tungo/internal/config/client"
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 )
 
@@ -36,9 +36,11 @@ func (w clienttunManagerPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, erro
 // clienttunManagerIPMock simulates `ip` contract and records call sequence.
 // `failStep` makes the corresponding step return an error.
 type clienttunManagerIPMock struct {
-	log        bytes.Buffer
-	routeReply string
-	failStep   string
+	log             bytes.Buffer
+	routeReply      string
+	failStep        string
+	routeGetTargets []string
+	routeDelTargets []string
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -58,8 +60,11 @@ func (m *clienttunManagerIPMock) AddrShowDev(int, string) (string, error) { retu
 func (m *clienttunManagerIPMock) RouteDefault() (string, error)           { return "eth0", nil }
 func (m *clienttunManagerIPMock) RouteAddDefaultDev(string) error         { return m.mark("def") }
 func (m *clienttunManagerIPMock) Route6AddDefaultDev(string) error        { return m.mark("def6") }
-func (m *clienttunManagerIPMock) RouteGet(string) (string, error)         { return m.routeReply, nil }
-func (m *clienttunManagerIPMock) RouteAddDev(string, string) error        { return m.mark("radd") }
+func (m *clienttunManagerIPMock) RouteGet(target string) (string, error) {
+	m.routeGetTargets = append(m.routeGetTargets, target)
+	return m.routeReply, nil
+}
+func (m *clienttunManagerIPMock) RouteAddDev(string, string) error { return m.mark("radd") }
 func (m *clienttunManagerIPMock) RouteAddViaDev(string, string, string) error {
 	return m.mark("raddvia")
 }
@@ -73,7 +78,11 @@ func (m *clienttunManagerIPMock) Route6DelSplitDefault(string) error {
 	m.log.WriteString("splitdel6;")
 	return nil
 }
-func (m *clienttunManagerIPMock) RouteDel(string) error { m.log.WriteString("rdel;"); return nil }
+func (m *clienttunManagerIPMock) RouteDel(target string) error {
+	m.routeDelTargets = append(m.routeDelTargets, target)
+	m.log.WriteString("rdel;")
+	return nil
+}
 
 // clienttunManagerIPGetErr forces RouteGet to error (code ignores err, falls to parse error).
 type clienttunManagerIPGetErr struct{ clienttunManagerIPMock }
@@ -111,6 +120,8 @@ func mustPrefix(raw string) netip.Prefix {
 func mustAddr(raw string) netip.Addr {
 	return netip.MustParseAddr(raw)
 }
+
+var testServerAddrV4 = mustAddr("198.51.100.1")
 
 func (m clienttunManagerMSSMock) Install(string) error { return m.installErr }
 func (m clienttunManagerMSSMock) Remove(string) error  { return m.removeErr }
@@ -187,7 +198,7 @@ func newMgr(
 			Protocol: settings.WS,
 		},
 	}
-	conf := &clientconfig.Configuration{
+	conf := &client.Configuration{
 		Protocol:    proto,
 		TCPSettings: profiles[settings.TCP],
 		UDPSettings: profiles[settings.UDP],
@@ -211,7 +222,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.OpenTunnel()
+	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -230,7 +241,7 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
 	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.OpenTunnel()
+	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +260,7 @@ func TestOpenTunnel_WS_Path(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.2 dev eth0"}
 	m := newMgr(settings.WS, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	dev, err := m.OpenTunnel()
+	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("WS path failed: %v", err)
 	}
@@ -264,7 +275,7 @@ func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.OpenTunnel(); err == nil {
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected parse error (no dev)")
 	} else if !strings.Contains(err.Error(), "failed to parse route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
@@ -275,7 +286,7 @@ func TestOpenTunnel_RouteGetError_LeadsToParseError(t *testing.T) {
 	ipMock := &clienttunManagerIPGetErr{}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.OpenTunnel(); err == nil {
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected RouteGet error")
 	} else if !strings.Contains(err.Error(), "failed to get route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
@@ -286,7 +297,7 @@ func TestOpenTunnel_OpenTunError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{openErr: errors.New("open fail")}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
-	if _, err := m.OpenTunnel(); err == nil {
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected open TUN error")
 	} else if !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("unexpected error: %v", err)
@@ -297,7 +308,7 @@ func TestOpenTunnel_WrapError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{err: errors.New("wrap fail")})
 
-	if _, err := m.OpenTunnel(); err == nil {
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected wrapper.Wrap error")
 	}
 }
@@ -307,7 +318,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-		if _, err := m.OpenTunnel(); err == nil {
+		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
 	}
@@ -318,7 +329,7 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-		if _, err := m.OpenTunnel(); err == nil {
+		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
 	}
@@ -338,7 +349,7 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	mssMock := clienttunManagerMSSMock{installErr: errors.New("iptables fail")}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock, clienttunManagerPlainWrapper{})
 
-	_, err := m.OpenTunnel()
+	_, err := m.OpenTunnel(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected MSS install error")
 	}
@@ -358,7 +369,7 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 	mgr.connectionSettings.Server.IPv6 = "2001:db8::1"
 
-	dev, err := mgr.OpenTunnel()
+	dev, err := mgr.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -391,7 +402,7 @@ func TestOpenTunnel_IPv6_AddrAddError(t *testing.T) {
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
-	_, err := mgr.OpenTunnel()
+	_, err := mgr.OpenTunnel(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on IPv6 addr add failure")
 	}
@@ -406,32 +417,39 @@ func TestOpenTunnel_IPv6_Route6DefaultError(t *testing.T) {
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
-	_, err := mgr.OpenTunnel()
+	_, err := mgr.OpenTunnel(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on Route6AddSplitDefaultDev failure")
 	}
 }
 
-func TestCloseTunnel_IPv6HostRouteCleanup(t *testing.T) {
+func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-	profiles := []*settings.Settings{
-		&mgr.configuration.TCPSettings,
-		&mgr.configuration.UDPSettings,
-		&mgr.configuration.WSSettings,
-	}
-	for i, profile := range profiles {
-		profile.Server.IPv6 = fmt.Sprintf("2001:db8::%d", i+1)
-	}
 
 	if err := mgr.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Each configured interface has one IPv4 and one IPv6 host route.
-	got := ipMock.log.String()
-	if strings.Count(got, "rdel;") != 6 {
-		t.Fatalf("expected 6 route deletions (3 IPv4 + 3 IPv6), got: %s", got)
+	if len(ipMock.routeDelTargets) != 0 {
+		t.Fatalf("unexpected host route deletions: %v", ipMock.routeDelTargets)
+	}
+}
+
+func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	dev, err := mgr.OpenTunnel(testServerAddrV4)
+	if err != nil {
+		t.Fatalf("OpenTunnel() error = %v", err)
+	}
+	_ = dev.Close()
+
+	if err := mgr.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4.String() {
+		t.Fatalf("deleted host routes = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 }
 

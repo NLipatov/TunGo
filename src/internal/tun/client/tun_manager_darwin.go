@@ -3,27 +3,27 @@
 package client
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/netip"
-	clientconfig "tungo/internal/config/client"
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/tun/internal/darwin/manager"
 )
 
 type clientManager interface {
-	OpenTunnel() (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
 	CloseTunnel() error
-	SetRouteEndpoint(netip.AddrPort)
 }
 
 type Manager struct {
 	manager       clientManager
-	activeTunName string
-	configuration *clientconfig.Configuration
+	configuration *client.Configuration
 }
 
-func New(conf *clientconfig.Configuration) (*Manager, error) {
+func New(conf *client.Configuration) (*Manager, error) {
 	connectionSettings, err := conf.ActiveSettings()
 	if err != nil {
 		return nil, err
@@ -34,25 +34,28 @@ func New(conf *clientconfig.Configuration) (*Manager, error) {
 	}
 	return &Manager{
 		manager:       concrete,
-		activeTunName: connectionSettings.TunName,
 		configuration: conf,
 	}, nil
 }
 
-func (m *Manager) OpenTunnel() (io.ReadWriteCloser, error) {
-	return m.manager.OpenTunnel()
+func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	return m.manager.OpenTunnel(serverAddr)
 }
 
 func (m *Manager) CloseTunnel() error {
 	activeErr := m.manager.CloseTunnel()
-	m.disposeStale(m.configuration.TCPSettings)
-	m.disposeStale(m.configuration.UDPSettings)
-	m.disposeStale(m.configuration.WSSettings)
+	active, err := m.configuration.ActiveSettings()
+	if err != nil {
+		return errors.Join(activeErr, fmt.Errorf("determine active TUN settings: %w", err))
+	}
+	m.disposeStale(m.configuration.TCPSettings, active.TunName)
+	m.disposeStale(m.configuration.UDPSettings, active.TunName)
+	m.disposeStale(m.configuration.WSSettings, active.TunName)
 	return activeErr
 }
 
-func (m *Manager) disposeStale(s settings.Settings) {
-	if s.TunName == "" || s.TunName == m.activeTunName {
+func (m *Manager) disposeStale(s settings.Settings, activeTunName string) {
+	if s.TunName == "" || s.TunName == activeTunName {
 		return
 	}
 	cleanupManager, err := manager.New(s)
@@ -63,8 +66,4 @@ func (m *Manager) disposeStale(s settings.Settings) {
 	if err := cleanupManager.CloseTunnel(); err != nil {
 		slog.Warn("failed to clean stale TUN configuration", "name", s.TunName, "err", err)
 	}
-}
-
-func (m *Manager) SetRouteEndpoint(addr netip.AddrPort) {
-	m.manager.SetRouteEndpoint(addr)
 }

@@ -14,9 +14,20 @@ import (
 )
 
 type clientManager interface {
-	OpenTunnel() (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
 	CloseTunnel() error
-	SetRouteEndpoint(netip.AddrPort)
+}
+
+type interfaceConfigurator interface {
+	LinkAddrAdd(ifName string, prefix netip.Prefix) error
+	SetMTU(ifName string, mtu int) error
+}
+
+type routeConfigurator interface {
+	Get(destIP string) error
+	AddSplit(ifName string) error
+	DelSplit(ifName string) error
+	Del(destIP string) error
 }
 
 func New(s settings.Settings) (clientManager, error) {

@@ -3,15 +3,11 @@
 package manager
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/netip"
 
 	"tungo/internal/config/settings"
-	"tungo/internal/transport/host"
-	"tungo/internal/tun/internal/darwin/ifconfig"
-	"tungo/internal/tun/internal/darwin/route"
 	"tungo/internal/tun/internal/darwin/utun"
 )
 
@@ -19,21 +15,16 @@ type v6 struct {
 	s               settings.Settings
 	tunDev          io.ReadWriteCloser
 	rawUTUN         utun.UTUN
-	ifc             ifconfig.Contract // v6 ifconfig.Contract implementation
-	rt              route.Contract    // v6 route.Contract implementation
+	ifc             interfaceConfigurator
+	rt              routeConfigurator
 	ifName          string
-	routeEndpoint   netip.AddrPort
 	resolvedRouteIP string // cached resolved server IP for consistent teardown
-}
-
-func (m *v6) SetRouteEndpoint(addr netip.AddrPort) {
-	m.routeEndpoint = addr
 }
 
 func newV6(
 	s settings.Settings,
-	ifc ifconfig.Contract,
-	rt route.Contract,
+	ifc interfaceConfigurator,
+	rt routeConfigurator,
 ) *v6 {
 	return &v6{
 		s:   s,
@@ -42,12 +33,13 @@ func newV6(
 	}
 }
 
-func (m *v6) OpenTunnel() (io.ReadWriteCloser, error) {
-	if err := m.validateSettings(); err != nil {
-		return nil, err
+func (m *v6) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("v6: invalid server address %q", serverAddr)
 	}
+	serverAddr = serverAddr.Unmap()
 
-	raw, err := utun.Create(m.ifc, m.effectiveMTU())
+	raw, err := utun.Create(m.ifc, m.s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -60,19 +52,13 @@ func (m *v6) OpenTunnel() (io.ReadWriteCloser, error) {
 	}
 	m.ifName = name
 
-	routeIP, routeErr := m.resolveRouteIPv6()
-	if routeErr != nil {
-		if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
-			m.tunDev = utun.NewDarwinTunDevice(raw)
-			return m.tunDev, nil
+	if !serverAddr.Is4() {
+		routeIP := serverAddr.String()
+		if err := m.rt.Get(routeIP); err != nil {
+			_ = m.CloseTunnel()
+			return nil, fmt.Errorf("route to server %s: %w", routeIP, err)
 		}
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Server, routeErr)
-	}
-	m.resolvedRouteIP = routeIP
-	if err := m.rt.Get(routeIP); err != nil {
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, err)
+		m.resolvedRouteIP = routeIP
 	}
 	if err := m.assignIPv6(); err != nil {
 		_ = m.CloseTunnel()
@@ -92,12 +78,8 @@ func (m *v6) CloseTunnel() error {
 	if m.ifName != "" {
 		_ = m.rt.DelSplit(m.ifName)
 	}
-	routeIP := m.resolvedRouteIP
-	if routeIP == "" {
-		routeIP, _ = m.resolveRouteIPv6()
-	}
-	if routeIP != "" {
-		_ = m.rt.Del(routeIP)
+	if m.resolvedRouteIP != "" {
+		_ = m.rt.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -107,51 +89,14 @@ func (m *v6) CloseTunnel() error {
 	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
-	return nil
-}
-
-func (m *v6) validateSettings() error {
-	ip := m.s.IPv6.Unmap()
-	if !ip.IsValid() || ip.Is4() {
-		return fmt.Errorf("v6: invalid IPv6 %q", m.s.IPv6)
-	}
-	if m.s.Server == (settings.Host{}) {
-		return fmt.Errorf("v6: empty Server")
-	}
+	m.resolvedRouteIP = ""
 	return nil
 }
 
 func (m *v6) assignIPv6() error {
-	var cidr string
-	if m.s.IPv6Subnet.IsValid() {
-		cidr = fmt.Sprintf("%s/%d", m.s.IPv6, m.s.IPv6Subnet.Bits())
-	} else {
-		cidr = fmt.Sprintf("%s/128", m.s.IPv6)
-	}
-	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
-		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)
+	prefix := netip.PrefixFrom(m.s.IPv6, m.s.IPv6Subnet.Bits())
+	if err := m.ifc.LinkAddrAdd(m.ifName, prefix); err != nil {
+		return fmt.Errorf("v6: set addr %s on %s: %w", prefix, m.ifName, err)
 	}
 	return nil
-}
-
-func (m *v6) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < 1280 {
-		mtu = 1280
-	}
-	return mtu
-}
-
-func (m *v6) resolveRouteIPv6() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if !ip.Unmap().Is4() {
-			return ip.String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
-	}
-	return host.ResolveIPv6(context.Background(), m.s.Server)
 }

@@ -20,7 +20,7 @@ type clientTestTunManager struct {
 	disposeCalls atomic.Int32
 }
 
-func (*clientTestTunManager) OpenTunnel() (io.ReadWriteCloser, error) {
+func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriteCloser, error) {
 	return nil, nil
 }
 
@@ -28,8 +28,6 @@ func (m *clientTestTunManager) CloseTunnel() error {
 	m.disposeCalls.Add(1)
 	return nil
 }
-
-func (*clientTestTunManager) SetRouteEndpoint(netip.AddrPort) {}
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	manager := &clientTestTunManager{}
@@ -62,6 +60,51 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	}
 	if got := manager.disposeCalls.Load(); got != 2 {
 		t.Fatalf("CloseTunnel() calls = %d, want before attempt and on exit", got)
+	}
+}
+
+type clientTestRemoteTransport struct {
+	io.ReadWriteCloser
+	remote netip.AddrPort
+}
+
+func (t clientTestRemoteTransport) RemoteAddrPort() netip.AddrPort {
+	return t.remote
+}
+
+type clientTestNoRemoteTransport struct{}
+
+func (clientTestNoRemoteTransport) Read([]byte) (int, error)    { return 0, io.EOF }
+func (clientTestNoRemoteTransport) Write(p []byte) (int, error) { return len(p), nil }
+func (clientTestNoRemoteTransport) Close() error                { return nil }
+
+func TestTransportServerAddr(t *testing.T) {
+	transport := clientTestRemoteTransport{remote: netip.MustParseAddrPort("[::ffff:192.0.2.10]:443")}
+
+	got, err := transportServerAddr(transport)
+	if err != nil {
+		t.Fatalf("transportServerAddr() error = %v", err)
+	}
+	if want := netip.MustParseAddr("192.0.2.10"); got != want {
+		t.Fatalf("transportServerAddr() = %s, want %s", got, want)
+	}
+}
+
+func TestTransportServerAddrRejectsMissingOrInvalidRemoteAddress(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport io.ReadWriteCloser
+	}{
+		{name: "missing provider", transport: clientTestNoRemoteTransport{}},
+		{name: "invalid address", transport: clientTestRemoteTransport{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := transportServerAddr(tt.transport); err == nil {
+				t.Fatal("transportServerAddr() error = nil")
+			}
+		})
 	}
 }
 

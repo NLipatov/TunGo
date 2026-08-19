@@ -4,9 +4,9 @@ package ipcfg
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math"
-	"net"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -23,17 +23,17 @@ const (
 	v6SplitTwo = "8000::/1"
 )
 
-type v6 struct {
-	resolver resolver.Contract
+type V6 struct {
+	resolver *resolver.Resolver
 }
 
-func newV6(resolver resolver.Contract) Contract {
-	return &v6{
-		resolver: resolver,
+func NewV6() *V6 {
+	return &V6{
+		resolver: resolver.NewResolver(),
 	}
 }
 
-func (v *v6) FlushDNS() error {
+func (v *V6) FlushDNS() error {
 	dnsApi := windows.NewLazySystemDLL("dnsapi.dll")
 	proc := dnsApi.NewProc("DnsFlushResolverCache")
 	if err := dnsApi.Load(); err != nil {
@@ -46,42 +46,19 @@ func (v *v6) FlushDNS() error {
 	return nil
 }
 
-func (v *v6) SetAddressStatic(ifName, ip, mask string) error {
+func (v *V6) SetAddressStatic(ifName string, prefix netip.Prefix) error {
+	addr := prefix.Addr()
+	if !prefix.IsValid() || !addr.Is6() || addr.Is4In6() {
+		return fmt.Errorf("SetAddressStatic(v6): invalid IPv6 prefix %q", prefix)
+	}
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := v.ipv6PrefixFromIPMask(ip, mask)
-	if err != nil {
-		return fmt.Errorf("SetAddressStatic(v6): %w", err)
-	}
-	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx})
+	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{prefix})
 }
 
-func (v *v6) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	pfx, err := v.ipv6PrefixFromIPMask(ip, mask)
-	if err != nil {
-		return fmt.Errorf("SetAddressWithGateway(v6): %w", err)
-	}
-	if err = luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx}); err != nil {
-		return fmt.Errorf("SetAddressWithGateway(v6): set ip: %w", err)
-	}
-	gw, gwErr := netip.ParseAddr(strings.TrimSpace(gateway))
-	if gwErr != nil || !gw.Is6() {
-		return fmt.Errorf("SetAddressWithGateway(v6): gateway is not IPv6: %q", gateway)
-	}
-	gw, _ = netip.ParseAddr(strings.TrimSpace(gateway))
-	if !pfx.Contains(gw) && !gw.IsLinkLocalUnicast() {
-		return fmt.Errorf("gateway %s is not in interface subnet %s", gw, pfx)
-	}
-	return luid.AddRoute(netip.PrefixFrom(netip.IPv6Unspecified(), 0), gw, uint32(min(1, metric)))
-}
-
-func (v *v6) DeleteAddress(ifName, interfaceAddress string) error {
+func (v *V6) DeleteAddress(ifName, interfaceAddress string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -97,7 +74,7 @@ func (v *v6) DeleteAddress(ifName, interfaceAddress string) error {
 	return row.Delete()
 }
 
-func (v *v6) SetDNS(ifName string, dnsServers []string) error {
+func (v *V6) SetDNS(ifName string, dnsServers []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -128,7 +105,7 @@ func (v *v6) SetDNS(ifName string, dnsServers []string) error {
 	return nil
 }
 
-func (v *v6) SetMTU(ifName string, mtu int) error {
+func (v *V6) SetMTU(ifName string, mtu int) error {
 	if mtu <= 0 {
 		return fmt.Errorf("SetMTU(v6): invalid mtu %d", mtu)
 	}
@@ -148,32 +125,7 @@ func (v *v6) SetMTU(ifName string, mtu int) error {
 	return row.Set()
 }
 
-func (v *v6) AddRoutePrefix(prefix, ifName string, metric int) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	pfx, err := v.parseIPv6Prefix(prefix)
-	if err != nil {
-		return err
-	}
-	// on-link: nexthop = ::
-	return luid.AddRoute(pfx, netip.IPv6Unspecified(), uint32(min(1, metric)))
-}
-
-func (v *v6) DeleteRoutePrefix(prefix, ifName string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	pfx, err := v.parseIPv6Prefix(prefix)
-	if err != nil {
-		return err
-	}
-	return luid.DeleteRoute(pfx, netip.IPv6Unspecified())
-}
-
-func (v *v6) DeleteDefaultRoute(ifName string) error {
+func (v *V6) DeleteDefaultRoute(ifName string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -194,35 +146,32 @@ func (v *v6) DeleteDefaultRoute(ifName string) error {
 	return last
 }
 
-func (v *v6) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	ip, ipErr := netip.ParseAddr(strings.TrimSpace(hostIP))
-	if ipErr != nil || !ip.Is6() {
+func (v *V6) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error {
+	if !hostIP.Is6() || hostIP.Is4In6() {
 		return fmt.Errorf("AddHostRouteViaGateway(v6): not IPv6: %q", hostIP)
 	}
-	gw, gwErr := netip.ParseAddr(strings.TrimSpace(gateway))
-	if gwErr != nil || !gw.Is6() {
+	if !gateway.Is6() || gateway.Is4In6() {
 		return fmt.Errorf("AddHostRouteViaGateway(v6): gateway not IPv6: %q", gateway)
 	}
-	return luid.AddRoute(netip.PrefixFrom(ip, 128), gw, uint32(min(1, metric)))
-}
-
-func (v *v6) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	ip, ipErr := netip.ParseAddr(strings.TrimSpace(hostIP))
-	if ipErr != nil || !ip.Is6() {
-		return fmt.Errorf("AddHostRouteOnLink(v6): not IPv6: %q", hostIP)
-	}
-	return luid.AddRoute(netip.PrefixFrom(ip, 128), netip.IPv6Unspecified(), uint32(min(1, metric)))
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), gateway, uint32(min(1, metric)))
 }
 
-func (v *v6) AddDefaultSplitRoutes(ifName string, metric int) error {
+func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) error {
+	if !hostIP.Is6() || hostIP.Is4In6() {
+		return fmt.Errorf("AddHostRouteOnLink(v6): not IPv6: %q", hostIP)
+	}
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
+	if err != nil {
+		return err
+	}
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), netip.IPv6Unspecified(), uint32(min(1, metric)))
+}
+
+func (v *V6) AddDefaultSplitRoutes(ifName string, metric int) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -236,27 +185,27 @@ func (v *v6) AddDefaultSplitRoutes(ifName string, metric int) error {
 	return nil
 }
 
-func (v *v6) DeleteDefaultSplitRoutes(ifName string) error {
+func (v *V6) DeleteDefaultSplitRoutes(ifName string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	var last error
+	var errs []error
 	for _, s := range []string{v6SplitOne, v6SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s)
 		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil {
-			last = fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", s, err)
+			errs = append(errs, fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", s, err))
 		}
 	}
-	return last
+	return errors.Join(errs...)
 }
 
 // DeleteRoute removes all IPv6 routes that exactly match dst (host "::1" → /128, or CIDR).
-func (v *v6) DeleteRoute(dst string) error {
-	pfx, err := v.parseDestPrefixV6(dst)
-	if err != nil {
-		return fmt.Errorf("DeleteRoute(v6): %w", err)
+func (v *V6) DeleteRoute(destination netip.Addr) error {
+	if !destination.Is6() || destination.Is4In6() {
+		return fmt.Errorf("DeleteRoute(v6): not an IPv6 address: %q", destination)
 	}
+	pfx := netip.PrefixFrom(destination, 128)
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
 		return fmt.Errorf("GetIPForwardTable2(v6): %w", err)
@@ -286,23 +235,20 @@ func (v *v6) DeleteRoute(dst string) error {
 	return last
 }
 
-func (v *v6) DeleteRouteOnInterface(destination, ifName string) error {
+func (v *V6) DeleteRouteOnInterface(destination netip.Addr, ifName string) error {
+	if !destination.Is6() || destination.Is4In6() {
+		return fmt.Errorf("DeleteRouteOnInterface(v6): not an IPv6 address: %q", destination)
+	}
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := v.parseDestPrefixV6(destination)
-	if err != nil {
-		return fmt.Errorf("DeleteRouteOnInterface(v6): %w", err)
-	}
+	pfx := netip.PrefixFrom(destination, 128)
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
 		return fmt.Errorf("GetIPForwardTable2(v6): %w", err)
 	}
-	var (
-		found int
-		last  error
-	)
+	var errs []error
 	for i := range rows {
 		r := &rows[i]
 		dp := r.DestinationPrefix.Prefix()
@@ -310,20 +256,16 @@ func (v *v6) DeleteRouteOnInterface(destination, ifName string) error {
 			continue
 		}
 		if delErr := r.Delete(); delErr != nil {
-			last = delErr
+			errs = append(errs, delErr)
 			continue
 		}
-		found++
 	}
-	if found == 0 {
-		return nil
-	}
-	return last
+	return errors.Join(errs...)
 }
 
 // Print returns a human-readable dump of the IPv6 route table.
 // If t is non-empty, only lines containing t are included (substring match).
-func (v *v6) Print(t string) ([]byte, error) {
+func (v *V6) Print(t string) ([]byte, error) {
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
 		return nil, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
@@ -353,21 +295,15 @@ func (v *v6) Print(t string) ([]byte, error) {
 
 // BestRoute returns (gateway, interfaceAlias, interfaceIndex, routeMetric) for IPv6.
 // Picks the route with longest prefix match, then lowest effective metric (route+interface).
-func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
-	raw := strings.TrimSpace(dest)
-	ipStr := v.dropZone(raw) // strip zone, e.g. fe80::1%12 → fe80::1
-	ip := net.ParseIP(ipStr)
-	if ip == nil || ip.To4() != nil || ip.To16() == nil {
-		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): not an IPv6 address: %q", dest)
+func (v *V6) BestRoute(dest netip.Addr) (netip.Addr, string, int, int, error) {
+	dest = dest.WithZone("")
+	if !dest.Is6() || dest.Is4In6() {
+		return netip.Addr{}, "", 0, 0, fmt.Errorf("BestRoute(v6): not an IPv6 address: %q", dest)
 	}
-
-	var b16 [16]byte
-	copy(b16[:], ip.To16())
-	dst := netip.AddrFrom16(b16)
 
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
-		return "", "", 0, 0, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
+		return netip.Addr{}, "", 0, 0, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
 	}
 
 	var (
@@ -377,7 +313,7 @@ func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
 	)
 	for i := range rows {
 		pfx := rows[i].DestinationPrefix.Prefix()
-		if !pfx.Addr().Is6() || !pfx.Contains(dst) {
+		if !pfx.Addr().Is6() || !pfx.Contains(dest) {
 			continue
 		}
 		pl := pfx.Bits()
@@ -390,12 +326,12 @@ func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
 		}
 	}
 	if best == nil {
-		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): no matching route for %s", dest)
+		return netip.Addr{}, "", 0, 0, fmt.Errorf("BestRoute(v6): no matching route for %s", dest)
 	}
 
-	var gw string
+	var gw netip.Addr
 	if nh := best.NextHop.Addr(); nh.IsValid() && nh.Is6() && !nh.IsUnspecified() {
-		gw = nh.String()
+		gw = nh
 	}
 
 	alias := v.resolver.NetworkInterfaceName(best.InterfaceLUID)
@@ -403,70 +339,4 @@ func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
 		alias = strconv.Itoa(int(best.InterfaceIndex))
 	}
 	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
-}
-
-func (v *v6) ipv6PrefixFromIPMask(ipStr, maskStr string) (netip.Prefix, error) {
-	addr, addrErr := netip.ParseAddr(strings.TrimSpace(ipStr))
-	if addrErr != nil || !addr.Is6() {
-		return netip.Prefix{}, fmt.Errorf("ip is not IPv6: %q", ipStr)
-	}
-	maskStr = strings.TrimSpace(maskStr)
-	if maskStr == "" {
-		return netip.Prefix{}, fmt.Errorf("empty IPv6 mask")
-	}
-	// Case 1: numeric prefix length ("64")
-	if n, err := strconv.Atoi(maskStr); err == nil {
-		if n < 0 || n > 128 {
-			return netip.Prefix{}, fmt.Errorf("bad IPv6 prefix len: %d", n)
-		}
-		return netip.PrefixFrom(addr, n), nil
-	}
-	// Case 2: IPv6 mask ("ffff:ffff:...") — rare but supported
-	im := net.ParseIP(maskStr)
-	if im == nil || im.To16() == nil {
-		return netip.Prefix{}, fmt.Errorf("mask is not IPv6: %q", maskStr)
-	}
-	ones, bits := net.IPMask(im.To16()).Size()
-	if bits != 128 || ones < 0 || ones > 128 {
-		return netip.Prefix{}, fmt.Errorf("bad IPv6 mask: %q", maskStr)
-	}
-	return netip.PrefixFrom(addr, ones), nil
-}
-
-func (v *v6) parseIPv6Prefix(s string) (netip.Prefix, error) {
-	pfx, pfxErr := netip.ParsePrefix(strings.TrimSpace(s))
-	if pfxErr != nil || !pfx.Addr().Is6() {
-		return netip.Prefix{}, fmt.Errorf("bad IPv6 prefix: %q", s)
-	}
-	return pfx, nil
-}
-
-// dropZone removes "%zone" from link-local IPv6 addresses, e.g. "fe80::1%12".
-func (v *v6) dropZone(s string) string {
-	if i := strings.IndexByte(s, '%'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
-// parseDestPrefixV6 parses IPv6 destination (CIDR or host -> /128).
-func (v *v6) parseDestPrefixV6(s string) (netip.Prefix, error) {
-	s = strings.TrimSpace(v.dropZone(s))
-	if s == "" {
-		return netip.Prefix{}, fmt.Errorf("empty destination")
-	}
-	if strings.Contains(s, "/") {
-		pfx, pfxErr := netip.ParsePrefix(s)
-		if pfxErr != nil || !pfx.Addr().Is6() {
-			return netip.Prefix{}, fmt.Errorf("bad IPv6 prefix: %q", s)
-		}
-		return pfx, nil
-	}
-	ip := net.ParseIP(s)
-	if ip == nil || ip.To4() != nil || ip.To16() == nil {
-		return netip.Prefix{}, fmt.Errorf("not an IPv6 address: %q", s)
-	}
-	var a16 [16]byte
-	copy(a16[:], ip.To16())
-	return netip.PrefixFrom(netip.AddrFrom16(a16), 128), nil
 }

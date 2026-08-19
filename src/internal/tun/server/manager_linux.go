@@ -44,7 +44,7 @@ func NewManager() *Manager {
 	}
 }
 
-func (s Manager) CreateDevice(connSettings settings.Settings) (io.ReadWriteCloser, error) {
+func (s Manager) OpenTunnel(connSettings settings.Settings) (io.ReadWriteCloser, error) {
 	ipv4 := connSettings.IPv4Subnet.IsValid() && connSettings.IPv4Subnet.Addr().Is4()
 	ipv6 := connSettings.IPv6Subnet.IsValid()
 
@@ -60,20 +60,20 @@ func (s Manager) CreateDevice(connSettings settings.Settings) (io.ReadWriteClose
 	tunName, err := s.device.detectName(tunFile)
 	if err != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to configure a server: failed to determine tunnel ifName: %w", err)
 	}
 
 	extIface, err := s.device.externalInterface()
 	if err != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to configure a server: %w", err)
 	}
 
 	if configureErr := s.firewall.configure(tunName, extIface, connSettings, ipv4, ipv6); configureErr != nil {
 		_ = tunFile.Close()
-		if cleanupErr := s.DisposeDevices(connSettings); cleanupErr != nil {
+		if cleanupErr := s.CloseTunnel(connSettings); cleanupErr != nil {
 			return nil, fmt.Errorf("failed to configure a server: %s; cleanup failed: %v", configureErr, cleanupErr)
 		}
 		return nil, fmt.Errorf("failed to configure a server: %s", configureErr)
@@ -82,13 +82,13 @@ func (s Manager) CreateDevice(connSettings settings.Settings) (io.ReadWriteClose
 	dev, wrapErr := s.wrapper.Wrap(tunFile)
 	if wrapErr != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to wrap TUN device: %w", wrapErr)
 	}
 	return dev, nil
 }
 
-func (s Manager) DisposeDevices(connSettings settings.Settings) error {
+func (s Manager) CloseTunnel(connSettings settings.Settings) error {
 	ifName := connSettings.TunName
 	ifaceExists := true
 

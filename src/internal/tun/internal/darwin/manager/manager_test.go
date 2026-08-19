@@ -23,7 +23,7 @@ type mockIfconfig struct {
 
 type linkAddrAddCall struct {
 	ifName string
-	cidr   string
+	prefix netip.Prefix
 }
 
 type setMTUCall struct {
@@ -31,8 +31,8 @@ type setMTUCall struct {
 	mtu    int
 }
 
-func (m *mockIfconfig) LinkAddrAdd(ifName, cidr string) error {
-	m.linkAddrAddCalls = append(m.linkAddrAddCalls, linkAddrAddCall{ifName, cidr})
+func (m *mockIfconfig) LinkAddrAdd(ifName string, prefix netip.Prefix) error {
+	m.linkAddrAddCalls = append(m.linkAddrAddCalls, linkAddrAddCall{ifName, prefix})
 	return m.linkAddrAddErr
 }
 
@@ -42,42 +42,20 @@ func (m *mockIfconfig) SetMTU(ifName string, mtu int) error {
 }
 
 type mockRoute struct {
-	getCalls       []string
-	addCalls       []routeAddCall
-	addViaGWCalls  []routeAddCall
-	addSplitCalls  []string
-	delSplitCalls  []string
-	delCalls       []string
-	defaultGWCalls int
+	getCalls      []string
+	addSplitCalls []string
+	delSplitCalls []string
+	delCalls      []string
 
-	getErr       error
-	addErr       error
-	addViaGWErr  error
-	addSplitErr  error
-	delSplitErr  error
-	delErr       error
-	defaultGWVal string
-	defaultGWErr error
-}
-
-type routeAddCall struct {
-	ip    string
-	iFace string
+	getErr      error
+	addSplitErr error
+	delSplitErr error
+	delErr      error
 }
 
 func (m *mockRoute) Get(destIP string) error {
 	m.getCalls = append(m.getCalls, destIP)
 	return m.getErr
-}
-
-func (m *mockRoute) Add(ip, iFace string) error {
-	m.addCalls = append(m.addCalls, routeAddCall{ip, iFace})
-	return m.addErr
-}
-
-func (m *mockRoute) AddViaGateway(ip, gw string) error {
-	m.addViaGWCalls = append(m.addViaGWCalls, routeAddCall{ip, gw})
-	return m.addViaGWErr
 }
 
 func (m *mockRoute) AddSplit(dev string) error {
@@ -93,11 +71,6 @@ func (m *mockRoute) DelSplit(dev string) error {
 func (m *mockRoute) Del(destIP string) error {
 	m.delCalls = append(m.delCalls, destIP)
 	return m.delErr
-}
-
-func (m *mockRoute) DefaultGateway() (string, error) {
-	m.defaultGWCalls++
-	return m.defaultGWVal, m.defaultGWErr
 }
 
 type mockTunDevice struct {
@@ -318,495 +291,27 @@ func TestNew_MappedIPv4AsIPv6TreatedAsV4(t *testing.T) {
 // v4 validateSettings
 // ---------------------------------------------------------------------------
 
-func TestV4_ValidateSettings_Valid(t *testing.T) {
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	if err := m.validateSettings(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
+func TestOpenTunnel_RejectsInvalidServerAddr(t *testing.T) {
+	t.Run("v4", func(t *testing.T) {
+		m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
+		if _, err := m.OpenTunnel(netip.Addr{}); err == nil {
+			t.Fatal("expected invalid server address error")
+		}
+	})
 
-func TestV4_ValidateSettings_EmptyServer(t *testing.T) {
-	s := settingsV4Only(t)
-	s.Server = settings.Host{}
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for empty server")
-	}
-	assertContains(t, err.Error(), "empty Server")
-}
+	t.Run("v6", func(t *testing.T) {
+		m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
+		if _, err := m.OpenTunnel(netip.Addr{}); err == nil {
+			t.Fatal("expected invalid server address error")
+		}
+	})
 
-func TestV4_ValidateSettings_InvalidIPv4(t *testing.T) {
-	s := settingsV4Only(t)
-	s.IPv4 = netip.Addr{}
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for invalid IPv4")
-	}
-	assertContains(t, err.Error(), "invalid IPv4")
-}
-
-func TestV4_ValidateSettings_IPv6AsIPv4(t *testing.T) {
-	s := settingsV4Only(t)
-	s.IPv4 = netip.MustParseAddr("fd00::2") // not Is4
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for IPv6 in IPv4 field")
-	}
-	assertContains(t, err.Error(), "invalid IPv4")
-}
-
-func TestV4_ValidateSettings_InvalidSubnet(t *testing.T) {
-	s := settingsV4Only(t)
-	s.IPv4Subnet = netip.Prefix{}
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for invalid subnet")
-	}
-	assertContains(t, err.Error(), "invalid IPv4Subnet")
-}
-
-// ---------------------------------------------------------------------------
-// v6 validateSettings
-// ---------------------------------------------------------------------------
-
-func TestV6_ValidateSettings_Valid(t *testing.T) {
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	if err := m.validateSettings(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestV6_ValidateSettings_EmptyServer(t *testing.T) {
-	s := settingsV6Only(t)
-	s.Server = settings.Host{}
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for empty server")
-	}
-	assertContains(t, err.Error(), "empty Server")
-}
-
-func TestV6_ValidateSettings_InvalidIPv6(t *testing.T) {
-	s := settingsV6Only(t)
-	s.IPv6 = netip.Addr{}
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for invalid IPv6")
-	}
-	assertContains(t, err.Error(), "invalid IPv6")
-}
-
-func TestV6_ValidateSettings_IPv4AsIPv6(t *testing.T) {
-	s := settingsV6Only(t)
-	s.IPv6 = netip.MustParseAddr("10.0.0.2") // Is4
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for IPv4 in IPv6 field")
-	}
-	assertContains(t, err.Error(), "invalid IPv6")
-}
-
-// ---------------------------------------------------------------------------
-// dualStack validateSettings
-// ---------------------------------------------------------------------------
-
-func TestDualStack_ValidateSettings_Valid(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if err := m.validateSettings(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestDualStack_ValidateSettings_EmptyServer(t *testing.T) {
-	s := settingsDualStack(t)
-	s.Server = settings.Host{}
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for empty server")
-	}
-	assertContains(t, err.Error(), "empty Server")
-}
-
-func TestDualStack_ValidateSettings_InvalidIPv4(t *testing.T) {
-	s := settingsDualStack(t)
-	s.IPv4 = netip.Addr{}
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for invalid IPv4")
-	}
-	assertContains(t, err.Error(), "invalid IPv4")
-}
-
-func TestDualStack_ValidateSettings_InvalidIPv6(t *testing.T) {
-	s := settingsDualStack(t)
-	s.IPv6 = netip.Addr{}
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for invalid IPv6")
-	}
-	assertContains(t, err.Error(), "invalid IPv6")
-}
-
-func TestDualStack_ValidateSettings_IPv4InIPv6Field(t *testing.T) {
-	s := settingsDualStack(t)
-	s.IPv6 = netip.MustParseAddr("10.0.0.5") // Is4
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for IPv4 in IPv6 field")
-	}
-	assertContains(t, err.Error(), "invalid IPv6")
-}
-
-func TestDualStack_ValidateSettings_IPv6InIPv4Field(t *testing.T) {
-	s := settingsDualStack(t)
-	s.IPv4 = netip.MustParseAddr("fd00::99") // not Is4
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	err := m.validateSettings()
-	if err == nil {
-		t.Fatal("expected error for IPv6 in IPv4 field")
-	}
-	assertContains(t, err.Error(), "invalid IPv4")
-}
-
-// ---------------------------------------------------------------------------
-// effectiveMTU
-// ---------------------------------------------------------------------------
-
-func TestV4_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 1400
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1400 {
-		t.Fatalf("expected 1400, got %d", got)
-	}
-}
-
-func TestV4_EffectiveMTU_ZeroDefaultsToSafe(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 0
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected SafeMTU=%d, got %d", settings.SafeMTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_NegativeDefaultsToSafe(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = -100
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected SafeMTU=%d, got %d", settings.SafeMTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_BelowMinimumClamped(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.MinimumIPv4MTU - 1
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv4MTU {
-		t.Fatalf("expected MinimumIPv4MTU=%d, got %d", settings.MinimumIPv4MTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_ExactMinimumAccepted(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.MinimumIPv4MTU
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv4MTU {
-		t.Fatalf("expected %d, got %d", settings.MinimumIPv4MTU, got)
-	}
-}
-
-func TestV6_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1500
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1500 {
-		t.Fatalf("expected 1500, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_ZeroDefaultsToSafe(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 0
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	// SafeMTU < 1280, so clamped to 1280
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_BelowMinimumClamped(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1000
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_ExactMinimumAccepted(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1280
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 1400
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1400 {
-		t.Fatalf("expected 1400, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_ZeroDefaultsAndClampsToIPv6Min(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 0
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv6MTU {
-		t.Fatalf("expected MinimumIPv6MTU=%d, got %d", settings.MinimumIPv6MTU, got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_BelowIPv6MinClamped(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 800
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv6MTU {
-		t.Fatalf("expected MinimumIPv6MTU=%d, got %d", settings.MinimumIPv6MTU, got)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// resolveRouteIPv4 / resolveRouteIPv6
-// ---------------------------------------------------------------------------
-
-func TestV4_ResolveRouteIPv4_FromRouteEndpoint(t *testing.T) {
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("203.0.113.5:51820")
-	ip, err := m.resolveRouteIPv4()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "203.0.113.5" {
-		t.Fatalf("expected 203.0.113.5, got %s", ip)
-	}
-}
-
-func TestV4_ResolveRouteIPv4_FromServer(t *testing.T) {
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	ip, err := m.resolveRouteIPv4()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "198.51.100.1" {
-		t.Fatalf("expected 198.51.100.1, got %s", ip)
-	}
-}
-
-func TestV4_ResolveRouteIPv4_IPv6EndpointErrors(t *testing.T) {
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("[2001:db8::1]:51820")
-	_, err := m.resolveRouteIPv4()
-	if err == nil {
-		t.Fatal("expected error for IPv6 route endpoint in v4 context")
-	}
-	assertContains(t, err.Error(), "expected IPv4")
-}
-
-func TestV6_ResolveRouteIPv6_FromRouteEndpoint(t *testing.T) {
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("[2001:db8::99]:51820")
-	ip, err := m.resolveRouteIPv6()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "2001:db8::99" {
-		t.Fatalf("expected 2001:db8::99, got %s", ip)
-	}
-}
-
-func TestV6_ResolveRouteIPv6_FromServer(t *testing.T) {
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	ip, err := m.resolveRouteIPv6()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "2001:db8::1" {
-		t.Fatalf("expected 2001:db8::1, got %s", ip)
-	}
-}
-
-func TestV6_ResolveRouteIPv6_IPv4EndpointErrors(t *testing.T) {
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("198.51.100.1:51820")
-	_, err := m.resolveRouteIPv6()
-	if err == nil {
-		t.Fatal("expected error for IPv4 route endpoint in v6 context")
-	}
-	assertContains(t, err.Error(), "expected IPv6")
-}
-
-func TestDualStack_ResolveRouteIPv4_FromEndpoint(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("203.0.113.10:51820")
-	ip, err := m.resolveRouteIPv4()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "203.0.113.10" {
-		t.Fatalf("expected 203.0.113.10, got %s", ip)
-	}
-}
-
-func TestDualStack_ResolveRouteIPv4_IPv6EndpointErrors(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("[2001:db8::1]:51820")
-	_, err := m.resolveRouteIPv4()
-	if err == nil {
-		t.Fatal("expected error for IPv6 endpoint in v4 resolve")
-	}
-	assertContains(t, err.Error(), "expected IPv4")
-}
-
-func TestDualStack_ResolveRouteIPv6_FromEndpoint(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("[2001:db8::55]:51820")
-	ip, err := m.resolveRouteIPv6()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "2001:db8::55" {
-		t.Fatalf("expected 2001:db8::55, got %s", ip)
-	}
-}
-
-func TestDualStack_ResolveRouteIPv6_IPv4EndpointErrors(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	m.routeEndpoint = netip.MustParseAddrPort("198.51.100.1:51820")
-	_, err := m.resolveRouteIPv6()
-	if err == nil {
-		t.Fatal("expected error for IPv4 endpoint in v6 resolve")
-	}
-	assertContains(t, err.Error(), "expected IPv6")
-}
-
-func TestDualStack_ResolveRouteIPv4_FromServer(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	ip, err := m.resolveRouteIPv4()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "198.51.100.1" {
-		t.Fatalf("expected 198.51.100.1, got %s", ip)
-	}
-}
-
-func TestDualStack_ResolveRouteIPv6_FromIPv4OnlyServer_Errors(t *testing.T) {
-	// Server is IPv4-only, so RouteIPv6 should fail
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	_, err := m.resolveRouteIPv6()
-	if err == nil {
-		t.Fatal("expected error resolving IPv6 from IPv4-only server")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// shouldSkipDarwinIPv4Route / shouldSkipDarwinIPv6Route
-// ---------------------------------------------------------------------------
-
-func TestShouldSkipDarwinIPv4Route_NilError(t *testing.T) {
-	if shouldSkipDarwinIPv4Route(nil) {
-		t.Fatal("expected false for nil error")
-	}
-}
-
-func TestShouldSkipDarwinIPv4Route_ExpectedIPv4(t *testing.T) {
-	if !shouldSkipDarwinIPv4Route(fmt.Errorf("route endpoint ::1 is IPv6, expected IPv4")) {
-		t.Fatal("expected true for 'expected IPv4' message")
-	}
-}
-
-func TestShouldSkipDarwinIPv4Route_NoMatchingFamily(t *testing.T) {
-	if !shouldSkipDarwinIPv4Route(fmt.Errorf("no matching address family found resolving host")) {
-		t.Fatal("expected true for 'no matching address family found'")
-	}
-}
-
-func TestShouldSkipDarwinIPv4Route_OtherError(t *testing.T) {
-	if shouldSkipDarwinIPv4Route(fmt.Errorf("connection refused")) {
-		t.Fatal("expected false for unrelated error")
-	}
-}
-
-func TestShouldSkipDarwinIPv6Route_NilError(t *testing.T) {
-	if shouldSkipDarwinIPv6Route(nil) {
-		t.Fatal("expected false for nil error")
-	}
-}
-
-func TestShouldSkipDarwinIPv6Route_ExpectedIPv6(t *testing.T) {
-	if !shouldSkipDarwinIPv6Route(fmt.Errorf("route endpoint 1.2.3.4 is IPv4, expected IPv6")) {
-		t.Fatal("expected true for 'expected IPv6' message")
-	}
-}
-
-func TestShouldSkipDarwinIPv6Route_NoMatchingFamily(t *testing.T) {
-	if !shouldSkipDarwinIPv6Route(fmt.Errorf("no matching address family found resolving host")) {
-		t.Fatal("expected true for 'no matching address family found'")
-	}
-}
-
-func TestShouldSkipDarwinIPv6Route_OtherError(t *testing.T) {
-	if shouldSkipDarwinIPv6Route(fmt.Errorf("timeout")) {
-		t.Fatal("expected false for unrelated error")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// SetRouteEndpoint
-// ---------------------------------------------------------------------------
-
-func TestV4_SetRouteEndpoint(t *testing.T) {
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, &mockRoute{})
-	ep := netip.MustParseAddrPort("203.0.113.5:51820")
-	m.SetRouteEndpoint(ep)
-	if m.routeEndpoint != ep {
-		t.Fatalf("expected routeEndpoint=%v, got %v", ep, m.routeEndpoint)
-	}
-}
-
-func TestV6_SetRouteEndpoint(t *testing.T) {
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, &mockRoute{})
-	ep := netip.MustParseAddrPort("[2001:db8::1]:51820")
-	m.SetRouteEndpoint(ep)
-	if m.routeEndpoint != ep {
-		t.Fatalf("expected routeEndpoint=%v, got %v", ep, m.routeEndpoint)
-	}
-}
-
-func TestDualStack_SetRouteEndpoint(t *testing.T) {
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	ep := netip.MustParseAddrPort("203.0.113.5:51820")
-	m.SetRouteEndpoint(ep)
-	if m.routeEndpoint != ep {
-		t.Fatalf("expected routeEndpoint=%v, got %v", ep, m.routeEndpoint)
-	}
+	t.Run("dual stack", func(t *testing.T) {
+		m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
+		if _, err := m.OpenTunnel(netip.Addr{}); err == nil {
+			t.Fatal("expected invalid server address error")
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,8 +533,8 @@ func TestV4_AssignIPv4_Success(t *testing.T) {
 	if len(ifc.linkAddrAddCalls) != 1 {
 		t.Fatalf("expected 1 LinkAddrAdd call, got %d", len(ifc.linkAddrAddCalls))
 	}
-	if ifc.linkAddrAddCalls[0].cidr != "10.0.0.2/32" {
-		t.Fatalf("expected cidr=10.0.0.2/32, got %s", ifc.linkAddrAddCalls[0].cidr)
+	if want := netip.MustParsePrefix("10.0.0.2/32"); ifc.linkAddrAddCalls[0].prefix != want {
+		t.Fatalf("expected prefix=%s, got %s", want, ifc.linkAddrAddCalls[0].prefix)
 	}
 	if ifc.linkAddrAddCalls[0].ifName != "utun42" {
 		t.Fatalf("expected ifName=utun42, got %s", ifc.linkAddrAddCalls[0].ifName)
@@ -1064,24 +569,8 @@ func TestV6_AssignIPv6_WithSubnet(t *testing.T) {
 	if len(ifc.linkAddrAddCalls) != 1 {
 		t.Fatalf("expected 1 LinkAddrAdd call, got %d", len(ifc.linkAddrAddCalls))
 	}
-	if ifc.linkAddrAddCalls[0].cidr != "fd00::2/64" {
-		t.Fatalf("expected cidr=fd00::2/64, got %s", ifc.linkAddrAddCalls[0].cidr)
-	}
-}
-
-func TestV6_AssignIPv6_WithoutSubnet_Defaults128(t *testing.T) {
-	s := settingsV6Only(t)
-	s.IPv6Subnet = netip.Prefix{} // invalid
-	ifc := &mockIfconfig{}
-	m := newV6(s, ifc, &mockRoute{})
-	m.ifName = "utun42"
-
-	err := m.assignIPv6()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ifc.linkAddrAddCalls[0].cidr != "fd00::2/128" {
-		t.Fatalf("expected cidr=fd00::2/128, got %s", ifc.linkAddrAddCalls[0].cidr)
+	if want := netip.MustParsePrefix("fd00::2/64"); ifc.linkAddrAddCalls[0].prefix != want {
+		t.Fatalf("expected prefix=%s, got %s", want, ifc.linkAddrAddCalls[0].prefix)
 	}
 }
 
@@ -1177,33 +666,6 @@ func TestDualStack_CloseTunnel_Fresh(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// DualStack: server with both IPv4 and IPv6
-// ---------------------------------------------------------------------------
-
-func TestDualStack_ResolveRouteIPv6_FromDualStackServer(t *testing.T) {
-	host := mustIPHost(t, "198.51.100.1")
-	host.IPv6 = "2001:db8::1"
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     host,
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			IPv6:       netip.MustParseAddr("fd00::2"),
-		},
-		MTU: 1400,
-	}
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	ip, err := m.resolveRouteIPv6()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ip != "2001:db8::1" {
-		t.Fatalf("expected 2001:db8::1, got %s", ip)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // CloseTunnel double-call safety
 // ---------------------------------------------------------------------------
 
@@ -1252,46 +714,6 @@ func TestDualStack_CloseTunnel_DoubleSafe(t *testing.T) {
 	}
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Edge cases for effectiveMTU
-// ---------------------------------------------------------------------------
-
-func TestV4_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 9000
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 9000
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 9000
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestV4_EffectiveMTU_ExactSafeMTU(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.SafeMTU
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected %d, got %d", settings.SafeMTU, got)
 	}
 }
 

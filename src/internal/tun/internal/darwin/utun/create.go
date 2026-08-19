@@ -2,9 +2,11 @@
 
 package utun
 
-import "tungo/internal/tun/internal/darwin/ifconfig"
+type mtuSetter interface {
+	SetMTU(ifName string, mtu int) error
+}
 
-func Create(ifConfig ifconfig.Contract, mtu int) (UTUN, error) {
+func Create(ifConfig mtuSetter, mtu int) (UTUN, error) {
 	u, err := newRawUTUN()
 	if err != nil {
 		return nil, err

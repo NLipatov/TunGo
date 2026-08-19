@@ -2,6 +2,8 @@ package client
 
 import (
 	"fmt"
+	"net/netip"
+
 	"tungo/internal/config/settings"
 )
 
@@ -22,22 +24,52 @@ type Configuration struct {
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
 }
 
-func (c *Configuration) ActiveSettings() (settings.Settings, error) {
-	var active settings.Settings
-	switch c.Protocol {
-	case settings.UDP:
-		active = c.UDPSettings
-	case settings.TCP:
-		active = c.TCPSettings
-	case settings.WS, settings.WSS:
-		active = c.WSSettings
-	default:
-		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", c.Protocol)
+func (c *Configuration) ApplyClientDefaults() *Configuration {
+	active, err := c.activeSettings()
+	if err != nil || active.MTU != 0 {
+		return c
 	}
 
+	switch {
+	case isIPv6Prefix(active.IPv6Subnet):
+		active.MTU = settings.DefaultIPv6MTU
+	case isIPv4Prefix(active.IPv4Subnet):
+		active.MTU = settings.DefaultIPv4MTU
+	}
+	return c
+}
+
+func (c *Configuration) ActiveSettings() (settings.Settings, error) {
+	configured, err := c.activeSettings()
+	if err != nil {
+		return settings.Settings{}, err
+	}
+
+	active := *configured
 	active.Protocol = c.Protocol
 	if err := active.DeriveIP(c.ClientID); err != nil {
 		return settings.Settings{}, err
 	}
 	return active, nil
+}
+
+func (c *Configuration) activeSettings() (*settings.Settings, error) {
+	switch c.Protocol {
+	case settings.UDP:
+		return &c.UDPSettings, nil
+	case settings.TCP:
+		return &c.TCPSettings, nil
+	case settings.WS, settings.WSS:
+		return &c.WSSettings, nil
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %v", c.Protocol)
+	}
+}
+
+func isIPv4Prefix(prefix netip.Prefix) bool {
+	return prefix.IsValid() && prefix.Addr().Is4()
+}
+
+func isIPv6Prefix(prefix netip.Prefix) bool {
+	return prefix.IsValid() && !prefix.Addr().Is4()
 }

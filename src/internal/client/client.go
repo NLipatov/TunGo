@@ -25,9 +25,8 @@ var (
 )
 
 type tunManager interface {
-	OpenTunnel() (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
 	CloseTunnel() error
-	SetRouteEndpoint(netip.AddrPort)
 }
 
 type crypto interface {
@@ -128,16 +127,17 @@ func (c *Client) runSession(parentCtx context.Context) error {
 }
 
 func (c *Client) forward(ctx context.Context) error {
-	c.tunManager.SetRouteEndpoint(netip.AddrPort{})
-
 	transport, crypto, rekey, err := c.establishConnection(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = transport.Close() }()
-	attachRouteEndpoint(transport, c.tunManager)
+	serverAddr, err := transportServerAddr(transport)
+	if err != nil {
+		return err
+	}
 
-	device, err := c.tunManager.OpenTunnel()
+	device, err := c.tunManager.OpenTunnel(serverAddr)
 	if err != nil {
 		slog.Error("failed to open tunnel", "err", err)
 		return err
@@ -199,13 +199,14 @@ func allowedSources(s settings.Settings) map[netip.Addr]struct{} {
 	return allowed
 }
 
-func attachRouteEndpoint(transport io.ReadWriteCloser, tunManager tunManager) {
+func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
 	remoteProvider, ok := transport.(interface{ RemoteAddrPort() netip.AddrPort })
 	if !ok {
-		return
+		return netip.Addr{}, fmt.Errorf("transport %T does not expose its remote address", transport)
 	}
 	addrPort := remoteProvider.RemoteAddrPort()
-	if addrPort.IsValid() {
-		tunManager.SetRouteEndpoint(addrPort)
+	if !addrPort.IsValid() {
+		return netip.Addr{}, fmt.Errorf("transport %T returned an invalid remote address", transport)
 	}
+	return addrPort.Addr().Unmap(), nil
 }

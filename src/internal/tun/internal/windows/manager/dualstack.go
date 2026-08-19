@@ -3,18 +3,12 @@
 package manager
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/netip"
-	"strconv"
-	"strings"
 	"tungo/internal/config/settings"
-	"tungo/internal/transport/host"
-	"tungo/internal/tun/internal/windows/ipcfg"
 	"tungo/internal/tun/internal/windows/wtun"
 
 	"golang.zx2c4.com/wintun"
@@ -25,23 +19,18 @@ type dualStackManager struct {
 	s   settings.Settings
 	tun io.ReadWriteCloser
 
-	netCfg4 ipcfg.Contract
-	netCfg6 ipcfg.Contract
+	netCfg4 networkConfigurator
+	netCfg6 networkConfigurator
 
-	// test hooks
-	createTunDeviceFn  func() (io.ReadWriteCloser, error)
-	resolveRouteIPv4Fn func() (string, error)
-	resolveRouteIPv6Fn func() (string, error)
-	routeEndpoint      netip.AddrPort
-	resolvedRouteIP4   string // cached resolved server IPv4 for teardown
-	resolvedRouteIP6   string // cached resolved server IPv6 for teardown
-	resolvedRouteIf4   string // cached egress interface for IPv4 host route
-	resolvedRouteIf6   string // cached egress interface for IPv6 host route
+	resolvedRouteIP4 netip.Addr
+	resolvedRouteIP6 netip.Addr
+	resolvedRouteIf4 string // cached egress interface for IPv4 host route
+	resolvedRouteIf6 string // cached egress interface for IPv6 host route
 }
 
 func newDualStackManager(
 	s settings.Settings,
-	netCfg4, netCfg6 ipcfg.Contract,
+	netCfg4, netCfg6 networkConfigurator,
 ) *dualStackManager {
 	return &dualStackManager{
 		s:       s,
@@ -50,26 +39,19 @@ func newDualStackManager(
 	}
 }
 
-func (m *dualStackManager) OpenTunnel() (io.ReadWriteCloser, error) {
-	if err := m.validateSettings(); err != nil {
-		return nil, err
+func (m *dualStackManager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
+	serverAddr = serverAddr.Unmap()
 
-	createTun := m.createTunDeviceFn
-	if createTun == nil {
-		createTun = m.createOrOpenTunDevice
-	}
-	tunDev, err := createTun()
+	tunDev, err := m.createOrOpenTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
 
-	if err = m.addStaticRouteToServer4(); err != nil {
-		_ = m.CloseTunnel()
-		return nil, err
-	}
-	if err = m.addStaticRouteToServer6(); err != nil {
+	if err = m.addStaticRouteToServer(serverAddr); err != nil {
 		_ = m.CloseTunnel()
 		return nil, err
 	}
@@ -97,28 +79,6 @@ func (m *dualStackManager) OpenTunnel() (io.ReadWriteCloser, error) {
 	return m.tun, nil
 }
 
-func (m *dualStackManager) validateSettings() error {
-	if strings.TrimSpace(m.s.TunName) == "" {
-		return fmt.Errorf("empty TunName")
-	}
-	if m.s.Server == (settings.Host{}) {
-		return fmt.Errorf("empty Server")
-	}
-	if !m.s.IPv4Subnet.IsValid() {
-		return fmt.Errorf("invalid IPv4Subnet: %q", m.s.IPv4Subnet)
-	}
-	if !m.s.IPv6Subnet.IsValid() {
-		return fmt.Errorf("invalid IPv6Subnet: %q", m.s.IPv6Subnet)
-	}
-	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
-		return fmt.Errorf("dualStackManager requires valid IPv4, got %q", m.s.IPv4)
-	}
-	if !m.s.IPv6.IsValid() || m.s.IPv6.Unmap().Is4() {
-		return fmt.Errorf("dualStackManager requires valid IPv6, got %q", m.s.IPv6)
-	}
-	return nil
-}
-
 func (m *dualStackManager) createOrOpenTunDevice() (io.ReadWriteCloser, error) {
 	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
@@ -135,18 +95,15 @@ func (m *dualStackManager) createOrOpenTunDevice() (io.ReadWriteCloser, error) {
 	return tunDev, nil
 }
 
-func (m *dualStackManager) addStaticRouteToServer4() error {
-	if m.routeEndpoint.IsValid() && !m.routeEndpoint.Addr().Unmap().Is4() {
-		return nil
+func (m *dualStackManager) addStaticRouteToServer(serverAddr netip.Addr) error {
+	if serverAddr.Is4() {
+		return m.addStaticRouteToServer4(serverAddr)
 	}
+	return m.addStaticRouteToServer6(serverAddr)
+}
 
-	routeIP, err := m.resolveRouteIPv4()
-	if err != nil {
-		if m.shouldSkipIPv4RouteOnResolveError() {
-			return nil
-		}
-		return fmt.Errorf("resolve IPv4 host %s: %w", m.s.Server, err)
-	}
+func (m *dualStackManager) addStaticRouteToServer4(routeIP netip.Addr) error {
+	var err error
 	gw, ifName, ifIndex, _, bestErr := m.netCfg4.BestRoute(routeIP)
 	if bestErr != nil {
 		return bestErr
@@ -155,28 +112,24 @@ func (m *dualStackManager) addStaticRouteToServer4() error {
 	if err != nil {
 		return err
 	}
-	m.resolvedRouteIP4 = routeIP
-	m.resolvedRouteIf4 = ifName
 	_ = m.netCfg4.DeleteRoute(routeIP)
 	_ = m.netCfg4.DeleteRouteOnInterface(routeIP, ifName)
-	if gw == "" {
-		return m.netCfg4.AddHostRouteOnLink(routeIP, ifName, 1)
+	var addErr error
+	if !gw.IsValid() {
+		addErr = m.netCfg4.AddHostRouteOnLink(routeIP, ifName, 1)
+	} else {
+		addErr = m.netCfg4.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 	}
-	return m.netCfg4.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
+	if addErr != nil {
+		return addErr
+	}
+	m.resolvedRouteIP4 = routeIP
+	m.resolvedRouteIf4 = ifName
+	return nil
 }
 
-func (m *dualStackManager) addStaticRouteToServer6() error {
-	if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
-		return nil
-	}
-
-	routeIP, err := m.resolveRouteIPv6()
-	if err != nil {
-		if m.shouldSkipIPv6RouteOnResolveError() {
-			return nil
-		}
-		return fmt.Errorf("resolve IPv6 host %s: %w", m.s.Server, err)
-	}
+func (m *dualStackManager) addStaticRouteToServer6(routeIP netip.Addr) error {
+	var err error
 	gw, ifName, ifIndex, _, bestErr := m.netCfg6.BestRoute(routeIP)
 	if bestErr != nil {
 		return bestErr
@@ -185,38 +138,30 @@ func (m *dualStackManager) addStaticRouteToServer6() error {
 	if err != nil {
 		return err
 	}
-	m.resolvedRouteIP6 = routeIP
-	m.resolvedRouteIf6 = ifName
 	_ = m.netCfg6.DeleteRoute(routeIP)
 	_ = m.netCfg6.DeleteRouteOnInterface(routeIP, ifName)
-	if gw == "" {
-		return m.netCfg6.AddHostRouteOnLink(routeIP, ifName, 1)
+	var addErr error
+	if !gw.IsValid() {
+		addErr = m.netCfg6.AddHostRouteOnLink(routeIP, ifName, 1)
+	} else {
+		addErr = m.netCfg6.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 	}
-	return m.netCfg6.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
+	if addErr != nil {
+		return addErr
+	}
+	m.resolvedRouteIP6 = routeIP
+	m.resolvedRouteIf6 = ifName
+	return nil
 }
 
 func (m *dualStackManager) assignIPv4ToTunDevice() error {
-	ipStr := m.s.IPv4.String()
-	subnetStr := m.s.IPv4Subnet.String()
-	ip := net.ParseIP(ipStr)
-	_, nw, _ := net.ParseCIDR(subnetStr)
-	if ip == nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
-	}
-	mask := net.IP(nw.Mask).String()
-	return m.netCfg4.SetAddressStatic(m.s.TunName, ipStr, mask)
+	prefix := netip.PrefixFrom(m.s.IPv4, m.s.IPv4Subnet.Bits())
+	return m.netCfg4.SetAddressStatic(m.s.TunName, prefix)
 }
 
 func (m *dualStackManager) assignIPv6ToTunDevice() error {
-	ipStr := m.s.IPv6.String()
-	subnetStr := m.s.IPv6Subnet.String()
-	ip := net.ParseIP(ipStr)
-	_, nw, _ := net.ParseCIDR(subnetStr)
-	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
-	}
-	prefix, _ := nw.Mask.Size()
-	return m.netCfg6.SetAddressStatic(m.s.TunName, ipStr, strconv.Itoa(prefix))
+	prefix := netip.PrefixFrom(m.s.IPv6, m.s.IPv6Subnet.Bits())
+	return m.netCfg6.SetAddressStatic(m.s.TunName, prefix)
 }
 
 func (m *dualStackManager) setDefaultRoutesToTunDevice() error {
@@ -230,18 +175,10 @@ func (m *dualStackManager) setDefaultRoutesToTunDevice() error {
 }
 
 func (m *dualStackManager) setMTUToTunDevice() error {
-	mtu := m.s.MTU
-	if mtu == 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv6MTU {
-		mtu = settings.MinimumIPv6MTU
-	}
-
-	if err := m.netCfg4.SetMTU(m.s.TunName, mtu); err != nil {
+	if err := m.netCfg4.SetMTU(m.s.TunName, m.s.MTU); err != nil {
 		return fmt.Errorf("set IPv4 MTU: %w", err)
 	}
-	if err := m.netCfg6.SetMTU(m.s.TunName, mtu); err != nil {
+	if err := m.netCfg6.SetMTU(m.s.TunName, m.s.MTU); err != nil {
 		return fmt.Errorf("set IPv6 MTU: %w", err)
 	}
 	return nil
@@ -272,22 +209,20 @@ func (m *dualStackManager) CloseTunnel() error {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
 	}
 
-	if m.resolvedRouteIP4 != "" {
+	if m.resolvedRouteIP4.IsValid() {
 		if err := m.netCfg4.DeleteRouteOnInterface(m.resolvedRouteIP4, m.resolvedRouteIf4); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 route %s on %s: %w", m.resolvedRouteIP4, m.resolvedRouteIf4, err))
-		}
-	} else if routeIP, err := m.resolveRouteIPv4(); err == nil {
-		if err := m.netCfg4.DeleteRoute(routeIP); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale IPv4 route %s: %w", routeIP, err))
+		} else {
+			m.resolvedRouteIP4 = netip.Addr{}
+			m.resolvedRouteIf4 = ""
 		}
 	}
-	if m.resolvedRouteIP6 != "" {
+	if m.resolvedRouteIP6.IsValid() {
 		if err := m.netCfg6.DeleteRouteOnInterface(m.resolvedRouteIP6, m.resolvedRouteIf6); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 route %s on %s: %w", m.resolvedRouteIP6, m.resolvedRouteIf6, err))
-		}
-	} else if routeIP, err := m.resolveRouteIPv6(); err == nil {
-		if err := m.netCfg6.DeleteRoute(routeIP); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale IPv6 route %s: %w", routeIP, err))
+		} else {
+			m.resolvedRouteIP6 = netip.Addr{}
+			m.resolvedRouteIf6 = ""
 		}
 	}
 	// Best-effort DNS cleanup to avoid leaving partial resolver state on rollback.
@@ -310,56 +245,4 @@ func (m *dualStackManager) CloseTunnel() error {
 		}
 	}
 	return errors.Join(cleanupErrs...)
-}
-
-func (m *dualStackManager) resolveRouteIPv4() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if ip.Unmap().Is4() {
-			return ip.Unmap().String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
-	}
-	if m.resolveRouteIPv4Fn != nil {
-		return m.resolveRouteIPv4Fn()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
-	defer cancel()
-	return host.ResolveIPv4(ctx, m.s.Server)
-}
-
-func (m *dualStackManager) resolveRouteIPv6() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if !ip.Unmap().Is4() {
-			return ip.String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
-	}
-	if m.resolveRouteIPv6Fn != nil {
-		return m.resolveRouteIPv6Fn()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
-	defer cancel()
-	return host.ResolveIPv6(ctx, m.s.Server)
-}
-
-func (m *dualStackManager) SetRouteEndpoint(addr netip.AddrPort) {
-	m.routeEndpoint = addr
-}
-
-func (m *dualStackManager) shouldSkipIPv4RouteOnResolveError() bool {
-	if m.s.Server.Domain == "" {
-		return m.s.Server.IPv6 != "" && m.s.Server.IPv4 == ""
-	}
-	_, err := m.resolveRouteIPv6()
-	return err == nil
-}
-
-func (m *dualStackManager) shouldSkipIPv6RouteOnResolveError() bool {
-	if m.s.Server.Domain == "" {
-		return m.s.Server.IPv4 != "" && m.s.Server.IPv6 == ""
-	}
-	_, err := m.resolveRouteIPv4()
-	return err == nil
 }

@@ -3,15 +3,11 @@
 package manager
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/netip"
 
 	"tungo/internal/config/settings"
-	"tungo/internal/transport/host"
-	"tungo/internal/tun/internal/darwin/ifconfig"
-	"tungo/internal/tun/internal/darwin/route"
 	"tungo/internal/tun/internal/darwin/utun"
 )
 
@@ -19,21 +15,16 @@ type v4 struct {
 	s               settings.Settings
 	tunDev          io.ReadWriteCloser
 	rawUTUN         utun.UTUN
-	ifc             ifconfig.Contract // v4 ifconfig.Contract implementation
-	rtc             route.Contract    // v4 route.Contract implementation
+	ifc             interfaceConfigurator
+	rtc             routeConfigurator
 	ifName          string
-	routeEndpoint   netip.AddrPort
 	resolvedRouteIP string // cached resolved server IP for consistent teardown
-}
-
-func (m *v4) SetRouteEndpoint(addr netip.AddrPort) {
-	m.routeEndpoint = addr
 }
 
 func newV4(
 	s settings.Settings,
-	ifc ifconfig.Contract,
-	rt route.Contract,
+	ifc interfaceConfigurator,
+	rt routeConfigurator,
 ) *v4 {
 	return &v4{
 		s:   s,
@@ -42,11 +33,12 @@ func newV4(
 	}
 }
 
-func (m *v4) OpenTunnel() (io.ReadWriteCloser, error) {
-	if err := m.validateSettings(); err != nil {
-		return nil, err
+func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("v4: invalid server address %q", serverAddr)
 	}
-	raw, err := utun.Create(m.ifc, m.effectiveMTU())
+	serverAddr = serverAddr.Unmap()
+	raw, err := utun.Create(m.ifc, m.s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -57,19 +49,13 @@ func (m *v4) OpenTunnel() (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	routeIP, routeErr := m.resolveRouteIPv4()
-	if routeErr != nil {
-		if m.routeEndpoint.IsValid() && !m.routeEndpoint.Addr().Unmap().Is4() {
-			m.tunDev = utun.NewDarwinTunDevice(raw)
-			return m.tunDev, nil
+	if serverAddr.Is4() {
+		routeIP := serverAddr.String()
+		if getErr := m.rtc.Get(routeIP); getErr != nil {
+			_ = m.CloseTunnel()
+			return nil, fmt.Errorf("route to server %s: %w", routeIP, getErr)
 		}
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Server, routeErr)
-	}
-	m.resolvedRouteIP = routeIP
-	if getErr := m.rtc.Get(routeIP); getErr != nil {
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, getErr)
+		m.resolvedRouteIP = routeIP
 	}
 	if assignErr := m.assignIPv4(); assignErr != nil {
 		_ = m.CloseTunnel()
@@ -89,12 +75,8 @@ func (m *v4) CloseTunnel() error {
 	if m.ifName != "" {
 		_ = m.rtc.DelSplit(m.ifName)
 	}
-	routeIP := m.resolvedRouteIP
-	if routeIP == "" {
-		routeIP, _ = m.resolveRouteIPv4()
-	}
-	if routeIP != "" {
-		_ = m.rtc.Del(routeIP)
+	if m.resolvedRouteIP != "" {
+		_ = m.rtc.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -104,48 +86,14 @@ func (m *v4) CloseTunnel() error {
 	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
-	return nil
-}
-
-func (m *v4) validateSettings() error {
-	if m.s.Server == (settings.Host{}) {
-		return fmt.Errorf("v4: empty Server")
-	}
-	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
-		return fmt.Errorf("v4: invalid IPv4 %q", m.s.IPv4)
-	}
-	if !m.s.IPv4Subnet.IsValid() {
-		return fmt.Errorf("v4: invalid IPv4Subnet %q", m.s.IPv4Subnet)
-	}
+	m.resolvedRouteIP = ""
 	return nil
 }
 
 func (m *v4) assignIPv4() error {
-	cidr := fmt.Sprintf("%s/32", m.s.IPv4)
-	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
-		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
+	prefix := netip.PrefixFrom(m.s.IPv4, 32)
+	if err := m.ifc.LinkAddrAdd(m.ifName, prefix); err != nil {
+		return fmt.Errorf("v4: set addr %s on %s: %w", prefix, m.ifName, err)
 	}
 	return nil
-}
-
-func (m *v4) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv4MTU {
-		mtu = settings.MinimumIPv4MTU
-	}
-	return mtu
-}
-
-func (m *v4) resolveRouteIPv4() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if ip.Unmap().Is4() {
-			return ip.Unmap().String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
-	}
-	return host.ResolveIPv4(context.Background(), m.s.Server)
 }

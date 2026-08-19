@@ -4,7 +4,8 @@ import "golang.org/x/crypto/chacha20poly1305"
 
 const (
 	DefaultEthernetMTU = 1500
-	SafeMTU            = 1200
+	DefaultIPv4MTU     = 1200
+	DefaultIPv6MTU     = 1280
 	MinimumIPv4MTU     = 576
 	MinimumIPv6MTU     = 1280
 	// TCPChacha20Overhead is the poly1305 tag + 2-byte epoch prefix prepended

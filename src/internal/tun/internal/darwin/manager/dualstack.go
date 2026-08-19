@@ -3,16 +3,11 @@
 package manager
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/netip"
-	"strings"
 
 	"tungo/internal/config/settings"
-	"tungo/internal/transport/host"
-	"tungo/internal/tun/internal/darwin/ifconfig"
-	"tungo/internal/tun/internal/darwin/route"
 	"tungo/internal/tun/internal/darwin/utun"
 )
 
@@ -22,26 +17,21 @@ type dualStack struct {
 	s                settings.Settings
 	tunDev           io.ReadWriteCloser
 	rawUTUN          utun.UTUN
-	ifc4             ifconfig.Contract
-	ifc6             ifconfig.Contract
-	rtc4             route.Contract
-	rtc6             route.Contract
+	ifc4             interfaceConfigurator
+	ifc6             interfaceConfigurator
+	rtc4             routeConfigurator
+	rtc6             routeConfigurator
 	ifName           string
-	routeEndpoint    netip.AddrPort
 	resolvedRouteIP4 string // cached resolved IPv4 server IP for consistent teardown
 	resolvedRouteIP6 string // cached resolved IPv6 server IP for consistent teardown
 }
 
-func (m *dualStack) SetRouteEndpoint(addr netip.AddrPort) {
-	m.routeEndpoint = addr
-}
-
 func newDualStack(
 	s settings.Settings,
-	ifc4 ifconfig.Contract,
-	ifc6 ifconfig.Contract,
-	rtc4 route.Contract,
-	rtc6 route.Contract,
+	ifc4 interfaceConfigurator,
+	ifc6 interfaceConfigurator,
+	rtc4 routeConfigurator,
+	rtc6 routeConfigurator,
 ) *dualStack {
 	return &dualStack{
 		s:    s,
@@ -52,12 +42,13 @@ func newDualStack(
 	}
 }
 
-func (m *dualStack) OpenTunnel() (io.ReadWriteCloser, error) {
-	if err := m.validateSettings(); err != nil {
-		return nil, err
+func (m *dualStack) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("dualstack: invalid server address %q", serverAddr)
 	}
+	serverAddr = serverAddr.Unmap()
 
-	raw, err := utun.Create(m.ifc4, m.effectiveMTU())
+	raw, err := utun.Create(m.ifc4, m.s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -70,47 +61,34 @@ func (m *dualStack) OpenTunnel() (io.ReadWriteCloser, error) {
 	}
 	m.ifName = name
 
-	// Pin route to IPv4 server.
-	routeIP4, route4Err := m.resolveRouteIPv4()
-	if route4Err == nil {
-		m.resolvedRouteIP4 = routeIP4
-		if err := m.rtc4.Get(routeIP4); err != nil {
+	if serverAddr.Is4() {
+		routeIP := serverAddr.String()
+		if err := m.rtc4.Get(routeIP); err != nil {
 			_ = m.CloseTunnel()
-			return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Server, err)
+			return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", routeIP, err)
 		}
-	} else if !shouldSkipDarwinIPv4Route(route4Err) {
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Server, route4Err)
-	}
-
-	// Pin route to IPv6 server (if configured).
-	routeIP6, route6Err := m.resolveRouteIPv6()
-	if route6Err == nil {
-		m.resolvedRouteIP6 = routeIP6
-		if err := m.rtc6.Get(routeIP6); err != nil {
+		m.resolvedRouteIP4 = routeIP
+	} else {
+		routeIP := serverAddr.String()
+		if err := m.rtc6.Get(routeIP); err != nil {
 			_ = m.CloseTunnel()
-			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", m.s.Server, err)
+			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", routeIP, err)
 		}
-	} else if !shouldSkipDarwinIPv6Route(route6Err) {
-		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Server, route6Err)
+		m.resolvedRouteIP6 = routeIP
 	}
 
 	// Assign IPv4 address.
-	cidr4 := fmt.Sprintf("%s/32", m.s.IPv4)
-	if err := m.ifc4.LinkAddrAdd(m.ifName, cidr4); err != nil {
+	prefix4 := netip.PrefixFrom(m.s.IPv4, 32)
+	if err := m.ifc4.LinkAddrAdd(m.ifName, prefix4); err != nil {
 		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("dualstack: set v4 addr %s on %s: %w", cidr4, m.ifName, err)
+		return nil, fmt.Errorf("dualstack: set v4 addr %s on %s: %w", prefix4, m.ifName, err)
 	}
 
 	// Assign IPv6 address.
-	cidr6, _ := m.s.IPv6CIDR()
-	if cidr6 == "" {
-		cidr6 = fmt.Sprintf("%s/128", m.s.IPv6)
-	}
-	if err := m.ifc6.LinkAddrAdd(m.ifName, cidr6); err != nil {
+	prefix6 := netip.PrefixFrom(m.s.IPv6, m.s.IPv6Subnet.Bits())
+	if err := m.ifc6.LinkAddrAdd(m.ifName, prefix6); err != nil {
 		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("dualstack: set v6 addr %s on %s: %w", cidr6, m.ifName, err)
+		return nil, fmt.Errorf("dualstack: set v6 addr %s on %s: %w", prefix6, m.ifName, err)
 	}
 
 	// Install split routes for both families.
@@ -134,19 +112,11 @@ func (m *dualStack) CloseTunnel() error {
 		_ = m.rtc4.DelSplit(m.ifName)
 		_ = m.rtc6.DelSplit(m.ifName)
 	}
-	routeIP4 := m.resolvedRouteIP4
-	if routeIP4 == "" {
-		routeIP4, _ = m.resolveRouteIPv4()
+	if m.resolvedRouteIP4 != "" {
+		_ = m.rtc4.Del(m.resolvedRouteIP4)
 	}
-	if routeIP4 != "" {
-		_ = m.rtc4.Del(routeIP4)
-	}
-	routeIP6 := m.resolvedRouteIP6
-	if routeIP6 == "" {
-		routeIP6, _ = m.resolveRouteIPv6()
-	}
-	if routeIP6 != "" {
-		_ = m.rtc6.Del(routeIP6)
+	if m.resolvedRouteIP6 != "" {
+		_ = m.rtc6.Del(m.resolvedRouteIP6)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -156,70 +126,7 @@ func (m *dualStack) CloseTunnel() error {
 	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
+	m.resolvedRouteIP4 = ""
+	m.resolvedRouteIP6 = ""
 	return nil
-}
-
-func (m *dualStack) validateSettings() error {
-	if m.s.Server == (settings.Host{}) {
-		return fmt.Errorf("dualstack: empty Server")
-	}
-	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
-		return fmt.Errorf("dualstack: invalid IPv4 %q", m.s.IPv4)
-	}
-	if !m.s.IPv6.IsValid() || m.s.IPv6.Unmap().Is4() {
-		return fmt.Errorf("dualstack: invalid IPv6 %q", m.s.IPv6)
-	}
-	return nil
-}
-
-func (m *dualStack) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	// Must satisfy both IPv4 (68) and IPv6 (1280) minimums.
-	if mtu < settings.MinimumIPv6MTU {
-		mtu = settings.MinimumIPv6MTU
-	}
-	return mtu
-}
-
-func (m *dualStack) resolveRouteIPv4() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if ip.Unmap().Is4() {
-			return ip.Unmap().String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
-	}
-	return host.ResolveIPv4(context.Background(), m.s.Server)
-}
-
-func (m *dualStack) resolveRouteIPv6() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if !ip.Unmap().Is4() {
-			return ip.String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
-	}
-	return host.ResolveIPv6(context.Background(), m.s.Server)
-}
-
-func shouldSkipDarwinIPv4Route(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "expected IPv4") ||
-		strings.Contains(msg, "no matching address family found")
-}
-
-func shouldSkipDarwinIPv6Route(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "expected IPv6") ||
-		strings.Contains(msg, "no matching address family found")
 }

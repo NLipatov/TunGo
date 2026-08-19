@@ -49,14 +49,6 @@ func Validate(configuration Configuration) error {
 			)
 		}
 		ports[portNumber] = struct{}{}
-		if config.MTU < 576 || config.MTU > 9000 {
-			return fmt.Errorf(
-				"invalid 'MTU': [%s/%s] invalid MTU %d: expected 576..9000",
-				config.Protocol,
-				config.TunName,
-				config.MTU,
-			)
-		}
 		if err := validateSubnetContainsAddr("IPv4", config.IPv4Subnet, config.IPv4, config.Protocol, config.TunName); err != nil {
 			return err
 		}
@@ -67,6 +59,19 @@ func Validate(configuration Configuration) error {
 				return err
 			}
 			subnets = append(subnets, config.IPv6Subnet)
+		}
+		minimumMTU := settings.MinimumIPv4MTU
+		if config.IPv6Subnet.IsValid() {
+			minimumMTU = settings.MinimumIPv6MTU
+		}
+		if config.MTU < minimumMTU || config.MTU > 9000 {
+			return fmt.Errorf(
+				"invalid 'MTU': [%s/%s] invalid MTU %d: expected %d..9000",
+				config.Protocol,
+				config.TunName,
+				config.MTU,
+				minimumMTU,
+			)
 		}
 	}
 
@@ -90,11 +95,24 @@ func validateSubnetContainsAddr(
 			family, proto, tunName, subnet,
 		)
 	}
+	wantIPv4 := family == "IPv4"
+	if subnet.Addr().Is4() != wantIPv4 {
+		return fmt.Errorf(
+			"invalid '%sSubnet': [%s/%s] expected an %s prefix, got %s",
+			family, proto, tunName, family, subnet,
+		)
+	}
 	unmapped := addr.Unmap()
 	if !unmapped.IsValid() {
 		return fmt.Errorf(
 			"invalid '%s': [%s/%s] invalid address %q",
 			family, proto, tunName, addr,
+		)
+	}
+	if unmapped.Is4() != wantIPv4 {
+		return fmt.Errorf(
+			"invalid '%s': [%s/%s] expected an %s address, got %s",
+			family, proto, tunName, family, addr,
 		)
 	}
 	if !subnet.Contains(unmapped) {

@@ -438,7 +438,7 @@ var baseCfg = settings.Settings{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		IPv4:       netip.MustParseAddr("10.0.0.1"),
 	},
-	MTU: settings.SafeMTU,
+	MTU: settings.DefaultIPv4MTU,
 }
 
 var baseCfgIPv6 = settings.Settings{
@@ -449,7 +449,7 @@ var baseCfgIPv6 = settings.Settings{
 		IPv4:       netip.MustParseAddr("10.0.0.1"),
 		IPv6:       netip.MustParseAddr("fd00::1"),
 	},
-	MTU: settings.SafeMTU,
+	MTU: settings.DefaultIPv6MTU,
 }
 
 var baseCfgIPv6Only = settings.Settings{
@@ -458,7 +458,7 @@ var baseCfgIPv6Only = settings.Settings{
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 		IPv6:       netip.MustParseAddr("fd00::1"),
 	},
-	MTU: settings.SafeMTU,
+	MTU: settings.DefaultIPv6MTU,
 }
 
 // TunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
@@ -548,9 +548,9 @@ func TestCreateAndDispose_SuccessAndSkipForwardingDisableWhenExtIfaceUnknown(t *
 
 	f := newFactory(ipMock, iptMock, mssMock, ioMock, sysMock)
 
-	tun, err := f.CreateDevice(baseCfg)
+	tun, err := f.OpenTunnel(baseCfg)
 	if err != nil {
-		t.Fatalf("CreateDevice: %v", err)
+		t.Fatalf("OpenTunnel: %v", err)
 	}
 	if tun == nil {
 		t.Fatal("expected non-nil tun file")
@@ -560,20 +560,20 @@ func TestCreateAndDispose_SuccessAndSkipForwardingDisableWhenExtIfaceUnknown(t *
 	cfg := baseCfg
 	cfg.TunName = pickLoopbackName()
 
-	if err := f.DisposeDevices(cfg); err != nil {
-		t.Fatalf("DisposeDevices: %v", err)
+	if err := f.CloseTunnel(cfg); err != nil {
+		t.Fatalf("CloseTunnel: %v", err)
 	}
 }
 
-func TestDisposeDevices_NoSuchInterface_IsBenign_NoError(t *testing.T) {
+func TestCloseTunnel_NoSuchInterface_IsBenign_NoError(t *testing.T) {
 	ipMock := &TunFactoryMockIP{}
 	iptMock := &TunFactoryMockIPT{}
 	f := newFactory(ipMock, iptMock, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	cfg := baseCfg
 	cfg.TunName = "definitely-not-existing-xyz123"
 	// Should still perform best-effort netfilter cleanup for stale rules.
-	if err := f.DisposeDevices(cfg); err != nil {
-		t.Fatalf("DisposeDevices should ignore missing iface: %v", err)
+	if err := f.CloseTunnel(cfg); err != nil {
+		t.Fatalf("CloseTunnel should ignore missing iface: %v", err)
 	}
 	if iptMock.lastDisableMasqDev != "eth0" {
 		t.Fatalf("expected best-effort cleanup on ext iface, got %q", iptMock.lastDisableMasqDev)
@@ -582,7 +582,7 @@ func TestDisposeDevices_NoSuchInterface_IsBenign_NoError(t *testing.T) {
 
 func TestEnableForwarding_FirstCallError(t *testing.T) {
 	f := newFactory(&TunFactoryMockIP{}, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{netErr: true})
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
 		t.Errorf("expected forwarding error, got %v", err)
 	}
@@ -592,7 +592,7 @@ func TestEnableForwarding_WriteCallError(t *testing.T) {
 	f := newFactory(&TunFactoryMockIP{}, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{
 		netOutput: []byte("net.ipv4.ip_forward = 0\n"), wErr: true,
 	})
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
 		t.Errorf("expected second-call forwarding error, got %v", err)
 	}
@@ -620,7 +620,7 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 			}
 		}
 		f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, ioMock, &TunFactoryMockSys{})
-		_, err := f.CreateDevice(baseCfg)
+		_, err := f.OpenTunnel(baseCfg)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.tag, c.want, err)
 		}
@@ -632,7 +632,7 @@ func TestCreateTunDevice_CreateTunInterfaceError_RollsBackCreatedTun(t *testing.
 	ioMock := &TunFactoryMockIOCTL{createErr: errors.New("io_err")}
 	f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, ioMock, &TunFactoryMockSys{})
 
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("expected CreateTunInterface error, got %v", err)
 	}
@@ -653,19 +653,19 @@ func TestCreateTunDevice_InvalidCIDR_ErrorsFromAllocator(t *testing.T) {
 	// Keep IPv4 subnet valid so IPv4 path is active, but remove the derived IPv4
 	// address to force allocator/CIDR derivation failure.
 	bad.IPv4 = netip.Addr{}
-	_, err := f.CreateDevice(bad)
+	_, err := f.OpenTunnel(bad)
 	if err == nil || !strings.Contains(err.Error(), "could not derive server IPv4 CIDR") {
 		t.Fatalf("expected allocator error, got %v", err)
 	}
 }
 
-func TestCreateDevice_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
+func TestOpenTunnel_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
 	cfg := settings.Settings{
 		Addressing: settings.Addressing{
 			TunName:    "tun0",
 			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
 		},
-		MTU: settings.SafeMTU,
+		MTU: settings.DefaultIPv4MTU,
 	}
 	f := newFactory(
 		&TunFactoryMockIP{},
@@ -675,7 +675,7 @@ func TestCreateDevice_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
 		&TunFactoryMockSys{},
 	)
 
-	_, err := f.CreateDevice(cfg)
+	_, err := f.OpenTunnel(cfg)
 	if err == nil || !strings.Contains(err.Error(), "no tunnel IP configuration") {
 		t.Fatalf("expected strict config error for legacy IPv6-in-IPv4 field, got %v", err)
 	}
@@ -702,7 +702,7 @@ func TestConfigure_Errors(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	_, err := f1.CreateDevice(baseCfg)
+	_, err := f1.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "route_err") {
 		t.Errorf("expected route error, got %v", err)
 	}
@@ -715,7 +715,7 @@ func TestConfigure_Errors(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	_, err = f2.CreateDevice(baseCfg)
+	_, err = f2.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed enabling NAT") {
 		t.Errorf("expected NAT error, got %v", err)
 	}
@@ -728,7 +728,7 @@ func TestConfigure_Errors(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	_, err = f3.CreateDevice(baseCfg)
+	_, err = f3.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to set up forwarding") {
 		t.Errorf("expected forwarding setup error, got %v", err)
 	}
@@ -741,13 +741,13 @@ func TestConfigure_Errors(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	_, err = f4.CreateDevice(baseCfg)
+	_, err = f4.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "clamp_err") {
 		t.Errorf("expected clamping error, got %v", err)
 	}
 }
 
-func TestCreateDevice_ConfigureError_TriggersCleanup(t *testing.T) {
+func TestOpenTunnel_ConfigureError_TriggersCleanup(t *testing.T) {
 	ipMock := &TunFactoryMockIP{}
 	iptBase := &TunFactoryMockIPT{}
 	iptErr := &TunFactoryMockIPTErr{
@@ -757,7 +757,7 @@ func TestCreateDevice_ConfigureError_TriggersCleanup(t *testing.T) {
 	}
 	f := newFactory(ipMock, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to set up forwarding") {
 		t.Fatalf("expected forwarding setup error, got %v", err)
 	}
@@ -765,7 +765,7 @@ func TestCreateDevice_ConfigureError_TriggersCleanup(t *testing.T) {
 	if !strings.Contains(iptBase.log.String(), "masq_off;") {
 		t.Fatalf("expected NAT rollback/cleanup on configure failure, log=%q", iptBase.log.String())
 	}
-	// DisposeDevices deletes the interface only if it exists on the host.
+	// CloseTunnel deletes the interface only if it exists on the host.
 	// In unit tests with mocks and no real tun0, cleanup can skip LinkDelete.
 	if strings.Count(ipMock.log.String(), "del;") < 1 {
 		t.Fatalf("expected at least initial LinkDelete call, log=%q", ipMock.log.String())
@@ -810,7 +810,7 @@ func TestDisposeTunDevices_DeleteError(t *testing.T) {
 	cfg := baseCfg
 	cfg.TunName = pickLoopbackName()
 	f := newFactory(&TunFactoryMockIPErrDel{TunFactoryMockIP: &TunFactoryMockIP{}, err: errors.New("del_err")}, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
-	if err := f.DisposeDevices(cfg); err == nil || !strings.Contains(err.Error(), "error deleting TUN device") {
+	if err := f.CloseTunnel(cfg); err == nil || !strings.Contains(err.Error(), "error deleting TUN device") {
 		t.Errorf("expected delete error, got %v", err)
 	}
 }
@@ -970,7 +970,7 @@ func TestIsBenignInterfaceError_NilIsFalse(t *testing.T) {
 	}
 }
 
-func TestDisposeDevices_BenignIptablesErrorsAreIgnored(t *testing.T) {
+func TestCloseTunnel_BenignIptablesErrorsAreIgnored(t *testing.T) {
 	// Arrange: ext iface is non-empty, iptables returns benign errors ⇒ must be ignored
 	ipMock := &TunFactoryMockIP{}
 	iptMock := &TunFactoryMockIPTBenign{}
@@ -980,12 +980,12 @@ func TestDisposeDevices_BenignIptablesErrorsAreIgnored(t *testing.T) {
 	cfg.TunName = pickLoopbackName() // ensure InterfaceByName(...) passes
 
 	// Act + Assert
-	if err := f.DisposeDevices(cfg); err != nil {
-		t.Fatalf("DisposeDevices should ignore benign iptables errors, got: %v", err)
+	if err := f.CloseTunnel(cfg); err != nil {
+		t.Fatalf("CloseTunnel should ignore benign iptables errors, got: %v", err)
 	}
 }
 
-func TestDisposeDevices_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T) {
+func TestCloseTunnel_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T) {
 	// Arrange: iptables returns non-benign errors; code should log them but still proceed
 	ipMock := &TunFactoryMockIP{}
 	iptMock := &TunFactoryMockIPTAlwaysErr{}
@@ -995,8 +995,8 @@ func TestDisposeDevices_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T)
 	cfg.TunName = pickLoopbackName()
 
 	// Act + Assert
-	if err := f.DisposeDevices(cfg); err != nil {
-		t.Fatalf("DisposeDevices should not fail on non-benign iptables errors (only log), got: %v", err)
+	if err := f.CloseTunnel(cfg); err != nil {
+		t.Fatalf("CloseTunnel should not fail on non-benign iptables errors (only log), got: %v", err)
 	}
 }
 
@@ -1028,9 +1028,9 @@ func TestEnableForwarding_WritesWhenDisabled_Succeeds(t *testing.T) {
 		&TunFactoryMockSys{netOutput: []byte("net.ipv4.ip_forward = 0\n")},
 	)
 
-	tun, err := f.CreateDevice(baseCfg)
+	tun, err := f.OpenTunnel(baseCfg)
 	if err != nil {
-		t.Fatalf("CreateDevice should succeed after enabling ip_forward, got: %v", err)
+		t.Fatalf("OpenTunnel should succeed after enabling ip_forward, got: %v", err)
 	}
 	if tun == nil {
 		t.Fatal("expected non-nil tun file")
@@ -1046,7 +1046,7 @@ func TestEnableForwarding_IPv6ReadError(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{net6Err: true},
 	)
-	_, err := f.CreateDevice(baseCfgIPv6)
+	_, err := f.OpenTunnel(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed to read IPv6 forwarding state") {
 		t.Errorf("expected IPv6 read error, got %v", err)
 	}
@@ -1061,9 +1061,9 @@ func TestEnableForwarding_IPv6Skipped_WhenNoIPv6Subnet(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{net6Err: true},
 	)
-	tun, err := f.CreateDevice(baseCfg)
+	tun, err := f.OpenTunnel(baseCfg)
 	if err != nil {
-		t.Fatalf("CreateDevice should skip IPv6 forwarding when no IPv6 subnet, got: %v", err)
+		t.Fatalf("OpenTunnel should skip IPv6 forwarding when no IPv6 subnet, got: %v", err)
 	}
 	_ = tun.Close()
 }
@@ -1079,7 +1079,7 @@ func TestEnableForwarding_IPv6WriteError(t *testing.T) {
 			w6Err:      true,
 		},
 	)
-	_, err := f.CreateDevice(baseCfgIPv6)
+	_, err := f.OpenTunnel(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv6 packet forwarding") {
 		t.Errorf("expected IPv6 write error, got %v", err)
 	}
@@ -1093,9 +1093,9 @@ func TestEnableForwarding_IPv6WritesWhenDisabled_Succeeds(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{net6Output: []byte("net.ipv6.conf.all.forwarding = 0\n")},
 	)
-	tun, err := f.CreateDevice(baseCfgIPv6)
+	tun, err := f.OpenTunnel(baseCfgIPv6)
 	if err != nil {
-		t.Fatalf("CreateDevice should succeed after enabling IPv6 forwarding, got: %v", err)
+		t.Fatalf("OpenTunnel should succeed after enabling IPv6 forwarding, got: %v", err)
 	}
 	_ = tun.Close()
 }
@@ -1111,9 +1111,9 @@ func TestCreateTunDevice_WithIPv6Subnet_Success(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	tun, err := f.CreateDevice(cfg)
+	tun, err := f.OpenTunnel(cfg)
 	if err != nil {
-		t.Fatalf("CreateDevice with IPv6 subnet should succeed, got: %v", err)
+		t.Fatalf("OpenTunnel with IPv6 subnet should succeed, got: %v", err)
 	}
 	_ = tun.Close()
 }
@@ -1126,9 +1126,9 @@ func TestCreateTunDevice_IPv6Only_Success(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	tun, err := f.CreateDevice(baseCfgIPv6Only)
+	tun, err := f.OpenTunnel(baseCfgIPv6Only)
 	if err != nil {
-		t.Fatalf("CreateDevice with IPv6-only settings should succeed, got: %v", err)
+		t.Fatalf("OpenTunnel with IPv6-only settings should succeed, got: %v", err)
 	}
 	_ = tun.Close()
 }
@@ -1143,7 +1143,7 @@ func TestCreateTunDevice_WithIPv6Subnet_AddrAddError(t *testing.T) {
 		err:              errors.New("v6_addr_err"),
 	}
 	f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
-	_, err := f.CreateDevice(cfg)
+	_, err := f.OpenTunnel(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to assign IPv6 to TUN") {
 		t.Errorf("expected IPv6 addr error, got %v", err)
 	}
@@ -1156,7 +1156,7 @@ func TestCreateTunDevice_IPv6Only_AddrAddError(t *testing.T) {
 		err:              errors.New("v6_addr_err"),
 	}
 	f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
-	_, err := f.CreateDevice(baseCfgIPv6Only)
+	_, err := f.OpenTunnel(baseCfgIPv6Only)
 	if err == nil || !strings.Contains(err.Error(), "failed to assign IPv6 to TUN") {
 		t.Errorf("expected IPv6 addr error in IPv6-only mode, got %v", err)
 	}
@@ -1218,20 +1218,20 @@ func TestConfigure_Enable6DevMasqueradeError(t *testing.T) {
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
-	_, err := f.CreateDevice(baseCfgIPv6)
+	_, err := f.OpenTunnel(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed enabling IPv6 NAT") {
 		t.Errorf("expected IPv6 NAT error, got %v", err)
 	}
 }
 
-func TestCreateDevice_MasqueradeUsesSubnetScopedRules(t *testing.T) {
+func TestOpenTunnel_MasqueradeUsesSubnetScopedRules(t *testing.T) {
 	ipMock := &TunFactoryMockIP{}
 	iptMock := &TunFactoryMockIPT{}
 	f := newFactory(ipMock, iptMock, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 
-	_, err := f.CreateDevice(baseCfgIPv6)
+	_, err := f.OpenTunnel(baseCfgIPv6)
 	if err != nil {
-		t.Fatalf("CreateDevice: %v", err)
+		t.Fatalf("OpenTunnel: %v", err)
 	}
 
 	if iptMock.lastEnableMasqDev != "eth0" {
@@ -1248,15 +1248,15 @@ func TestCreateDevice_MasqueradeUsesSubnetScopedRules(t *testing.T) {
 	}
 }
 
-func TestDisposeDevices_MasqueradeCleanupUsesSubnetScopedRules(t *testing.T) {
+func TestCloseTunnel_MasqueradeCleanupUsesSubnetScopedRules(t *testing.T) {
 	ipMock := &TunFactoryMockIP{}
 	iptMock := &TunFactoryMockIPT{}
 	f := newFactory(ipMock, iptMock, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 
 	cfg := baseCfgIPv6
 	cfg.TunName = pickLoopbackName()
-	if err := f.DisposeDevices(cfg); err != nil {
-		t.Fatalf("DisposeDevices: %v", err)
+	if err := f.CloseTunnel(cfg); err != nil {
+		t.Fatalf("CloseTunnel: %v", err)
 	}
 
 	if iptMock.lastDisableMasqDev != "eth0" {

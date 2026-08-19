@@ -12,18 +12,18 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-type resolver struct {
+type Resolver struct {
 	cacheMu sync.RWMutex
 	cache   map[string]winipcfg.LUID
 }
 
-func NewResolver() Contract {
-	return &resolver{
+func NewResolver() *Resolver {
+	return &Resolver{
 		cache: make(map[string]winipcfg.LUID),
 	}
 }
 
-func (r *resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) {
+func (r *Resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) {
 	if v, ok := r.getCached(ifName); ok {
 		return v, nil
 	}
@@ -155,11 +155,11 @@ func (r *resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) 
 }
 
 // matchName compares Windows adapter names case-insensitively and trims spaces.
-func (r *resolver) matchName(a, b string) bool {
+func (r *Resolver) matchName(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
-func (r *resolver) NetworkInterfaceName(luid winipcfg.LUID) string {
+func (r *Resolver) NetworkInterfaceName(luid winipcfg.LUID) string {
 	if addrs, err := winipcfg.GetAdaptersAddresses(winipcfg.AddressFamily(windows.AF_UNSPEC), 0); err == nil {
 		for _, a := range addrs {
 			if a.LUID == luid {
@@ -181,7 +181,7 @@ func (r *resolver) NetworkInterfaceName(luid winipcfg.LUID) string {
 	return ""
 }
 
-func (r *resolver) getCached(ifName string) (winipcfg.LUID, bool) {
+func (r *Resolver) getCached(ifName string) (winipcfg.LUID, bool) {
 	key := r.canonKey(ifName)
 	r.cacheMu.RLock()
 	v, ok := r.cache[key]
@@ -200,9 +200,9 @@ func (r *resolver) getCached(ifName string) (winipcfg.LUID, bool) {
 	return 0, false
 }
 
-func (r *resolver) putCached(ifName string, luid winipcfg.LUID) {
+func (r *Resolver) putCached(ifName string, luid winipcfg.LUID) {
 	r.cacheMu.Lock()
 	r.cache[r.canonKey(ifName)] = luid
 	r.cacheMu.Unlock()
 }
-func (r *resolver) canonKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+func (r *Resolver) canonKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }

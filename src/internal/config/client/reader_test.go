@@ -52,6 +52,7 @@ func TestReaderReadSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read() returned error: %v", err)
 	}
+	expectedConfig.ApplyClientDefaults()
 	expectedBytes, _ := json.MarshalIndent(expectedConfig, "", "  ")
 	actualBytes, _ := json.MarshalIndent(config, "", "  ")
 	if strings.TrimSpace(string(expectedBytes)) != strings.TrimSpace(string(actualBytes)) {

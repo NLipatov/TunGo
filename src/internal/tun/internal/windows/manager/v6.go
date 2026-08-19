@@ -3,18 +3,12 @@
 package manager
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/netip"
-	"strconv"
-	"strings"
 	"tungo/internal/config/settings"
-	"tungo/internal/transport/host"
-	"tungo/internal/tun/internal/windows/ipcfg"
 	"tungo/internal/tun/internal/windows/wtun"
 
 	"golang.zx2c4.com/wintun"
@@ -22,19 +16,16 @@ import (
 
 // v6Manager configures a Wintun adapter and the host stack for IPv6.
 type v6Manager struct {
-	s                  settings.Settings
-	tun                io.ReadWriteCloser
-	netConfig          ipcfg.Contract
-	routeEndpoint      netip.AddrPort
-	createTunDeviceFn  func() (io.ReadWriteCloser, error)
-	resolveRouteIPv6Fn func() (string, error)
-	resolvedRouteIP    string // cached resolved server IP for consistent teardown
-	resolvedRouteIf    string // cached egress interface used for host route
+	s               settings.Settings
+	tun             io.ReadWriteCloser
+	netConfig       networkConfigurator
+	resolvedRouteIP netip.Addr
+	resolvedRouteIf string // cached egress interface used for host route
 }
 
 func newV6Manager(
 	s settings.Settings,
-	netConfig ipcfg.Contract,
+	netConfig networkConfigurator,
 ) *v6Manager {
 	return &v6Manager{
 		s:         s,
@@ -44,22 +35,19 @@ func newV6Manager(
 
 // OpenTunnel creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
-func (m *v6Manager) OpenTunnel() (io.ReadWriteCloser, error) {
-	if err := m.validateSettings(); err != nil {
-		return nil, err
+func (m *v6Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
+	serverAddr = serverAddr.Unmap()
 
-	createTun := m.createTunDeviceFn
-	if createTun == nil {
-		createTun = m.createTunDevice
-	}
-	tunDev, err := createTun()
+	tunDev, err := m.createTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
 
-	if err = m.addStaticRouteToServer(); err != nil {
+	if err = m.addStaticRouteToServer(serverAddr); err != nil {
 		_ = m.CloseTunnel()
 		return nil, err
 	}
@@ -71,7 +59,7 @@ func (m *v6Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 		_ = m.CloseTunnel()
 		return nil, err
 	}
-	if err = m.setMTUToTunDevice(); err != nil {
+	if err = m.netConfig.SetMTU(m.s.TunName, m.s.MTU); err != nil {
 		_ = m.CloseTunnel()
 		return nil, err
 	}
@@ -80,22 +68,6 @@ func (m *v6Manager) OpenTunnel() (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 	return m.tun, nil
-}
-
-func (m *v6Manager) validateSettings() error {
-	if strings.TrimSpace(m.s.TunName) == "" {
-		return fmt.Errorf("empty TunName")
-	}
-	if m.s.Server == (settings.Host{}) {
-		return fmt.Errorf("empty Server")
-	}
-	if !m.s.IPv6Subnet.IsValid() {
-		return fmt.Errorf("invalid IPv6Subnet: %q", m.s.IPv6Subnet)
-	}
-	if !m.s.IPv6.IsValid() || m.s.IPv6.Unmap().Is4() {
-		return fmt.Errorf("v6Manager requires IPv6 address, got %q", m.s.IPv6)
-	}
-	return nil
 }
 
 func (m *v6Manager) createTunDevice() (io.ReadWriteCloser, error) {
@@ -114,16 +86,12 @@ func (m *v6Manager) createTunDevice() (io.ReadWriteCloser, error) {
 	return dev, nil
 }
 
-func (m *v6Manager) addStaticRouteToServer() error {
-	routeIP, err := m.resolveRouteIPv6()
-	if err != nil {
-		// If control channel is pinned to IPv4 endpoint, there is no IPv6 host route to preserve.
-		if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
-			return nil
-		}
-		return fmt.Errorf("resolve host %s: %w", m.s.Server, err)
+func (m *v6Manager) addStaticRouteToServer(serverAddr netip.Addr) error {
+	if serverAddr.Is4() {
+		return nil
 	}
-	gw, ifName, ifIndex, _, bestErr := m.netConfig.BestRoute(routeIP)
+	var err error
+	gw, ifName, ifIndex, _, bestErr := m.netConfig.BestRoute(serverAddr)
 	if bestErr != nil {
 		return bestErr
 	}
@@ -131,45 +99,32 @@ func (m *v6Manager) addStaticRouteToServer() error {
 	if err != nil {
 		return err
 	}
-	m.resolvedRouteIP = routeIP
-	m.resolvedRouteIf = ifName
-	_ = m.netConfig.DeleteRoute(routeIP)
-	_ = m.netConfig.DeleteRouteOnInterface(routeIP, ifName)
-	if gw == "" {
+	_ = m.netConfig.DeleteRoute(serverAddr)
+	_ = m.netConfig.DeleteRouteOnInterface(serverAddr, ifName)
+	var addErr error
+	if !gw.IsValid() {
 		// on-link
-		return m.netConfig.AddHostRouteOnLink(routeIP, ifName, 1)
+		addErr = m.netConfig.AddHostRouteOnLink(serverAddr, ifName, 1)
+	} else {
+		addErr = m.netConfig.AddHostRouteViaGateway(serverAddr, ifName, gw, 1)
 	}
-	return m.netConfig.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
+	if addErr != nil {
+		return addErr
+	}
+	m.resolvedRouteIP = serverAddr
+	m.resolvedRouteIf = ifName
+	return nil
 }
 
-// assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
 func (m *v6Manager) assignIPToTunDevice() error {
-	ipStr := m.s.IPv6.String()
-	subnetStr := m.s.IPv6Subnet.String()
-	ip := net.ParseIP(ipStr)
-	_, nw, _ := net.ParseCIDR(subnetStr)
-	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
-	}
-	prefix, _ := nw.Mask.Size()
-	return m.netConfig.SetAddressStatic(m.s.TunName, ipStr, strconv.Itoa(prefix))
+	prefix := netip.PrefixFrom(m.s.IPv6, m.s.IPv6Subnet.Bits())
+	return m.netConfig.SetAddressStatic(m.s.TunName, prefix)
 }
 
 // setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
 	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName)
 	return m.netConfig.AddDefaultSplitRoutes(m.s.TunName, 1)
-}
-
-func (m *v6Manager) setMTUToTunDevice() error {
-	mtu := m.s.MTU
-	if mtu == 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv6MTU {
-		mtu = settings.MinimumIPv6MTU
-	}
-	return m.netConfig.SetMTU(m.s.TunName, mtu)
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
@@ -188,13 +143,12 @@ func (m *v6Manager) CloseTunnel() error {
 	if err := m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete default split routes: %w", err))
 	}
-	if m.resolvedRouteIP != "" {
+	if m.resolvedRouteIP.IsValid() {
 		if err := m.netConfig.DeleteRouteOnInterface(m.resolvedRouteIP, m.resolvedRouteIf); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route %s on %s: %w", m.resolvedRouteIP, m.resolvedRouteIf, err))
-		}
-	} else if routeIP, err := m.resolveRouteIPv6(); err == nil {
-		if err := m.netConfig.DeleteRoute(routeIP); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale route %s: %w", routeIP, err))
+		} else {
+			m.resolvedRouteIP = netip.Addr{}
+			m.resolvedRouteIf = ""
 		}
 	}
 	if err := m.netConfig.SetDNS(m.s.TunName, nil); err != nil {
@@ -209,24 +163,4 @@ func (m *v6Manager) CloseTunnel() error {
 		}
 	}
 	return errors.Join(cleanupErrs...)
-}
-
-func (m *v6Manager) SetRouteEndpoint(addr netip.AddrPort) {
-	m.routeEndpoint = addr
-}
-
-func (m *v6Manager) resolveRouteIPv6() (string, error) {
-	if m.routeEndpoint.IsValid() {
-		ip := m.routeEndpoint.Addr()
-		if !ip.Unmap().Is4() {
-			return ip.String(), nil
-		}
-		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
-	}
-	if m.resolveRouteIPv6Fn != nil {
-		return m.resolveRouteIPv6Fn()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
-	defer cancel()
-	return host.ResolveIPv6(ctx, m.s.Server)
 }
