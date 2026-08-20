@@ -33,9 +33,9 @@ func newV4Manager(
 	}
 }
 
-// OpenTunnel creates/configures the TUN adapter and system netCfgs/DNS for IPv4.
-// Safe order: create adapter → host netCfg to server → assign IP → split default → MTU → DNS.
-// On any error after adapter creation we call CloseTunnel() to leave the host clean.
+// OpenTunnel creates and configures the IPv4 TUN adapter.
+// It pins the server route before installing split default routes and
+// attempts to clean up the adapter and routes if setup fails.
 func (m *v4Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
