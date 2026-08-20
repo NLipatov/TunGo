@@ -30,28 +30,28 @@ type networkConfigurator interface {
 	BestRoute(dest netip.Addr) (netip.Addr, string, int, int, error)
 }
 
-func New(connectionSettings settings.Settings) (clientManager, error) {
-	has4 := connectionSettings.IPv4.IsValid() && !connectionSettings.IPv4.IsUnspecified() && connectionSettings.IPv4.Unmap().Is4() ||
-		connectionSettings.IPv4Subnet.IsValid() && connectionSettings.IPv4Subnet.Addr().Unmap().Is4()
-	has6 := connectionSettings.IPv6.IsValid() && !connectionSettings.IPv6.IsUnspecified() && !connectionSettings.IPv6.Unmap().Is4() ||
-		connectionSettings.IPv6Subnet.IsValid() && !connectionSettings.IPv6Subnet.Addr().Unmap().Is4()
+func New(s settings.Settings) (clientManager, error) {
+	has4 := s.IPv4Subnet.IsValid() &&
+		s.IPv4Subnet.Addr().Unmap().Is4()
+	has6 := s.IPv6Subnet.IsValid() &&
+		s.IPv6Subnet.Addr().Unmap().Is6()
 
 	if has4 && has6 {
 		return newDualStackManager(
-			connectionSettings,
+			s,
 			ipcfg.NewV4(),
 			ipcfg.NewV6(),
 		), nil
 	}
 	if has4 {
 		return newV4Manager(
-			connectionSettings,
+			s,
 			ipcfg.NewV4(),
 		), nil
 	}
 	if has6 {
 		return newV6Manager(
-			connectionSettings,
+			s,
 			ipcfg.NewV6(),
 		), nil
 	}

@@ -187,108 +187,45 @@ func TestNew_DualStack(t *testing.T) {
 	}
 }
 
-func TestNew_NoValidIP(t *testing.T) {
-	s := settings.Settings{}
-	_, err := New(s)
-	if err == nil {
-		t.Fatal("expected error for no valid IP, got nil")
-	}
-}
-
-func TestNew_ZeroIPv4ReturnsV6Only(t *testing.T) {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     mustIPHost(t, "2001:db8::1"),
-			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
-			IPv4:       netip.Addr{}, // zero — not valid
-			IPv6:       netip.MustParseAddr("fd00::2"),
+func TestNew_RejectsSettingsWithoutSubnets(t *testing.T) {
+	tests := []struct {
+		name       string
+		addressing settings.Addressing
+	}{
+		{name: "empty"},
+		{
+			name: "IPv4 address only",
+			addressing: settings.Addressing{
+				IPv4: netip.MustParseAddr("10.0.0.2"),
+			},
+		},
+		{
+			name: "IPv6 address only",
+			addressing: settings.Addressing{
+				IPv6: netip.MustParseAddr("fd00::2"),
+			},
+		},
+		{
+			name: "dual-stack addresses only",
+			addressing: settings.Addressing{
+				IPv4: netip.MustParseAddr("10.0.0.2"),
+				IPv6: netip.MustParseAddr("fd00::2"),
+			},
 		},
 	}
-	mgr, err := New(s)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := mgr.(*v6); !ok {
-		t.Fatalf("expected *v6, got %T", mgr)
-	}
-}
 
-func TestNew_ZeroIPv6ReturnsV4Only(t *testing.T) {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     mustIPHost(t, "198.51.100.1"),
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			IPv6:       netip.Addr{}, // zero — not valid
-		},
-	}
-	mgr, err := New(s)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := mgr.(*v4); !ok {
-		t.Fatalf("expected *v4, got %T", mgr)
-	}
-}
-
-func TestNew_UnspecifiedIPv4NotTreatedAsValid(t *testing.T) {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     mustIPHost(t, "2001:db8::1"),
-			IPv4:       netip.MustParseAddr("0.0.0.0"), // unspecified
-			IPv6:       netip.MustParseAddr("fd00::2"),
-			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
-		},
-	}
-	mgr, err := New(s)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := mgr.(*v6); !ok {
-		t.Fatalf("expected *v6 (unspecified IPv4 is not valid), got %T", mgr)
-	}
-}
-
-func TestNew_UnspecifiedIPv6NotTreatedAsValid(t *testing.T) {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     mustIPHost(t, "198.51.100.1"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-			IPv6:       netip.MustParseAddr("::"),
-		},
-	}
-	mgr, err := New(s)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := mgr.(*v4); !ok {
-		t.Fatalf("expected *v4 (unspecified IPv6 is not valid), got %T", mgr)
-	}
-}
-
-func TestNew_MappedIPv4AsIPv6TreatedAsV4(t *testing.T) {
-	// ::ffff:10.0.0.2 is a v4-mapped-v6 address; Unmap().Is4() == true, so it is v4
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server:     mustIPHost(t, "198.51.100.1"),
-			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-			IPv4:       netip.MustParseAddr("10.0.0.2"),
-			IPv6:       netip.MustParseAddr("::ffff:192.168.1.1"),
-		},
-	}
-	mgr, err := New(s)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// The IPv6 is actually a mapped IPv4 so has6 is false; result should be v4-only.
-	if _, ok := mgr.(*v4); !ok {
-		t.Fatalf("expected *v4 (mapped v4 treated as v4), got %T", mgr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := New(settings.Settings{Addressing: tt.addressing})
+			if err == nil {
+				t.Fatalf("expected error, got manager %T", got)
+			}
+		})
 	}
 }
 
 // ---------------------------------------------------------------------------
-// v4 validateSettings
+// OpenTunnel input tests
 // ---------------------------------------------------------------------------
 
 func TestOpenTunnel_RejectsInvalidServerAddr(t *testing.T) {

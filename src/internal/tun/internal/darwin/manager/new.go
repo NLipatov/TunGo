@@ -32,10 +32,10 @@ type routeConfigurator interface {
 
 func New(s settings.Settings) (clientManager, error) {
 	cmd := command.New()
-	has4 := s.IPv4.IsValid() && !s.IPv4.IsUnspecified() && s.IPv4.Unmap().Is4() ||
-		s.IPv4Subnet.IsValid() && s.IPv4Subnet.Addr().Unmap().Is4()
-	has6 := s.IPv6.IsValid() && !s.IPv6.IsUnspecified() && !s.IPv6.Unmap().Is4() ||
-		s.IPv6Subnet.IsValid() && !s.IPv6Subnet.Addr().Unmap().Is4()
+	has4 := s.IPv4Subnet.IsValid() &&
+		s.IPv4Subnet.Addr().Unmap().Is4()
+	has6 := s.IPv6Subnet.IsValid() &&
+		s.IPv6Subnet.Addr().Unmap().Is6()
 
 	if has4 && has6 {
 		return newDualStack(
