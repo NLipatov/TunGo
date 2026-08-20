@@ -342,7 +342,7 @@ func TestV4Manager_SetDNSToTunDevice_UsesConfiguredDNS(t *testing.T) {
 			Server:     mustHost(t, "198.51.100.10"),
 			DNSv4:      []string{"9.9.9.9", "1.0.0.1"},
 		},
-		MTU: settings.DefaultIPv4MTU,
+		MTU: settings.DefaultMTU,
 	}
 
 	m := newV4Manager(s, cfg)
@@ -372,7 +372,7 @@ func TestV6Manager_SetDNSToTunDevice_UsesConfiguredDNS(t *testing.T) {
 			Server:     mustHost(t, "2001:db8::1"),
 			DNSv6:      []string{"2606:4700:4700::1111", "2620:fe::9"},
 		},
-		MTU: settings.DefaultIPv6MTU,
+		MTU: settings.MinimumIPv6MTU,
 	}
 
 	m := newV6Manager(s, cfg)
@@ -403,7 +403,7 @@ func TestV4Manager_SetDNSToTunDevice_IgnoresFlushFailure(t *testing.T) {
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			Server:     mustHost(t, "198.51.100.10"),
 		},
-		MTU: settings.DefaultIPv4MTU,
+		MTU: settings.DefaultMTU,
 	}
 
 	m := newV4Manager(s, cfg)
@@ -428,7 +428,7 @@ func TestV6Manager_SetDNSToTunDevice_IgnoresFlushFailure(t *testing.T) {
 			IPv6:       netip.MustParseAddr("fd00::2"),
 			Server:     mustHost(t, "2001:db8::1"),
 		},
-		MTU: settings.DefaultIPv6MTU,
+		MTU: settings.MinimumIPv6MTU,
 	}
 
 	m := newV6Manager(s, cfg)

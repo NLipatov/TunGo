@@ -46,8 +46,8 @@ func Validate(configuration Configuration) error {
 			return fmt.Errorf("active settings: invalid Port %d", active.Port)
 		}
 	}
-	hasIPv4 := isIPv4Prefix(active.IPv4Subnet)
-	hasIPv6 := isIPv6Prefix(active.IPv6Subnet)
+	hasIPv4 := active.IPv4Subnet.IsValid() && active.IPv4Subnet.Addr().Is4()
+	hasIPv6 := active.IPv6Subnet.IsValid() && active.IPv6Subnet.Addr().Unmap().Is6()
 	if active.IPv4Subnet.IsValid() && !hasIPv4 {
 		return fmt.Errorf("active settings: IPv4Subnet is not an IPv4 prefix")
 	}
@@ -61,8 +61,8 @@ func Validate(configuration Configuration) error {
 	if hasIPv6 {
 		minimumMTU = settings.MinimumIPv6MTU
 	}
-	if active.MTU < minimumMTU || active.MTU > 9000 {
-		return fmt.Errorf("active settings: invalid MTU %d: expected %d..9000", active.MTU, minimumMTU)
+	if active.MTU < minimumMTU || active.MTU > settings.MaximumMTU {
+		return fmt.Errorf("active settings: invalid MTU %d: expected %d..%d", active.MTU, minimumMTU, settings.MaximumMTU)
 	}
 	if err := validateDNSServers(active.DNSv4, false); err != nil {
 		return fmt.Errorf("active settings: %w", err)

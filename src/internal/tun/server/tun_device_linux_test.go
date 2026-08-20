@@ -17,7 +17,7 @@ var cfgNoIPv4Addr = settings.Settings{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 	},
-	MTU: settings.DefaultIPv4MTU,
+	MTU: settings.DefaultMTU,
 }
 
 func newDeviceManager(ipMock *TunFactoryMockIP, ioctlMock *TunFactoryMockIOCTL) tunDeviceManager {

@@ -388,14 +388,14 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	}
 }
 
-func TestDeriveClientSettings_UDPUsesAddressFamilyDefaultMTU(t *testing.T) {
+func TestDeriveClientSettings_UDPUsesDefaultMTU(t *testing.T) {
 	tests := []struct {
 		name       string
 		ipv6Subnet netip.Prefix
 		want       int
 	}{
-		{name: "IPv4", want: settings.DefaultIPv4MTU},
-		{name: "dual stack", ipv6Subnet: mustPrefix("fd00::/64"), want: settings.DefaultIPv6MTU},
+		{name: "IPv4", want: settings.DefaultMTU},
+		{name: "dual stack", ipv6Subnet: mustPrefix("fd00::/64"), want: settings.DefaultMTU},
 	}
 
 	for _, tt := range tests {

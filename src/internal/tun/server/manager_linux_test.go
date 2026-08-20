@@ -434,7 +434,7 @@ var baseCfg = settings.Settings{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		IPv4:       netip.MustParseAddr("10.0.0.1"),
 	},
-	MTU: settings.DefaultIPv4MTU,
+	MTU: settings.DefaultMTU,
 }
 
 var baseCfgIPv6 = settings.Settings{
@@ -445,7 +445,7 @@ var baseCfgIPv6 = settings.Settings{
 		IPv4:       netip.MustParseAddr("10.0.0.1"),
 		IPv6:       netip.MustParseAddr("fd00::1"),
 	},
-	MTU: settings.DefaultIPv6MTU,
+	MTU: settings.MinimumIPv6MTU,
 }
 
 var baseCfgIPv6Only = settings.Settings{
@@ -454,7 +454,7 @@ var baseCfgIPv6Only = settings.Settings{
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 		IPv6:       netip.MustParseAddr("fd00::1"),
 	},
-	MTU: settings.DefaultIPv6MTU,
+	MTU: settings.MinimumIPv6MTU,
 }
 
 // TunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
@@ -661,7 +661,7 @@ func TestOpenTunnel_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
 			TunName:    "tun0",
 			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
 		},
-		MTU: settings.DefaultIPv4MTU,
+		MTU: settings.DefaultMTU,
 	}
 	f := newFactory(
 		&TunFactoryMockIP{},

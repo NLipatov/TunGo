@@ -202,7 +202,7 @@ func TestValidate_IPv6MTUTooSmall(t *testing.T) {
 
 func TestValidate_MTUTooLarge(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.MTU = 9500 // above 9000
+	cfg.TCPSettings.MTU = settings.MaximumMTU + 1
 	if err := Validate(*cfg); err == nil {
 		t.Fatalf("expected error for MTU too large")
 	}

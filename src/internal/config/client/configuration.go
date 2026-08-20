@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"log/slog"
 	"net/netip"
 
 	"tungo/internal/config/settings"
@@ -26,17 +27,34 @@ type Configuration struct {
 
 func (c *Configuration) ApplyClientDefaults() *Configuration {
 	active, err := c.activeSettings()
-	if err != nil || active.MTU != 0 {
+	if err != nil {
 		return c
 	}
-
-	switch {
-	case isIPv6Prefix(active.IPv6Subnet):
-		active.MTU = settings.DefaultIPv6MTU
-	case isIPv4Prefix(active.IPv4Subnet):
-		active.MTU = settings.DefaultIPv4MTU
+	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
+	if active.MTU != 0 && active.MTU != effectiveMTU {
+		slog.Warn(
+			"client MTU was changed to a supported default",
+			"configured", active.MTU,
+			"effective", effectiveMTU,
+		)
 	}
+	active.MTU = effectiveMTU
 	return c
+}
+
+func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
+	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
+	switch {
+	case v6Subnet.IsValid() && v6Subnet.Addr().Unmap().Is6():
+		if mtu < settings.MinimumIPv6MTU || mtu > settings.MaximumMTU {
+			return settings.DefaultMTU
+		}
+	case v4Subnet.IsValid() && v4Subnet.Addr().Is4():
+		if mtu < settings.MinimumIPv4MTU || mtu > settings.MaximumMTU {
+			return settings.DefaultMTU
+		}
+	}
+	return mtu
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
@@ -64,12 +82,4 @@ func (c *Configuration) activeSettings() (*settings.Settings, error) {
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %v", c.Protocol)
 	}
-}
-
-func isIPv4Prefix(prefix netip.Prefix) bool {
-	return prefix.IsValid() && prefix.Addr().Is4()
-}
-
-func isIPv6Prefix(prefix netip.Prefix) bool {
-	return prefix.IsValid() && !prefix.Addr().Is4()
 }

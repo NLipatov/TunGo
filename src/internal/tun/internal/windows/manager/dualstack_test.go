@@ -329,7 +329,7 @@ func TestDualStackManager_SetDNSToTunDevice_UsesConfiguredDNS(t *testing.T) {
 			DNSv4:      []string{"9.9.9.9", "1.0.0.1"},
 			DNSv6:      []string{"2620:fe::9", "2001:4860:4860::8844"},
 		},
-		MTU: settings.DefaultIPv6MTU,
+		MTU: settings.MinimumIPv6MTU,
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)
@@ -364,7 +364,7 @@ func TestDualStackManager_SetDNSToTunDevice_IgnoresIPv6FlushFailure(t *testing.T
 			IPv6:       netip.MustParseAddr("fd00::2"),
 			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::1"},
 		},
-		MTU: settings.DefaultIPv6MTU,
+		MTU: settings.MinimumIPv6MTU,
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)

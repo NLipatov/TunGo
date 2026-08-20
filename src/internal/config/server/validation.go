@@ -64,13 +64,14 @@ func Validate(configuration Configuration) error {
 		if config.IPv6Subnet.IsValid() {
 			minimumMTU = settings.MinimumIPv6MTU
 		}
-		if config.MTU < minimumMTU || config.MTU > 9000 {
+		if config.MTU < minimumMTU || config.MTU > settings.MaximumMTU {
 			return fmt.Errorf(
-				"invalid 'MTU': [%s/%s] invalid MTU %d: expected %d..9000",
+				"invalid 'MTU': [%s/%s] invalid MTU %d: expected %d..%d",
 				config.Protocol,
 				config.TunName,
 				config.MTU,
 				minimumMTU,
+				settings.MaximumMTU,
 			)
 		}
 	}
