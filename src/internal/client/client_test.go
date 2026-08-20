@@ -108,6 +108,41 @@ func TestTransportServerAddrRejectsMissingOrInvalidRemoteAddress(t *testing.T) {
 	}
 }
 
+func TestAllowedSources(t *testing.T) {
+	tests := []struct {
+		name string
+		s    settings.Settings
+		want []netip.Addr
+	}{
+		{name: "empty"},
+		{
+			name: "dual stack with mapped IPv4",
+			s: settings.Settings{Addressing: settings.Addressing{
+				IPv4: netip.MustParseAddr("::ffff:192.0.2.1"),
+				IPv6: netip.MustParseAddr("2001:db8::1"),
+			}},
+			want: []netip.Addr{
+				netip.MustParseAddr("192.0.2.1"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := allowedSources(tt.s)
+			if len(got) != len(tt.want) {
+				t.Fatalf("allowedSources() length = %d, want %d: %v", len(got), len(tt.want), got)
+			}
+			for _, addr := range tt.want {
+				if _, ok := got[addr]; !ok {
+					t.Errorf("allowedSources() does not contain %s: %v", addr, got)
+				}
+			}
+		})
+	}
+}
+
 func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
 	manager := &clientTestTunManager{}
 	client := &Client{

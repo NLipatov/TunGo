@@ -40,6 +40,7 @@ type clienttunManagerIPMock struct {
 	routeReply      string
 	failStep        string
 	routeGetTargets []string
+	routeAddTargets []string
 	routeDelTargets []string
 }
 
@@ -61,8 +62,12 @@ func (m *clienttunManagerIPMock) RouteGet(target string) (string, error) {
 	m.routeGetTargets = append(m.routeGetTargets, target)
 	return m.routeReply, nil
 }
-func (m *clienttunManagerIPMock) RouteAddDev(string, string) error { return m.mark("radd") }
-func (m *clienttunManagerIPMock) RouteAddViaDev(string, string, string) error {
+func (m *clienttunManagerIPMock) RouteAddDev(target, _ string) error {
+	m.routeAddTargets = append(m.routeAddTargets, target)
+	return m.mark("radd")
+}
+func (m *clienttunManagerIPMock) RouteAddViaDev(target, _, _ string) error {
+	m.routeAddTargets = append(m.routeAddTargets, target)
 	return m.mark("raddvia")
 }
 func (m *clienttunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
@@ -117,7 +122,10 @@ func mustAddr(raw string) netip.Addr {
 	return netip.MustParseAddr(raw)
 }
 
-var testServerAddrV4 = mustAddr("198.51.100.1")
+var (
+	testServerAddrV4 = mustAddr("198.51.100.1")
+	testServerAddrV6 = mustAddr("2001:db8::1")
+)
 
 func (m clienttunManagerMSSMock) Install(string) error { return m.installErr }
 func (m clienttunManagerMSSMock) Remove(string) error  { return m.removeErr }
@@ -227,6 +235,18 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	want := "add;up;addr;raddvia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
+	}
+}
+
+func TestOpenTunnelRejectsInvalidServerAddr(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{}
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+
+	if _, err := m.OpenTunnel(netip.Addr{}); err == nil || !strings.Contains(err.Error(), "invalid server address") {
+		t.Fatalf("OpenTunnel() error = %v, want invalid server address", err)
+	}
+	if ipMock.log.Len() != 0 {
+		t.Fatalf("OpenTunnel() configured TUN before validation: %q", ipMock.log.String())
 	}
 }
 
@@ -354,15 +374,14 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
 	// and add route to IPv6 server.
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+	ipMock := &clienttunManagerIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
 
 	// Enable IPv6 on the active protocol's settings.
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.connectionSettings.Server.IPv6 = "2001:db8::1"
 
-	dev, err := mgr.OpenTunnel(testServerAddrV4)
+	dev, err := mgr.OpenTunnel(testServerAddrV6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -376,6 +395,12 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// Two "addr;" calls: one for IPv4, one for IPv6
 	if strings.Count(got, "addr;") != 2 {
 		t.Fatalf("expected 2 addr calls (IPv4 + IPv6), got: %s", got)
+	}
+	if len(ipMock.routeGetTargets) != 1 || ipMock.routeGetTargets[0] != testServerAddrV6.String() {
+		t.Fatalf("route lookup targets = %v, want [%s]", ipMock.routeGetTargets, testServerAddrV6)
+	}
+	if len(ipMock.routeAddTargets) != 1 || ipMock.routeAddTargets[0] != testServerAddrV6.String() {
+		t.Fatalf("route add targets = %v, want [%s]", ipMock.routeAddTargets, testServerAddrV6)
 	}
 }
 

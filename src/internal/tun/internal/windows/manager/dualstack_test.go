@@ -22,19 +22,22 @@ func (d *dualStackTunMock) Close() error {
 }
 
 type dualStackNetCfgMock struct {
-	bestRouteIf  string
-	bestRouteIdx int
-	emptyRouteIf bool
-	bestRouteErr error
-	setDNSErr    error
-	flushDNSErr  error
-	delSplitErr  error
-	delRouteErr  error
+	bestRouteGateway netip.Addr
+	bestRouteIf      string
+	bestRouteIdx     int
+	emptyRouteIf     bool
+	bestRouteErr     error
+	addRouteErr      error
+	setDNSErr        error
+	flushDNSErr      error
+	delSplitErr      error
+	delRouteErr      error
 
 	setDNSCalls   int
 	flushDNSCalls int
 	setDNSValues  [][]string
 
+	addedRoutes   []string
 	deletedRoutes []string
 }
 
@@ -49,11 +52,13 @@ func (m *dualStackNetCfgMock) SetDNS(_ string, dnsServers []string) error {
 	return m.setDNSErr
 }
 func (m *dualStackNetCfgMock) SetMTU(_ string, _ int) error { return nil }
-func (m *dualStackNetCfgMock) AddHostRouteViaGateway(_ netip.Addr, _ string, _ netip.Addr) error {
-	return nil
+func (m *dualStackNetCfgMock) AddHostRouteViaGateway(host netip.Addr, ifName string, gateway netip.Addr) error {
+	m.addedRoutes = append(m.addedRoutes, host.String()+" via "+gateway.String()+" dev "+ifName)
+	return m.addRouteErr
 }
-func (m *dualStackNetCfgMock) AddHostRouteOnLink(_ netip.Addr, _ string) error {
-	return nil
+func (m *dualStackNetCfgMock) AddHostRouteOnLink(host netip.Addr, ifName string) error {
+	m.addedRoutes = append(m.addedRoutes, host.String()+" dev "+ifName)
+	return m.addRouteErr
 }
 func (m *dualStackNetCfgMock) AddDefaultSplitRoutes(_ string) error    { return nil }
 func (m *dualStackNetCfgMock) DeleteDefaultSplitRoutes(_ string) error { return m.delSplitErr }
@@ -77,7 +82,7 @@ func (m *dualStackNetCfgMock) BestRoute(netip.Addr) (netip.Addr, string, int, in
 	if idx <= 0 {
 		idx = 1
 	}
-	return netip.Addr{}, iface, idx, 1, nil
+	return m.bestRouteGateway, iface, idx, 1, nil
 }
 
 func TestDualStackManager_AddStaticRouteToServer_UsesIPv6ServerAddr(t *testing.T) {
@@ -98,10 +103,16 @@ func TestDualStackManager_AddStaticRouteToServer_UsesIPv6ServerAddr(t *testing.T
 	if m.resolvedRouteIP4.IsValid() || m.resolvedRouteIP6 != netip.MustParseAddr("2001:db8::1") {
 		t.Fatalf("unexpected cached routes: v4=%q v6=%q", m.resolvedRouteIP4, m.resolvedRouteIP6)
 	}
+	if want := []string{"2001:db8::1 dev eth0"}; !reflect.DeepEqual(cfg6.addedRoutes, want) {
+		t.Fatalf("added routes = %v, want %v", cfg6.addedRoutes, want)
+	}
 }
 
 func TestDualStackManager_AddStaticRouteToServer_UsesIPv4ServerAddr(t *testing.T) {
-	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0"}
+	cfg4 := &dualStackNetCfgMock{
+		bestRouteGateway: netip.MustParseAddr("192.0.2.1"),
+		bestRouteIf:      "eth0",
+	}
 	cfg6 := &dualStackNetCfgMock{}
 
 	s := settings.Settings{
@@ -117,6 +128,23 @@ func TestDualStackManager_AddStaticRouteToServer_UsesIPv4ServerAddr(t *testing.T
 	}
 	if m.resolvedRouteIP4 != netip.MustParseAddr("198.51.100.10") || m.resolvedRouteIP6.IsValid() {
 		t.Fatalf("unexpected cached routes: v4=%q v6=%q", m.resolvedRouteIP4, m.resolvedRouteIP6)
+	}
+	if want := []string{"198.51.100.10 via 192.0.2.1 dev eth0"}; !reflect.DeepEqual(cfg4.addedRoutes, want) {
+		t.Fatalf("added routes = %v, want %v", cfg4.addedRoutes, want)
+	}
+}
+
+func TestDualStackManager_AddStaticRouteToServer_DoesNotCacheFailedRoute(t *testing.T) {
+	addErr := errors.New("add route")
+	cfg4 := &dualStackNetCfgMock{bestRouteIf: "eth0", addRouteErr: addErr}
+	m := newDualStackManager(settings.Settings{}, cfg4, &dualStackNetCfgMock{})
+
+	err := m.addStaticRouteToServer(netip.MustParseAddr("198.51.100.10"))
+	if !errors.Is(err, addErr) {
+		t.Fatalf("addStaticRouteToServer() error = %v, want %v", err, addErr)
+	}
+	if m.resolvedRouteIP4.IsValid() || m.resolvedRouteIf4 != "" {
+		t.Fatalf("failed route was cached: ip=%q interface=%q", m.resolvedRouteIP4, m.resolvedRouteIf4)
 	}
 }
 

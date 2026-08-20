@@ -12,7 +12,10 @@ import (
 )
 
 func TestV4Manager_AddStaticRouteToServer_UsesPassedServerAddr(t *testing.T) {
-	cfg := &dualStackNetCfgMock{bestRouteIf: "eth0"}
+	cfg := &dualStackNetCfgMock{
+		bestRouteGateway: netip.MustParseAddr("192.0.2.1"),
+		bestRouteIf:      "eth0",
+	}
 	m := newV4Manager(settings.Settings{
 		Addressing: settings.Addressing{
 			TunName:    "tun0",
@@ -27,6 +30,9 @@ func TestV4Manager_AddStaticRouteToServer_UsesPassedServerAddr(t *testing.T) {
 	}
 	if m.resolvedRouteIP != netip.MustParseAddr("203.0.113.11") {
 		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
+	}
+	if want := []string{"203.0.113.11 via 192.0.2.1 dev eth0"}; !reflect.DeepEqual(cfg.addedRoutes, want) {
+		t.Fatalf("added routes = %v, want %v", cfg.addedRoutes, want)
 	}
 }
 
@@ -47,6 +53,39 @@ func TestV6Manager_AddStaticRouteToServer_UsesPassedServerAddr(t *testing.T) {
 	if m.resolvedRouteIP != netip.MustParseAddr("2001:db8::5") {
 		t.Fatalf("unexpected resolved route ip: %s", m.resolvedRouteIP)
 	}
+	if want := []string{"2001:db8::5 dev eth0"}; !reflect.DeepEqual(cfg.addedRoutes, want) {
+		t.Fatalf("added routes = %v, want %v", cfg.addedRoutes, want)
+	}
+}
+
+func TestSingleStackManager_AddStaticRouteToServer_DoesNotCacheFailedRoute(t *testing.T) {
+	addErr := errors.New("add route")
+
+	t.Run("IPv4", func(t *testing.T) {
+		cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addRouteErr: addErr}
+		m := newV4Manager(settings.Settings{}, cfg)
+
+		err := m.addStaticRouteToServer(netip.MustParseAddr("198.51.100.10"))
+		if !errors.Is(err, addErr) {
+			t.Fatalf("addStaticRouteToServer() error = %v, want %v", err, addErr)
+		}
+		if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+			t.Fatalf("failed route was cached: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+		}
+	})
+
+	t.Run("IPv6", func(t *testing.T) {
+		cfg := &dualStackNetCfgMock{bestRouteIf: "eth0", addRouteErr: addErr}
+		m := newV6Manager(settings.Settings{}, cfg)
+
+		err := m.addStaticRouteToServer(netip.MustParseAddr("2001:db8::1"))
+		if !errors.Is(err, addErr) {
+			t.Fatalf("addStaticRouteToServer() error = %v, want %v", err, addErr)
+		}
+		if m.resolvedRouteIP.IsValid() || m.resolvedRouteIf != "" {
+			t.Fatalf("failed route was cached: ip=%q interface=%q", m.resolvedRouteIP, m.resolvedRouteIf)
+		}
+	})
 }
 
 func TestV4Manager_AddStaticRouteToServer_UsesInterfaceIndexWhenAliasEmpty(t *testing.T) {

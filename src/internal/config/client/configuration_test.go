@@ -96,6 +96,20 @@ func TestConfiguration_ActiveSettingsDerivesLegacyClientAddress(t *testing.T) {
 	}
 }
 
+func TestConfiguration_ActiveSettingsReturnsAddressDerivationError(t *testing.T) {
+	cfg := Configuration{
+		ClientID: 2,
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{Addressing: settings.Addressing{
+			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
+		}},
+	}
+
+	if _, err := cfg.ActiveSettings(); err == nil || !strings.Contains(err.Error(), "derive IPv4") {
+		t.Fatalf("ActiveSettings() error = %v, want IPv4 derivation error", err)
+	}
+}
+
 func TestConfiguration_ApplyClientDefaults(t *testing.T) {
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
