@@ -60,7 +60,8 @@ func (v *V4) Add(destIP string) error {
 	}
 	// Delete old route to destIP, ignore possible errors.
 	_ = v.Del(destIP)
-	// For link-local gateways add interface scope if missing.
+	// Use the gateway when present; link# identifies an on-link route
+	// that must be installed via the interface.
 	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
 		return v.addViaGateway(destIP, gateway)
 	}
