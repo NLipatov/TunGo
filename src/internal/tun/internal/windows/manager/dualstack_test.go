@@ -49,14 +49,14 @@ func (m *dualStackNetCfgMock) SetDNS(_ string, dnsServers []string) error {
 	return m.setDNSErr
 }
 func (m *dualStackNetCfgMock) SetMTU(_ string, _ int) error { return nil }
-func (m *dualStackNetCfgMock) AddHostRouteViaGateway(_ netip.Addr, _ string, _ netip.Addr, _ int) error {
+func (m *dualStackNetCfgMock) AddHostRouteViaGateway(_ netip.Addr, _ string, _ netip.Addr) error {
 	return nil
 }
-func (m *dualStackNetCfgMock) AddHostRouteOnLink(_ netip.Addr, _ string, _ int) error {
+func (m *dualStackNetCfgMock) AddHostRouteOnLink(_ netip.Addr, _ string) error {
 	return nil
 }
-func (m *dualStackNetCfgMock) AddDefaultSplitRoutes(_ string, _ int) error { return nil }
-func (m *dualStackNetCfgMock) DeleteDefaultSplitRoutes(_ string) error     { return m.delSplitErr }
+func (m *dualStackNetCfgMock) AddDefaultSplitRoutes(_ string) error    { return nil }
+func (m *dualStackNetCfgMock) DeleteDefaultSplitRoutes(_ string) error { return m.delSplitErr }
 func (m *dualStackNetCfgMock) DeleteRoute(destination netip.Addr) error {
 	m.deletedRoutes = append(m.deletedRoutes, destination.String())
 	return m.delRouteErr

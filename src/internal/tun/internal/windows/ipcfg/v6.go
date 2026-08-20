@@ -15,13 +15,6 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-const (
-	// v6SplitOne covers addresses between :: (0000:0000:0000:0000:0000:0000:0000:0000) and 7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-	v6SplitOne = "::/1"
-	// v6SplitTwo covers addresses between 8000:: (8000:0000:0000:0000:0000:0000:0000:0000) and ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-	v6SplitTwo = "8000::/1"
-)
-
 type V6 struct {
 	resolver *resolver.Resolver
 }
@@ -103,12 +96,12 @@ func (v *V6) SetMTU(ifName string, mtu int) error {
 	row.NLMTU = uint32(mtu)
 	row.UseAutomaticMetric = false
 	if row.Metric == 0 {
-		row.Metric = 1
+		row.Metric = ipcfgMetric
 	}
 	return row.Set()
 }
 
-func (v *V6) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error {
+func (v *V6) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr) error {
 	if !hostIP.Is6() || hostIP.Is4In6() {
 		return fmt.Errorf("AddHostRouteViaGateway(v6): not IPv6: %q", hostIP)
 	}
@@ -119,10 +112,10 @@ func (v *V6) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway ne
 	if err != nil {
 		return err
 	}
-	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), gateway, uint32(min(1, metric)))
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), gateway, ipcfgMetric)
 }
 
-func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) error {
+func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string) error {
 	if !hostIP.Is6() || hostIP.Is4In6() {
 		return fmt.Errorf("AddHostRouteOnLink(v6): not IPv6: %q", hostIP)
 	}
@@ -130,17 +123,17 @@ func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) er
 	if err != nil {
 		return err
 	}
-	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), netip.IPv6Unspecified(), uint32(min(1, metric)))
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), netip.IPv6Unspecified(), ipcfgMetric)
 }
 
-func (v *V6) AddDefaultSplitRoutes(ifName string, metric int) error {
+func (v *V6) AddDefaultSplitRoutes(ifName string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
 	for _, s := range []string{v6SplitOne, v6SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s)
-		if err = luid.AddRoute(pfx, netip.IPv6Unspecified(), uint32(min(1, metric))); err != nil {
+		if err = luid.AddRoute(pfx, netip.IPv6Unspecified(), ipcfgMetric); err != nil {
 			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s): %w", s, err)
 		}
 	}

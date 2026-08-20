@@ -104,9 +104,9 @@ func (m *v6Manager) addStaticRouteToServer(serverAddr netip.Addr) error {
 	var addErr error
 	if !gw.IsValid() {
 		// on-link
-		addErr = m.netConfig.AddHostRouteOnLink(serverAddr, ifName, 1)
+		addErr = m.netConfig.AddHostRouteOnLink(serverAddr, ifName)
 	} else {
-		addErr = m.netConfig.AddHostRouteViaGateway(serverAddr, ifName, gw, 1)
+		addErr = m.netConfig.AddHostRouteViaGateway(serverAddr, ifName, gw)
 	}
 	if addErr != nil {
 		return addErr
@@ -124,7 +124,7 @@ func (m *v6Manager) assignIPToTunDevice() error {
 // setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
 	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName)
-	return m.netConfig.AddDefaultSplitRoutes(m.s.TunName, 1)
+	return m.netConfig.AddDefaultSplitRoutes(m.s.TunName)
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {

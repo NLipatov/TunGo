@@ -116,9 +116,9 @@ func (m *dualStackManager) addStaticRouteToServer4(routeIP netip.Addr) error {
 	_ = m.netCfg4.DeleteRouteOnInterface(routeIP, ifName)
 	var addErr error
 	if !gw.IsValid() {
-		addErr = m.netCfg4.AddHostRouteOnLink(routeIP, ifName, 1)
+		addErr = m.netCfg4.AddHostRouteOnLink(routeIP, ifName)
 	} else {
-		addErr = m.netCfg4.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
+		addErr = m.netCfg4.AddHostRouteViaGateway(routeIP, ifName, gw)
 	}
 	if addErr != nil {
 		return addErr
@@ -142,9 +142,9 @@ func (m *dualStackManager) addStaticRouteToServer6(routeIP netip.Addr) error {
 	_ = m.netCfg6.DeleteRouteOnInterface(routeIP, ifName)
 	var addErr error
 	if !gw.IsValid() {
-		addErr = m.netCfg6.AddHostRouteOnLink(routeIP, ifName, 1)
+		addErr = m.netCfg6.AddHostRouteOnLink(routeIP, ifName)
 	} else {
-		addErr = m.netCfg6.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
+		addErr = m.netCfg6.AddHostRouteViaGateway(routeIP, ifName, gw)
 	}
 	if addErr != nil {
 		return addErr
@@ -166,12 +166,12 @@ func (m *dualStackManager) assignIPv6ToTunDevice() error {
 
 func (m *dualStackManager) setDefaultRoutesToTunDevice() error {
 	_ = m.netCfg4.DeleteDefaultSplitRoutes(m.s.TunName)
-	if err := m.netCfg4.AddDefaultSplitRoutes(m.s.TunName, 1); err != nil {
+	if err := m.netCfg4.AddDefaultSplitRoutes(m.s.TunName); err != nil {
 		return err
 	}
 
 	_ = m.netCfg6.DeleteDefaultSplitRoutes(m.s.TunName)
-	return m.netCfg6.AddDefaultSplitRoutes(m.s.TunName, 1)
+	return m.netCfg6.AddDefaultSplitRoutes(m.s.TunName)
 }
 
 func (m *dualStackManager) setMTUToTunDevice() error {

@@ -21,9 +21,9 @@ type networkConfigurator interface {
 	SetAddressStatic(ifName string, prefix netip.Prefix) error
 	SetDNS(ifName string, dnsServers []string) error
 	SetMTU(ifName string, mtu int) error
-	AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error
-	AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) error
-	AddDefaultSplitRoutes(ifName string, metric int) error
+	AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr) error
+	AddHostRouteOnLink(hostIP netip.Addr, ifName string) error
+	AddDefaultSplitRoutes(ifName string) error
 	DeleteDefaultSplitRoutes(ifName string) error
 	DeleteRoute(destination netip.Addr) error
 	DeleteRouteOnInterface(destination netip.Addr, ifName string) error

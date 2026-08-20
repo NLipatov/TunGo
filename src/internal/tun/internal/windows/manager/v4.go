@@ -104,9 +104,9 @@ func (m *v4Manager) addStaticRouteToServer(serverAddr netip.Addr) error {
 	var addErr error
 	if !gw.IsValid() {
 		// on-link
-		addErr = m.netCfg.AddHostRouteOnLink(serverAddr, ifName, 1)
+		addErr = m.netCfg.AddHostRouteOnLink(serverAddr, ifName)
 	} else {
-		addErr = m.netCfg.AddHostRouteViaGateway(serverAddr, ifName, gw, 1)
+		addErr = m.netCfg.AddHostRouteViaGateway(serverAddr, ifName, gw)
 	}
 	if addErr != nil {
 		return addErr
@@ -127,7 +127,7 @@ func (m *v4Manager) assignIPToTunDevice() error {
 // setDefaultRouteToTunDevice replaces any existing default route with split default route (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setDefaultRouteToTunDevice() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName)
-	return m.netCfg.AddDefaultSplitRoutes(m.s.TunName, 1)
+	return m.netCfg.AddDefaultSplitRoutes(m.s.TunName)
 }
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.

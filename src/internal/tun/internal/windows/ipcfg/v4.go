@@ -15,15 +15,6 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-const (
-	// v4SplitOne covers half of IPv4 address space
-	// (addresses between 0.0.0.0 and 127.255.255.255)
-	v4SplitOne = "0.0.0.0/1"
-	// v4SplitTwo v4SplitOne covers half of IPv4 address space
-	// (addresses between 128.0.0.0 and 255.255.255.255)
-	v4SplitTwo = "128.0.0.0/1"
-)
-
 type V4 struct {
 	resolver *resolver.Resolver
 }
@@ -102,12 +93,12 @@ func (v *V4) SetMTU(ifName string, mtu int) error {
 	// Make metric explicit & low-ish if not set, to avoid auto-metric surprises.
 	iFace.UseAutomaticMetric = false
 	if iFace.Metric == 0 {
-		iFace.Metric = 1
+		iFace.Metric = ipcfgMetric
 	}
 	return iFace.Set()
 }
 
-func (v *V4) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr, metric int) error {
+func (v *V4) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr) error {
 	if !hostIP.Is4() {
 		return fmt.Errorf("AddHostRouteViaGateway: not an IPv4: %q", hostIP)
 	}
@@ -118,10 +109,10 @@ func (v *V4) AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway ne
 	if err != nil {
 		return err
 	}
-	return luid.AddRoute(netip.PrefixFrom(hostIP, 32), gateway, uint32(min(1, metric)))
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 32), gateway, ipcfgMetric)
 }
 
-func (v *V4) AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) error {
+func (v *V4) AddHostRouteOnLink(hostIP netip.Addr, ifName string) error {
 	if !hostIP.Is4() {
 		return fmt.Errorf("AddHostRouteOnLink: not an IPv4: %q", hostIP)
 	}
@@ -129,10 +120,10 @@ func (v *V4) AddHostRouteOnLink(hostIP netip.Addr, ifName string, metric int) er
 	if err != nil {
 		return err
 	}
-	return luid.AddRoute(netip.PrefixFrom(hostIP, 32), netip.IPv4Unspecified(), uint32(min(1, metric)))
+	return luid.AddRoute(netip.PrefixFrom(hostIP, 32), netip.IPv4Unspecified(), ipcfgMetric)
 }
 
-func (v *V4) AddDefaultSplitRoutes(ifName string, metric int) error {
+func (v *V4) AddDefaultSplitRoutes(ifName string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -142,7 +133,7 @@ func (v *V4) AddDefaultSplitRoutes(ifName string, metric int) error {
 		if roteErr := luid.AddRoute(
 			pfx,
 			netip.IPv4Unspecified(),
-			uint32(min(1, metric)),
+			ipcfgMetric,
 		); roteErr != nil {
 			return fmt.Errorf("AddDefaultSplitRoutes(%s): %w", s, roteErr)
 		}
