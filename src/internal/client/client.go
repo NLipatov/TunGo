@@ -24,8 +24,12 @@ var (
 	ErrResumeDetected = errors.New("resume detected")
 )
 
+const (
+	reconnectInterval = 500 * time.Millisecond
+)
+
 type tunManager interface {
-	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error)
 	CloseTunnel() error
 }
 
@@ -49,85 +53,73 @@ type Client struct {
 	ready         atomic.Bool
 }
 
-// New builds a client that owns the transport and TUN lifecycles.
 func New() (*Client, error) {
-	control := config.NewClientControl()
 	slog.Info("starting client")
-
-	conf, err := control.Configuration()
+	control := config.NewClientControl()
+	configuration, err := control.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("init error: failed to read client configuration: %w", err)
 	}
-	tunManager, err := clienttun.New(conf)
+	tunManager, err := clienttun.New(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
 	}
-
 	return &Client{
-		configuration: conf,
+		configuration: configuration,
 		tunManager:    tunManager,
 	}, nil
 }
 
-// Run reconnects until the client is stopped. Context cancellation is a clean
-// stop.
-func (c *Client) Run(ctx context.Context) error {
-	err := c.run(ctx)
-	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-		return nil
-	}
-	return err
+func (c *Client) Ready() bool {
+	return c.ready.Load()
 }
 
-func (c *Client) run(ctx context.Context) error {
-	defer c.closeTunnel()
-
+// Run reconnects until the client is stopped.
+// Context cancellation is a clean stop.
+func (c *Client) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		err := c.runSession(ctx)
-		switch {
-		case err == nil:
+		if err == nil || errors.Is(err, context.Canceled) {
 			return nil
-		case errors.Is(err, context.Canceled):
-			return context.Canceled
-		default:
-			slog.Warn("session error, reconnecting", "err", err)
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return context.Canceled
-			case <-timer.C:
-			}
+		}
+		slog.Warn("session error, reconnecting", "err", err)
+		timer := time.NewTimer(reconnectInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
 		}
 	}
-	return context.Canceled
+	return nil
 }
 
 func (c *Client) runSession(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
-
-	c.closeTunnel()
-	forward := make(chan error)
+	done := make(chan error)
 	go func() {
-		forward <- c.forward(ctx)
+		done <- c.runTunnel(ctx)
 	}()
 	select {
 	case <-ctx.Done():
 		cancel()
-		<-forward
+		<-done
 		return ctx.Err()
 	case <-resume.Watch(ctx):
 		cancel()
-		<-forward
+		<-done
 		return ErrResumeDetected
-	case err := <-forward:
+	case err := <-done:
 		return err
 	}
 }
 
-func (c *Client) forward(ctx context.Context) error {
-	transport, crypto, rekey, err := c.establishConnection(ctx)
+func (c *Client) runTunnel(
+	ctx context.Context,
+) error {
+	c.closeTun(false) // clean stale
+	transport, crypto, rekey, err := c.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,34 +128,13 @@ func (c *Client) forward(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	device, err := c.tunManager.OpenTunnel(serverAddr)
+	tun, err := c.tunManager.OpenTunnel(serverAddr)
 	if err != nil {
 		slog.Error("failed to open tunnel", "err", err)
 		return err
 	}
-	defer func() { _ = device.Close() }()
-
-	return c.runTunnel(ctx, transport, trafficstats.WrapTun(device), crypto, rekey)
-}
-
-func (c *Client) Ready() bool {
-	return c.ready.Load()
-}
-
-func (c *Client) closeTunnel() {
-	if err := c.tunManager.CloseTunnel(); err != nil {
-		slog.Warn("failed to close tunnel", "err", err)
-	}
-}
-
-func (c *Client) runTunnel(
-	ctx context.Context,
-	transport io.ReadWriteCloser,
-	tun io.ReadWriteCloser,
-	crypto crypto,
-	rekey clientRekey,
-) error {
+	defer c.closeTun(true)
+	tun = trafficstats.WrapTun(tun)
 	selected, err := c.configuration.ActiveSettings()
 	if err != nil {
 		return err
@@ -209,4 +180,10 @@ func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
 		return netip.Addr{}, fmt.Errorf("transport %T returned an invalid remote address", transport)
 	}
 	return addrPort.Addr().Unmap(), nil
+}
+
+func (c *Client) closeTun(logFail bool) {
+	if err := c.tunManager.CloseTunnel(); err != nil && logFail {
+		slog.Warn("failed to close tunnel", "err", err)
+	}
 }

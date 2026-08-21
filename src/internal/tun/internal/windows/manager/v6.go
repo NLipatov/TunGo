@@ -35,7 +35,7 @@ func newV6Manager(
 
 // OpenTunnel creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
-func (m *v6Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *v6Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}

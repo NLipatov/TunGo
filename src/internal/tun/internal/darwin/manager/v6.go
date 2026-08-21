@@ -31,7 +31,7 @@ func newV6(
 	}
 }
 
-func (m *v6) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *v6) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("v6: invalid server address %q", serverAddr)
 	}

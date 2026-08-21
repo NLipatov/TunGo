@@ -31,7 +31,7 @@ func newV4(
 	}
 }
 
-func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("v4: invalid server address %q", serverAddr)
 	}

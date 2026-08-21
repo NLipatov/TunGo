@@ -1,11 +1,11 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/netip"
-	"os"
 	"strings"
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
@@ -16,18 +16,14 @@ import (
 	"tungo/internal/tun/internal/linux/mssclamp"
 )
 
-type tunWrapper interface {
-	Wrap(*os.File) (io.ReadWriteCloser, error)
-}
-
 type Manager struct {
 	connectionSettings settings.Settings
 	configuration      *client.Configuration
 	ip                 ip.Contract
 	ioctl              ioctl.Contract
 	mss                mssclamp.Contract
-	wrapper            tunWrapper
 	serverAddr         netip.Addr
+	tun                io.ReadWriteCloser
 }
 
 func New(conf *client.Configuration) (*Manager, error) {
@@ -41,39 +37,46 @@ func New(conf *client.Configuration) (*Manager, error) {
 		ip:                 ip.NewWrapper(command.New()),
 		ioctl:              ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:                mssclamp.NewManager(command.New()),
-		wrapper:            epoll.NewWrapper(),
 	}, nil
 }
 
-func (t *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-	connectionSettings := t.connectionSettings
+	connectionSettings := m.connectionSettings
 
 	// configureTUN client
-	if udpConfigurationErr := t.configureTUN(connectionSettings, serverAddr); udpConfigurationErr != nil {
-		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
+	if udpConfigurationErr := m.configureTUN(connectionSettings, serverAddr); udpConfigurationErr != nil {
+		openErr := fmt.Errorf("failed to configure client: %w", udpConfigurationErr)
+		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := t.ioctl.CreateTunInterface(connectionSettings.TunName)
+	tunFile, openTunErr := m.ioctl.CreateTunInterface(connectionSettings.TunName)
 	if openTunErr != nil {
-		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
+		openErr := fmt.Errorf("failed to open TUN interface: %w", openTunErr)
+		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
 
-	return t.wrapper.Wrap(tunFile)
+	tun, err := epoll.New(tunFile)
+	if err != nil {
+		openErr := fmt.Errorf("failed to initialize TUN I/O: %w", err)
+		return nil, errors.Join(openErr, tunFile.Close(), m.CloseTunnel())
+	}
+	m.tun = tun
+	return m.tun, nil
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
-func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.Addr) error {
-	err := t.ip.TunTapAddDevTun(connSettings.TunName)
+func (m *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.Addr) error {
+	err := m.ip.TunTapAddDevTun(connSettings.TunName)
 	if err != nil {
 		return err
 	}
 
-	err = t.ip.LinkSetDevUp(connSettings.TunName)
+	err = m.ip.LinkSetDevUp(connSettings.TunName)
 	if err != nil {
 		return err
 	}
@@ -84,7 +87,7 @@ func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.
 	if cidr4Err != nil {
 		return cidr4Err
 	}
-	err = t.ip.AddrAddDev(connSettings.TunName, cidr4)
+	err = m.ip.AddrAddDev(connSettings.TunName, cidr4)
 	if err != nil {
 		return err
 	}
@@ -96,7 +99,7 @@ func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.
 		if cidr6Err != nil {
 			return cidr6Err
 		}
-		if err := t.ip.AddrAddDev(connSettings.TunName, cidr6); err != nil {
+		if err := m.ip.AddrAddDev(connSettings.TunName, cidr6); err != nil {
 			return err
 		}
 		slog.Info("assigned IPv6 to interface", "cidr", cidr6, "name", connSettings.TunName)
@@ -105,7 +108,7 @@ func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.
 	serverAddrString := serverAddr.String()
 
 	// Get routing information
-	routeInfo, err := t.ip.RouteGet(serverAddrString)
+	routeInfo, err := m.ip.RouteGet(serverAddrString)
 	if err != nil {
 		return err
 	}
@@ -125,20 +128,20 @@ func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = t.ip.RouteAddDev(serverAddrString, devInterface)
+		err = m.ip.RouteAddDev(serverAddrString, devInterface)
 	} else {
-		err = t.ip.RouteAddViaDev(serverAddrString, devInterface, viaGateway)
+		err = m.ip.RouteAddViaDev(serverAddrString, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
-	t.serverAddr = serverAddr
+	m.serverAddr = serverAddr
 	slog.Info("added route to server", "server_ip", serverAddrString, "via", viaGateway, "device", devInterface)
 
 	// Set split default routes — more specific than 0.0.0.0/0 so they take
 	// priority without destroying the original default route. On crash or
 	// device deletion the kernel removes them automatically.
-	err = t.ip.RouteAddSplitDefaultDev(connSettings.TunName)
+	err = m.ip.RouteAddSplitDefaultDev(connSettings.TunName)
 	if err != nil {
 		return err
 	}
@@ -146,49 +149,59 @@ func (t *Manager) configureTUN(connSettings settings.Settings, serverAddr netip.
 
 	// Set IPv6 split default routes if configured
 	if connSettings.IPv6.IsValid() {
-		if err := t.ip.Route6AddSplitDefaultDev(connSettings.TunName); err != nil {
+		if err := m.ip.Route6AddSplitDefaultDev(connSettings.TunName); err != nil {
 			return err
 		}
 		slog.Info("set interface as IPv6 default gateway for split routes", "name", connSettings.TunName)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.TunName, connSettings.MTU); setMtuErr != nil {
+	if setMtuErr := m.ip.LinkSetDevMTU(connSettings.TunName, connSettings.MTU); setMtuErr != nil {
 		return fmt.Errorf(
 			"failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.TunName, setMtuErr,
 		)
 	}
 
 	// install MSS clamping to prevent PMTU blackholes when forwarding traffic
-	if err := t.mss.Install(connSettings.TunName); err != nil {
+	if err := m.mss.Install(connSettings.TunName); err != nil {
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", connSettings.TunName, err)
 	}
 
 	return nil
 }
 
-func (t *Manager) CloseTunnel() error {
-	t.disposeDevice(t.configuration.TCPSettings)
-	t.disposeDevice(t.configuration.UDPSettings)
-	t.disposeDevice(t.configuration.WSSettings)
-	if t.serverAddr.IsValid() {
-		if err := t.ip.RouteDel(t.serverAddr.String()); err != nil {
-			return fmt.Errorf("delete route to server %s: %w", t.serverAddr, err)
+func (m *Manager) CloseTunnel() error {
+	var cleanupErrs []error
+	if m.tun != nil {
+		tun := m.tun
+		m.tun = nil
+		if err := tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
-		t.serverAddr = netip.Addr{}
 	}
-	return nil
+
+	m.removeTunInterface(m.configuration.TCPSettings)
+	m.removeTunInterface(m.configuration.UDPSettings)
+	m.removeTunInterface(m.configuration.WSSettings)
+	if m.serverAddr.IsValid() {
+		if err := m.ip.RouteDel(m.serverAddr.String()); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.serverAddr, err))
+		} else {
+			m.serverAddr = netip.Addr{}
+		}
+	}
+	return errors.Join(cleanupErrs...)
 }
 
-func (t *Manager) disposeDevice(s settings.Settings) {
+func (m *Manager) removeTunInterface(s settings.Settings) {
 	if s.TunName == "" {
 		return
 	}
-	if err := t.mss.Remove(s.TunName); err != nil {
+	if err := m.mss.Remove(s.TunName); err != nil {
 		slog.Warn("failed to remove MSS clamping", "name", s.TunName, "err", err)
 	}
 	// Remove split routes before deleting the device
-	_ = t.ip.RouteDelSplitDefault(s.TunName)
-	_ = t.ip.Route6DelSplitDefault(s.TunName)
-	_ = t.ip.LinkDelete(s.TunName)
+	_ = m.ip.RouteDelSplitDefault(s.TunName)
+	_ = m.ip.Route6DelSplitDefault(s.TunName)
+	_ = m.ip.LinkDelete(s.TunName)
 }

@@ -12,7 +12,7 @@ import (
 )
 
 type clientManager interface {
-	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error)
 	CloseTunnel() error
 }
 

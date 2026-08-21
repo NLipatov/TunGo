@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -17,6 +16,8 @@ import (
 	"tungo/internal/tun/internal/linux/iptables"
 	"tungo/internal/tun/internal/linux/mssclamp"
 	"tungo/internal/tun/internal/linux/sysctl"
+
+	"golang.org/x/sys/unix"
 )
 
 /*
@@ -24,21 +25,6 @@ import (
    Test doubles (prefixed)
    ==============================
 */
-
-// plain test wrapper that does NOT use epoll and just passes through *os.File.
-type testPlainWrapper struct{}
-
-type testPlainDev struct{ f *os.File }
-
-// Implement io.ReadWriteCloser on top of *os.File.
-func (d *testPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
-func (d *testPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
-func (d *testPlainDev) Close() error                { return d.f.Close() }
-
-// testPlainWrapper injects a plain file-backed device.
-func (testPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
-	return &testPlainDev{f: f}, nil
-}
 
 // TunFactoryMockIP implements ip.Contract (only the methods we need in tests).
 type TunFactoryMockIP struct{ log bytes.Buffer }
@@ -320,7 +306,12 @@ func (m *TunFactoryMockIOCTL) CreateTunInterface(name string) (*os.File, error) 
 		return nil, m.createErr
 	}
 	m.name = name
-	return os.Open(os.DevNull)
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, err
+	}
+	_ = unix.Close(fds[1])
+	return os.NewFile(uintptr(fds[0]), "test-tun"), nil
 }
 func (m *TunFactoryMockIOCTL) DetectTunNameFromFd(_ *os.File) (string, error) {
 	if m.detectErr != nil {
@@ -409,7 +400,6 @@ func newFactory(
 	return &Manager{
 		device:   tunDeviceManager{ip: ipC, ioctl: ioC},
 		firewall: firewallConfigurator{iptables: iptC, sysctl: sysC, mss: mssC},
-		wrapper:  testPlainWrapper{},
 	}
 }
 

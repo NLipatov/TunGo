@@ -20,7 +20,7 @@ type clientTestTunManager struct {
 	disposeCalls atomic.Int32
 }
 
-func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriteCloser, error) {
+func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriter, error) {
 	return nil, nil
 }
 
@@ -58,8 +58,8 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("client did not stop after cancellation")
 	}
-	if got := manager.disposeCalls.Load(); got != 2 {
-		t.Fatalf("CloseTunnel() calls = %d, want before attempt and on exit", got)
+	if got := manager.disposeCalls.Load(); got != 1 {
+		t.Fatalf("CloseTunnel() calls = %d, want preflight cleanup", got)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestAllowedSources(t *testing.T) {
 	}
 }
 
-func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
+func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
 	manager := &clientTestTunManager{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
@@ -155,8 +155,8 @@ func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
 	if err := client.Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("CloseTunnel() calls = %d, want final cleanup", got)
+	if got := manager.disposeCalls.Load(); got != 0 {
+		t.Fatalf("CloseTunnel() calls = %d, want no session cleanup", got)
 	}
 }
 

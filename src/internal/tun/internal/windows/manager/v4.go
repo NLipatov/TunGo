@@ -36,7 +36,7 @@ func newV4Manager(
 // OpenTunnel creates and configures the IPv4 TUN adapter.
 // It pins the server route before installing split default routes and
 // attempts to clean up the adapter and routes if setup fails.
-func (m *v4Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *v4Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}

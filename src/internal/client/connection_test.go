@@ -158,7 +158,7 @@ func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 	// Out-of-range port should fail during addr:port parsing.
 	client := testClientWithSettings(mkTCPSettings(70000))
 
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad port")
 	}
@@ -168,7 +168,7 @@ func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
 	t.Parallel()
 	client := testClientWithSettings(mkUDPSettings(70000))
 
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad UDP port")
 	}
@@ -295,7 +295,7 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	t.Parallel()
 	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
 	client := testClientWithSettings(mkWSSettings("127.0.0.1", 0, settings.WSS))
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
 	client := testClientWithSettings(settings.Settings{Protocol: 999})
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol")
 	}
@@ -315,7 +315,7 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
 	client := testClientWithSettings(mkTCPSettings(1)) // likely closed → Dial error
 
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil {
 		t.Fatalf("expected dial error")
 	}
@@ -328,7 +328,7 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
 	client := testClientWithSettings(mkWSSettings("127.0.0.1", 9, settings.WS))
-	_, _, _, err := client.establishConnection(context.Background())
+	_, _, _, err := client.connect(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
 		t.Fatalf("expected wrapped WS dial error, got: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestEstablishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T
 	}
 	tr := &cfUnitTransport{}
 
-	_, _, _, err := client.establishSecuredConnection(
+	_, _, _, err := client.handshake(
 		context.Background(),
 		tr,
 		settings.TCP,
@@ -466,7 +466,7 @@ func TestEstablishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *test
 	}
 	tr := &cfUnitTransport{}
 
-	_, _, _, err := client.establishSecuredConnection(
+	_, _, _, err := client.handshake(
 		context.Background(),
 		tr,
 		settings.TCP,
@@ -494,7 +494,7 @@ func TestEstablishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
 	}
 	tr := &cfUnitTransport{readErr: io.ErrUnexpectedEOF}
 
-	_, _, _, err := client.establishSecuredConnection(
+	_, _, _, err := client.handshake(
 		context.Background(),
 		tr,
 		settings.TCP,
@@ -525,7 +525,7 @@ func TestEstablishSecuredConnection_CancelClosesAdapter(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, _, err := client.establishSecuredConnection(ctx, transport, settings.TCP)
+		_, _, _, err := client.handshake(ctx, transport, settings.TCP)
 		errCh <- err
 	}()
 
@@ -579,7 +579,7 @@ func TestConnectionFactoryUnit_WithReadDeadline_WithDeadlineSupport_WrapsAndSets
 func TestEstablishConnection_ErrorBranches(t *testing.T) {
 	t.Run("unsupported protocol", func(t *testing.T) {
 		client := testClientWithSettings(settings.Settings{Protocol: settings.UNKNOWN})
-		_, _, _, err := client.establishConnection(context.Background())
+		_, _, _, err := client.connect(context.Background())
 		if err == nil {
 			t.Fatal("expected unsupported protocol error")
 		}
@@ -587,7 +587,7 @@ func TestEstablishConnection_ErrorBranches(t *testing.T) {
 
 	t.Run("tcp parse addr error", func(t *testing.T) {
 		client := testClientWithSettings(mkTCPSettings(70000))
-		_, _, _, err := client.establishConnection(context.Background())
+		_, _, _, err := client.connect(context.Background())
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
@@ -595,7 +595,7 @@ func TestEstablishConnection_ErrorBranches(t *testing.T) {
 
 	t.Run("udp parse addr error", func(t *testing.T) {
 		client := testClientWithSettings(mkUDPSettings(70000))
-		_, _, _, err := client.establishConnection(context.Background())
+		_, _, _, err := client.connect(context.Background())
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
@@ -691,7 +691,7 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 		serverErrCh <- serr
 	}()
 
-	adapter, crypto, coordinator, err := client.establishSecuredConnection(
+	adapter, crypto, coordinator, err := client.handshake(
 		context.Background(),
 		clientAdapter,
 		settings.TCP,

@@ -12,7 +12,7 @@ import (
 )
 
 type clientManager interface {
-	OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error)
+	OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error)
 	CloseTunnel() error
 }
 
@@ -36,7 +36,7 @@ func New(conf *client.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	return m.manager.OpenTunnel(serverAddr)
 }
 

@@ -142,7 +142,7 @@ func (s *Server) createTunnel(
 
 func (s *Server) newTunnel(
 	ctx context.Context,
-	tun io.ReadWriteCloser,
+	tun io.ReadWriter,
 	workerSettings settings.Settings,
 ) (protocolTunnel, error) {
 	tun = trafficstats.WrapTun(tun)
@@ -163,7 +163,7 @@ var _ config.ServerAllowedPeersUpdater = (*Server)(nil)
 
 func (s *Server) newTCPTunnel(
 	ctx context.Context,
-	tun io.ReadWriteCloser,
+	tun io.ReadWriter,
 	workerSettings settings.Settings,
 ) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()
@@ -199,7 +199,7 @@ func (s *Server) newTCPTunnel(
 
 func (s *Server) newWSTunnel(
 	ctx context.Context,
-	tun io.ReadWriteCloser,
+	tun io.ReadWriter,
 	workerSettings settings.Settings,
 ) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()
@@ -241,7 +241,7 @@ func (s *Server) newWSTunnel(
 
 func (s *Server) newUDPTunnel(
 	ctx context.Context,
-	tun io.ReadWriteCloser,
+	tun io.ReadWriter,
 	workerSettings settings.Settings,
 ) (protocolTunnel, error) {
 	sessionManager := session.NewRepository()

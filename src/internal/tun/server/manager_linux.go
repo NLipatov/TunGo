@@ -19,14 +19,9 @@ import (
 	"tungo/internal/tun/internal/linux/sysctl"
 )
 
-type tunWrapper interface {
-	Wrap(*os.File) (io.ReadWriteCloser, error)
-}
-
 type Manager struct {
 	device   tunDeviceManager
 	firewall firewallConfigurator
-	wrapper  tunWrapper
 }
 
 func NewManager() *Manager {
@@ -40,7 +35,6 @@ func NewManager() *Manager {
 			sysctl:   sysctl.NewWrapper(command.New()),
 			mss:      mssclamp.NewManager(command.New()),
 		},
-		wrapper: epoll.NewWrapper(),
 	}
 }
 
@@ -79,7 +73,7 @@ func (s Manager) OpenTunnel(connSettings settings.Settings) (io.ReadWriteCloser,
 		return nil, fmt.Errorf("failed to configure a server: %s", configureErr)
 	}
 
-	dev, wrapErr := s.wrapper.Wrap(tunFile)
+	dev, wrapErr := epoll.New(tunFile)
 	if wrapErr != nil {
 		_ = tunFile.Close()
 		_ = s.CloseTunnel(connSettings)

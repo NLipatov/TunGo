@@ -12,26 +12,9 @@ import (
 
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
+
+	"golang.org/x/sys/unix"
 )
-
-// clienttunManagerPlainDev is a minimal device over *os.File.
-type clienttunManagerPlainDev struct{ f *os.File }
-
-func (d *clienttunManagerPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
-func (d *clienttunManagerPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
-func (d *clienttunManagerPlainDev) Close() error                { return d.f.Close() }
-
-// clienttunManagerPlainWrapper can inject a wrapping error.
-type clienttunManagerPlainWrapper struct {
-	err error
-}
-
-func (w clienttunManagerPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
-	if w.err != nil {
-		return nil, w.err
-	}
-	return &clienttunManagerPlainDev{f: f}, nil
-}
 
 // clienttunManagerIPMock simulates `ip` contract and records call sequence.
 // `failStep` makes the corresponding step return an error.
@@ -92,15 +75,28 @@ func (m *clienttunManagerIPGetErr) RouteGet(string) (string, error) {
 	return "", fmt.Errorf("failed to get route to server IP: %w", errors.New("geterr"))
 }
 
-// clienttunManagerIOCTLMock returns /dev/null or injected error.
+// clienttunManagerIOCTLMock returns a pollable file or an injected error.
 type clienttunManagerIOCTLMock struct {
 	openErr error
+	file    *os.File
 }
 
 // clienttunManagerMSSMock simulates mssclamp.Contract.
 type clienttunManagerMSSMock struct {
 	installErr error
 	removeErr  error
+}
+
+type clientTunMock struct {
+	closeErr   error
+	closeCalls int
+}
+
+func (*clientTunMock) Read([]byte) (int, error)    { return 0, io.EOF }
+func (*clientTunMock) Write(p []byte) (int, error) { return len(p), nil }
+func (t *clientTunMock) Close() error {
+	t.closeCalls++
+	return t.closeErr
 }
 
 func mustHost(raw string) settings.Host {
@@ -135,8 +131,15 @@ func (m clienttunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) 
 	if m.openErr != nil {
 		return nil, m.openErr
 	}
-	f, _ := os.Open(os.DevNull)
-	return f, nil
+	if m.file != nil {
+		return m.file, nil
+	}
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, err
+	}
+	_ = unix.Close(fds[1])
+	return os.NewFile(uintptr(fds[0]), "test-tun"), nil
 }
 
 func newMgr(
@@ -165,7 +168,6 @@ func newMgr(
 		Install(string) error
 		Remove(string) error
 	},
-	wrap tunWrapper,
 ) *Manager {
 	profiles := map[settings.Protocol]settings.Settings{
 		settings.UDP: {
@@ -211,7 +213,21 @@ func newMgr(
 		ip:                 ipMock,
 		ioctl:              ioctlMock,
 		mss:                mssMock,
-		wrapper:            wrap,
+	}
+}
+
+func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManagerIPMock) {
+	t.Helper()
+	if m.serverAddr.IsValid() {
+		t.Fatalf("serverAddr = %s, want cleared after failed OpenTunnel", m.serverAddr)
+	}
+	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4.String() {
+		t.Fatalf("RouteDel() targets = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
+	}
+	for _, cleanupStep := range []string{"splitdel;", "splitdel6;", "ldel;", "rdel;"} {
+		if !strings.Contains(ipMock.log.String(), cleanupStep) {
+			t.Errorf("cleanup log = %q, want %q", ipMock.log.String(), cleanupStep)
+		}
 	}
 }
 
@@ -221,7 +237,7 @@ func newMgr(
 
 func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
@@ -230,7 +246,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	_ = dev.Close()
+	defer func() { _ = m.CloseTunnel() }()
 
 	want := "add;up;addr;raddvia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
@@ -240,7 +256,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 
 func TestOpenTunnelRejectsInvalidServerAddr(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	if _, err := m.OpenTunnel(netip.Addr{}); err == nil || !strings.Contains(err.Error(), "invalid server address") {
 		t.Fatalf("OpenTunnel() error = %v, want invalid server address", err)
@@ -252,7 +268,7 @@ func TestOpenTunnelRejectsInvalidServerAddr(t *testing.T) {
 
 func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
-	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
@@ -261,7 +277,7 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	_ = dev.Close()
+	defer func() { _ = m.CloseTunnel() }()
 
 	want := "add;up;addr;radd;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
@@ -271,7 +287,7 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 
 func TestOpenTunnel_WS_Path(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.2 dev eth0"}
-	m := newMgr(settings.WS, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.WS, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	dev, err := m.OpenTunnel(testServerAddrV4)
 	if err != nil {
@@ -280,13 +296,13 @@ func TestOpenTunnel_WS_Path(t *testing.T) {
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	_ = dev.Close()
+	defer func() { _ = m.CloseTunnel() }()
 }
 
 func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
 	// Missing "dev" -> parse must fail.
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected parse error (no dev)")
@@ -297,7 +313,7 @@ func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
 
 func TestOpenTunnel_RouteGetError_LeadsToParseError(t *testing.T) {
 	ipMock := &clienttunManagerIPGetErr{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected RouteGet error")
@@ -308,29 +324,43 @@ func TestOpenTunnel_RouteGetError_LeadsToParseError(t *testing.T) {
 
 func TestOpenTunnel_OpenTunError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{openErr: errors.New("open fail")}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{openErr: errors.New("open fail")}, clienttunManagerMSSMock{})
 
 	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected open TUN error")
 	} else if !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	assertOpenTunnelRolledBack(t, m, ipMock)
 }
 
-func TestOpenTunnel_WrapError(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{err: errors.New("wrap fail")})
-
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
-		t.Fatal("expected wrapper.Wrap error")
+func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
+	tunFile, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open test TUN file: %v", err)
 	}
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	m := newMgr(
+		settings.UDP,
+		ipMock,
+		clienttunManagerIOCTLMock{file: tunFile},
+		clienttunManagerMSSMock{},
+	)
+
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil || !strings.Contains(err.Error(), "failed to initialize TUN I/O") {
+		t.Fatalf("OpenTunnel() error = %v, want epoll initialization error", err)
+	}
+	if _, err := tunFile.Stat(); err == nil {
+		t.Fatal("OpenTunnel() left TUN file open after epoll initialization error")
+	}
+	assertOpenTunnelRolledBack(t, m, ipMock)
 }
 
 func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 	steps := []string{"add", "up", "addr", "radd", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
@@ -341,7 +371,7 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 	steps := []string{"add", "up", "addr", "raddvia", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
@@ -350,7 +380,7 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 
 func TestCloseTunnel_NoErrors(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel error: %v", err)
@@ -360,7 +390,7 @@ func TestCloseTunnel_NoErrors(t *testing.T) {
 func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	mssMock := clienttunManagerMSSMock{installErr: errors.New("iptables fail")}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock)
 
 	_, err := m.OpenTunnel(testServerAddrV4)
 	if err == nil {
@@ -369,23 +399,24 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to install MSS clamping") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	assertOpenTunnelRolledBack(t, m, ipMock)
 }
 
 func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
 	// and add route to IPv6 server.
 	ipMock := &clienttunManagerIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	// Enable IPv6 on the active protocol's settings.
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
-	dev, err := mgr.OpenTunnel(testServerAddrV6)
+	_, err := mgr.OpenTunnel(testServerAddrV6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_ = dev.Close()
+	defer func() { _ = mgr.CloseTunnel() }()
 
 	// Should include: addr (IPv4), addr (IPv6), splitdef6, and the ipv6 route steps.
 	got := ipMock.log.String()
@@ -415,7 +446,7 @@ func TestOpenTunnel_IPv6_AddrAddError(t *testing.T) {
 		clienttunManagerIPMock: clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
 		failOnCall:             2,
 		callCount:              &calls,
-	}, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	}, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
@@ -431,7 +462,7 @@ func TestOpenTunnel_IPv6_Route6DefaultError(t *testing.T) {
 		routeReply: "198.51.100.1 dev eth0",
 		failStep:   "splitdef6",
 	}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
 	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
@@ -443,7 +474,7 @@ func TestOpenTunnel_IPv6_Route6DefaultError(t *testing.T) {
 
 func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
 	if err := mgr.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -456,12 +487,11 @@ func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
 
 func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
-	dev, err := mgr.OpenTunnel(testServerAddrV4)
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	_, err := mgr.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("OpenTunnel() error = %v", err)
 	}
-	_ = dev.Close()
 
 	if err := mgr.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel() error = %v", err)
@@ -476,15 +506,19 @@ func TestCloseTunnelRetriesServerRouteDeletion(t *testing.T) {
 		routeReply: "198.51.100.1 dev eth0",
 		failStep:   "rdel",
 	}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 	dev, err := mgr.OpenTunnel(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("OpenTunnel() error = %v", err)
 	}
-	_ = dev.Close()
-
 	if err := mgr.CloseTunnel(); err == nil {
 		t.Fatal("CloseTunnel() error = nil, want route deletion error")
+	}
+	if _, err := dev.Read(make([]byte, 1)); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("TUN read after CloseTunnel() error = %v, want %v", err, io.ErrClosedPipe)
+	}
+	if mgr.tun != nil {
+		t.Fatal("CloseTunnel() retained a closed TUN")
 	}
 	if mgr.serverAddr != testServerAddrV4 {
 		t.Fatalf("serverAddr = %s, want retained %s", mgr.serverAddr, testServerAddrV4)
@@ -502,9 +536,31 @@ func TestCloseTunnelRetriesServerRouteDeletion(t *testing.T) {
 	}
 }
 
+func TestCloseTunnelReturnsTunCloseErrorAndClearsTun(t *testing.T) {
+	closeErr := errors.New("close failed")
+	tun := &clientTunMock{closeErr: closeErr}
+	mgr := newMgr(
+		settings.UDP,
+		&clienttunManagerIPMock{},
+		clienttunManagerIOCTLMock{},
+		clienttunManagerMSSMock{},
+	)
+	mgr.tun = tun
+
+	if err := mgr.CloseTunnel(); !errors.Is(err, closeErr) {
+		t.Fatalf("CloseTunnel() error = %v, want %v", err, closeErr)
+	}
+	if tun.closeCalls != 1 {
+		t.Fatalf("TUN Close() calls = %d, want 1", tun.closeCalls)
+	}
+	if mgr.tun != nil {
+		t.Fatal("CloseTunnel() retained TUN after Close returned an error")
+	}
+}
+
 func TestCloseTunnelSkipsProfilesWithoutTunName(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{}, clienttunManagerPlainWrapper{})
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 	mgr.configuration.TCPSettings.TunName = ""
 	mgr.configuration.WSSettings.TunName = ""
 
@@ -535,7 +591,7 @@ func TestCloseTunnel_MSSRemoveError_Logged(t *testing.T) {
 	// MSS remove errors are logged but do NOT cause CloseTunnel to fail.
 	ipMock := &clienttunManagerIPMock{}
 	mssMock := clienttunManagerMSSMock{removeErr: errors.New("cleanup fail")}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock, clienttunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock)
 
 	// Should not return error because MSS remove errors are only logged.
 	if err := m.CloseTunnel(); err != nil {

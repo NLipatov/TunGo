@@ -39,7 +39,7 @@ func newDualStack(
 	}
 }
 
-func (m *dualStack) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
+func (m *dualStack) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("dualstack: invalid server address %q", serverAddr)
 	}
