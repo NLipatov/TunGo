@@ -98,12 +98,6 @@ func (m *mockCommander) allCalls() []call {
 	return out
 }
 
-func (m *mockCommander) callCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.calls)
-}
-
 // callIndex returns the index of the first matching call, or -1 if not found.
 func (m *mockCommander) callIndex(name string, args ...string) int {
 	for i, c := range m.allCalls() {
@@ -153,10 +147,10 @@ func routeGetOutput(gateway, iface string) []byte {
 	sb.WriteString("   route to: 8.8.8.8\n")
 	sb.WriteString("destination: default\n")
 	if gateway != "" {
-		sb.WriteString(fmt.Sprintf("    gateway: %s\n", gateway))
+		fmt.Fprintf(&sb, "    gateway: %s\n", gateway)
 	}
 	if iface != "" {
-		sb.WriteString(fmt.Sprintf("  interface: %s\n", iface))
+		fmt.Fprintf(&sb, "  interface: %s\n", iface)
 	}
 	sb.WriteString("      flags: <UP,GATEWAY,DONE>\n")
 	return []byte(sb.String())
@@ -477,10 +471,10 @@ func routeGetOutputV6(gateway, iface string) []byte {
 	sb.WriteString("   route to: 2001:db8::1\n")
 	sb.WriteString("destination: default\n")
 	if gateway != "" {
-		sb.WriteString(fmt.Sprintf("    gateway: %s\n", gateway))
+		fmt.Fprintf(&sb, "    gateway: %s\n", gateway)
 	}
 	if iface != "" {
-		sb.WriteString(fmt.Sprintf("  interface: %s\n", iface))
+		fmt.Fprintf(&sb, "  interface: %s\n", iface)
 	}
 	sb.WriteString("      flags: <UP,GATEWAY,DONE>\n")
 	return []byte(sb.String())
