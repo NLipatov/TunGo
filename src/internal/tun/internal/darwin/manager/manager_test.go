@@ -74,27 +74,17 @@ func (m *mockRoute) Del(destIP string) error {
 }
 
 type mockTunDevice struct {
+	name   string
 	closed bool
 }
 
 func (m *mockTunDevice) Read(data []byte) (int, error)  { return 0, nil }
 func (m *mockTunDevice) Write(data []byte) (int, error) { return 0, nil }
+func (m *mockTunDevice) Name() string                   { return m.name }
 func (m *mockTunDevice) Close() error {
 	m.closed = true
 	return nil
 }
-
-type mockUTUN struct {
-	closed bool
-}
-
-func (m *mockUTUN) Read([][]byte, []int, int) (int, error) { return 0, nil }
-func (m *mockUTUN) Write([][]byte, int) (int, error)       { return 0, nil }
-func (m *mockUTUN) Close() error {
-	m.closed = true
-	return nil
-}
-func (m *mockUTUN) Name() (string, error) { return "utun42", nil }
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -258,10 +248,9 @@ func TestOpenTunnel_RejectsInvalidServerAddr(t *testing.T) {
 func TestV4_CloseTunnel_CleanupRoutes(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	m.resolvedRouteIP = "198.51.100.1"
-	dev := &mockTunDevice{}
-	m.tunDev = dev
+	m.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
+	dev := &mockTunDevice{name: "utun42"}
+	m.tun = dev
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -274,21 +263,17 @@ func TestV4_CloseTunnel_CleanupRoutes(t *testing.T) {
 		t.Fatalf("expected Del(198.51.100.1), got %v", rt.delCalls)
 	}
 	if !dev.closed {
-		t.Fatal("expected tunDev.Close() to be called")
+		t.Fatal("expected tun.Close() to be called")
 	}
-	if m.tunDev != nil {
-		t.Fatal("expected tunDev to be nil after dispose")
-	}
-	if m.ifName != "" {
-		t.Fatal("expected ifName to be empty after dispose")
+	if m.tun != nil {
+		t.Fatal("expected tun to be nil after dispose")
 	}
 }
 
-func TestV4_CloseTunnel_NoResolvedRouteIP_SkipsDel(t *testing.T) {
+func TestV4_CloseTunnel_NoPinnedServerAddr_SkipsDel(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	m.resolvedRouteIP = ""
+	m.tun = &mockTunDevice{name: "utun42"}
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -299,33 +284,12 @@ func TestV4_CloseTunnel_NoResolvedRouteIP_SkipsDel(t *testing.T) {
 	}
 }
 
-func TestV4_CloseTunnel_RawUTUNFallback(t *testing.T) {
-	rt := &mockRoute{}
-	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	raw := &mockUTUN{}
-	m.rawUTUN = raw
-	// tunDev is nil, so raw should be closed directly
-
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("unexpected dispose error: %v", err)
-	}
-
-	if !raw.closed {
-		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
-	}
-	if m.rawUTUN != nil {
-		t.Fatal("expected rawUTUN to be nil after dispose")
-	}
-}
-
 func TestV6_CloseTunnel_CleanupRoutes(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	m.resolvedRouteIP = "2001:db8::1"
-	dev := &mockTunDevice{}
-	m.tunDev = dev
+	m.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	dev := &mockTunDevice{name: "utun42"}
+	m.tun = dev
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -338,35 +302,17 @@ func TestV6_CloseTunnel_CleanupRoutes(t *testing.T) {
 		t.Fatalf("expected Del(2001:db8::1), got %v", rt.delCalls)
 	}
 	if !dev.closed {
-		t.Fatal("expected tunDev.Close() to be called")
+		t.Fatal("expected tun.Close() to be called")
 	}
 }
 
-func TestV6_CloseTunnel_RawUTUNFallback(t *testing.T) {
-	rt := &mockRoute{}
-	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	raw := &mockUTUN{}
-	m.rawUTUN = raw
-
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("unexpected dispose error: %v", err)
-	}
-
-	if !raw.closed {
-		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
-	}
-}
-
-func TestDualStack_CloseTunnel_CleanupAllRoutes(t *testing.T) {
+func TestDualStack_CloseTunnel_CleanupIPv6ServerRoute(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
-	m.ifName = "utun42"
-	m.resolvedRouteIP4 = "198.51.100.1"
-	m.resolvedRouteIP6 = "2001:db8::1"
-	dev := &mockTunDevice{}
-	m.tunDev = dev
+	m.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	dev := &mockTunDevice{name: "utun42"}
+	m.tun = dev
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -378,33 +324,25 @@ func TestDualStack_CloseTunnel_CleanupAllRoutes(t *testing.T) {
 	if len(rt6.delSplitCalls) != 1 || rt6.delSplitCalls[0] != "utun42" {
 		t.Fatalf("expected v6 DelSplit(utun42), got %v", rt6.delSplitCalls)
 	}
-	if len(rt4.delCalls) != 1 || rt4.delCalls[0] != "198.51.100.1" {
-		t.Fatalf("expected v4 Del(198.51.100.1), got %v", rt4.delCalls)
+	if len(rt4.delCalls) != 0 {
+		t.Fatalf("expected no v4 Del calls, got %v", rt4.delCalls)
 	}
 	if len(rt6.delCalls) != 1 || rt6.delCalls[0] != "2001:db8::1" {
 		t.Fatalf("expected v6 Del(2001:db8::1), got %v", rt6.delCalls)
 	}
 	if !dev.closed {
-		t.Fatal("expected tunDev.Close() to be called")
+		t.Fatal("expected tun.Close() to be called")
 	}
-	if m.tunDev != nil {
-		t.Fatal("expected tunDev to be nil after dispose")
-	}
-	if m.rawUTUN != nil {
-		t.Fatal("expected rawUTUN to be nil after dispose")
-	}
-	if m.ifName != "" {
-		t.Fatal("expected ifName to be empty after dispose")
+	if m.tun != nil {
+		t.Fatal("expected tun to be nil after dispose")
 	}
 }
 
-func TestDualStack_CloseTunnel_NoResolvedIPs_SkipsDel(t *testing.T) {
+func TestDualStack_CloseTunnel_NoPinnedServerAddr_SkipsDel(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
-	m.ifName = "utun42"
-	// No resolved IPs
-
+	m.tun = &mockTunDevice{name: "utun42"}
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
 	}
@@ -417,30 +355,12 @@ func TestDualStack_CloseTunnel_NoResolvedIPs_SkipsDel(t *testing.T) {
 	}
 }
 
-func TestDualStack_CloseTunnel_RawUTUNFallback(t *testing.T) {
+func TestDualStack_CloseTunnel_CleanupIPv4ServerRoute(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
-	m.ifName = "utun42"
-	raw := &mockUTUN{}
-	m.rawUTUN = raw
-
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("unexpected dispose error: %v", err)
-	}
-
-	if !raw.closed {
-		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
-	}
-}
-
-func TestDualStack_CloseTunnel_OnlyV4Resolved(t *testing.T) {
-	rt4 := &mockRoute{}
-	rt6 := &mockRoute{}
-	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
-	m.ifName = "utun42"
-	m.resolvedRouteIP4 = "198.51.100.1"
-	m.resolvedRouteIP6 = ""
+	m.tun = &mockTunDevice{name: "utun42"}
+	m.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -461,9 +381,9 @@ func TestDualStack_CloseTunnel_OnlyV4Resolved(t *testing.T) {
 func TestV4_AssignIPv4_Success(t *testing.T) {
 	ifc := &mockIfconfig{}
 	m := newV4(settingsV4Only(t), ifc, &mockRoute{})
-	m.ifName = "utun42"
+	m.tun = &mockTunDevice{name: "utun42"}
 
-	err := m.assignIPv4()
+	err := assignIPv4(m.ifc, m.tun, m.s.IPv4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,9 +401,9 @@ func TestV4_AssignIPv4_Success(t *testing.T) {
 func TestV4_AssignIPv4_Error(t *testing.T) {
 	ifc := &mockIfconfig{linkAddrAddErr: fmt.Errorf("ifconfig failed")}
 	m := newV4(settingsV4Only(t), ifc, &mockRoute{})
-	m.ifName = "utun42"
+	m.tun = &mockTunDevice{name: "utun42"}
 
-	err := m.assignIPv4()
+	err := assignIPv4(m.ifc, m.tun, m.s.IPv4)
 	if err == nil {
 		t.Fatal("expected error from LinkAddrAdd failure")
 	}
@@ -497,9 +417,9 @@ func TestV4_AssignIPv4_Error(t *testing.T) {
 func TestV6_AssignIPv6_WithSubnet(t *testing.T) {
 	ifc := &mockIfconfig{}
 	m := newV6(settingsV6Only(t), ifc, &mockRoute{})
-	m.ifName = "utun42"
+	m.tun = &mockTunDevice{name: "utun42"}
 
-	err := m.assignIPv6()
+	err := assignIPv6(m.ifc, m.tun, m.s.IPv6, m.s.IPv6Subnet)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -514,9 +434,9 @@ func TestV6_AssignIPv6_WithSubnet(t *testing.T) {
 func TestV6_AssignIPv6_Error(t *testing.T) {
 	ifc := &mockIfconfig{linkAddrAddErr: fmt.Errorf("ifconfig failed")}
 	m := newV6(settingsV6Only(t), ifc, &mockRoute{})
-	m.ifName = "utun42"
+	m.tun = &mockTunDevice{name: "utun42"}
 
-	err := m.assignIPv6()
+	err := assignIPv6(m.ifc, m.tun, m.s.IPv6, m.s.IPv6Subnet)
 	if err == nil {
 		t.Fatal("expected error from LinkAddrAdd failure")
 	}
@@ -609,9 +529,8 @@ func TestDualStack_CloseTunnel_Fresh(t *testing.T) {
 func TestV4_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV4(settingsV4Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	m.resolvedRouteIP = "198.51.100.1"
-	m.tunDev = &mockTunDevice{}
+	m.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
+	m.tun = &mockTunDevice{name: "utun42"}
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -625,9 +544,8 @@ func TestV4_CloseTunnel_DoubleSafe(t *testing.T) {
 func TestV6_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt := &mockRoute{}
 	m := newV6(settingsV6Only(t), &mockIfconfig{}, rt)
-	m.ifName = "utun42"
-	m.resolvedRouteIP = "2001:db8::1"
-	m.tunDev = &mockTunDevice{}
+	m.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	m.tun = &mockTunDevice{name: "utun42"}
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)
@@ -641,10 +559,8 @@ func TestDualStack_CloseTunnel_DoubleSafe(t *testing.T) {
 	rt4 := &mockRoute{}
 	rt6 := &mockRoute{}
 	m := newDualStack(settingsDualStack(t), &mockIfconfig{}, &mockIfconfig{}, rt4, rt6)
-	m.ifName = "utun42"
-	m.resolvedRouteIP4 = "198.51.100.1"
-	m.resolvedRouteIP6 = "2001:db8::1"
-	m.tunDev = &mockTunDevice{}
+	m.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
+	m.tun = &mockTunDevice{name: "utun42"}
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("unexpected dispose error: %v", err)

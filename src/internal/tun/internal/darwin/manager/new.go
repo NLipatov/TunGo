@@ -18,6 +18,11 @@ type clientManager interface {
 	CloseTunnel() error
 }
 
+type tunnel interface {
+	io.ReadWriteCloser
+	Name() string
+}
+
 type interfaceConfigurator interface {
 	LinkAddrAdd(ifName string, prefix netip.Prefix) error
 	SetMTU(ifName string, mtu int) error

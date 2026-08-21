@@ -12,13 +12,11 @@ import (
 )
 
 type v4 struct {
-	s               settings.Settings
-	tunDev          io.ReadWriteCloser
-	rawUTUN         utun.UTUN
-	ifc             interfaceConfigurator
-	rtc             routeConfigurator
-	ifName          string
-	resolvedRouteIP string // cached resolved server IP for consistent teardown
+	s                settings.Settings
+	tun              tunnel
+	ifc              interfaceConfigurator
+	rtc              routeConfigurator
+	pinnedServerAddr netip.Addr
 }
 
 func newV4(
@@ -38,17 +36,16 @@ func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("v4: invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-	raw, err := utun.Create(m.ifc, m.s.MTU)
+	tun, err := utun.New()
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
-	m.rawUTUN = raw
-	name, err := raw.Name()
-	if err != nil {
+	m.tun = tun
+	if err := m.ifc.SetMTU(m.tun.Name(), m.s.MTU); err != nil {
+		openErr := fmt.Errorf("set MTU %d on %s: %w", m.s.MTU, m.tun.Name(), err)
 		_ = m.CloseTunnel()
-		return nil, fmt.Errorf("get utun name: %w", err)
+		return nil, openErr
 	}
-	m.ifName = name
 	// The server address belongs to the outer transport and may use a
 	// different IP family than the TUN. Pin it only when this manager's
 	// split routes cover that family.
@@ -58,45 +55,39 @@ func (m *v4) OpenTunnel(serverAddr netip.Addr) (io.ReadWriteCloser, error) {
 			_ = m.CloseTunnel()
 			return nil, fmt.Errorf("route to server %s: %w", routeIP, addErr)
 		}
-		m.resolvedRouteIP = routeIP
+		m.pinnedServerAddr = serverAddr
 	}
-	if assignErr := m.assignIPv4(); assignErr != nil {
+	if err := assignIPv4(m.ifc, m.tun, m.s.IPv4); err != nil {
 		_ = m.CloseTunnel()
-		return nil, assignErr
+		return nil, err
 	}
-	_ = m.rtc.DelSplit(m.ifName)
-	if addErr := m.rtc.AddSplit(m.ifName); addErr != nil {
+	_ = m.rtc.DelSplit(m.tun.Name())
+	if addErr := m.rtc.AddSplit(m.tun.Name()); addErr != nil {
 		_ = m.CloseTunnel()
 		return nil, fmt.Errorf("add v4 split default: %w", addErr)
 	}
-
-	m.tunDev = utun.NewDarwinTunDevice(raw)
-	return m.tunDev, nil
+	return m.tun, nil
 }
 
-func (m *v4) CloseTunnel() error {
-	if m.ifName != "" {
-		_ = m.rtc.DelSplit(m.ifName)
+func assignIPv4(ifc interfaceConfigurator, tun tunnel, addr netip.Addr) error {
+	prefix := netip.PrefixFrom(addr, 32)
+	if err := ifc.LinkAddrAdd(tun.Name(), prefix); err != nil {
+		return fmt.Errorf("v4: set addr %s on %s: %w", prefix, tun.Name(), err)
 	}
-	if m.resolvedRouteIP != "" {
-		_ = m.rtc.Del(m.resolvedRouteIP)
-	}
-	if m.tunDev != nil {
-		_ = m.tunDev.Close() // closes underlying rawUTUN
-	} else if m.rawUTUN != nil {
-		_ = m.rawUTUN.Close() // tunDev never created, close raw directly
-	}
-	m.tunDev = nil
-	m.rawUTUN = nil
-	m.ifName = ""
-	m.resolvedRouteIP = ""
 	return nil
 }
 
-func (m *v4) assignIPv4() error {
-	prefix := netip.PrefixFrom(m.s.IPv4, 32)
-	if err := m.ifc.LinkAddrAdd(m.ifName, prefix); err != nil {
-		return fmt.Errorf("v4: set addr %s on %s: %w", prefix, m.ifName, err)
+func (m *v4) CloseTunnel() error {
+	if m.tun != nil {
+		_ = m.rtc.DelSplit(m.tun.Name())
 	}
+	if m.pinnedServerAddr.IsValid() {
+		_ = m.rtc.Del(m.pinnedServerAddr.String())
+	}
+	if m.tun != nil {
+		_ = m.tun.Close()
+	}
+	m.tun = nil
+	m.pinnedServerAddr = netip.Addr{}
 	return nil
 }
