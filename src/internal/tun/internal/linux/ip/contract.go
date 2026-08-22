@@ -1,6 +1,6 @@
 package ip
 
-// Contract is a interface of a wrapper around ip command from the iproute2 tool collection
+// Contract describes Linux network configuration operations provided through iproute2.
 type Contract interface {
 	TunTapAddDevTun(devName string) error
 	LinkDelete(devName string) error

@@ -1,8 +1,9 @@
 //go:build windows
 
-package resolver
+package ipcfg
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,18 +13,21 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-type Resolver struct {
+// ErrInterfaceNotFound indicates that Windows has no matching network interface.
+var ErrInterfaceNotFound = errors.New("interface not found")
+
+type interfaceResolver struct {
 	cacheMu sync.RWMutex
 	cache   map[string]winipcfg.LUID
 }
 
-func NewResolver() *Resolver {
-	return &Resolver{
+func newInterfaceResolver() *interfaceResolver {
+	return &interfaceResolver{
 		cache: make(map[string]winipcfg.LUID),
 	}
 }
 
-func (r *Resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) {
+func (r *interfaceResolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) {
 	if v, ok := r.getCached(ifName); ok {
 		return v, nil
 	}
@@ -43,7 +47,7 @@ func (r *Resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) 
 				return a.LUID, nil
 			}
 		}
-		return 0, fmt.Errorf("interface index %d not found", index)
+		return 0, fmt.Errorf("%w: index %d", ErrInterfaceNotFound, index)
 	}
 
 	type cand struct {
@@ -151,15 +155,15 @@ func (r *Resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) 
 	} else if allMatchesDown {
 		return 0, fmt.Errorf("found matches for %q by Description, but all are down", ifName)
 	}
-	return 0, fmt.Errorf("interface %q not found", ifName)
+	return 0, fmt.Errorf("%w: %q", ErrInterfaceNotFound, ifName)
 }
 
 // matchName compares Windows adapter names case-insensitively and trims spaces.
-func (r *Resolver) matchName(a, b string) bool {
+func (r *interfaceResolver) matchName(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
-func (r *Resolver) NetworkInterfaceName(luid winipcfg.LUID) string {
+func (r *interfaceResolver) NetworkInterfaceName(luid winipcfg.LUID) string {
 	if addrs, err := winipcfg.GetAdaptersAddresses(winipcfg.AddressFamily(windows.AF_UNSPEC), 0); err == nil {
 		for _, a := range addrs {
 			if a.LUID == luid {
@@ -181,7 +185,7 @@ func (r *Resolver) NetworkInterfaceName(luid winipcfg.LUID) string {
 	return ""
 }
 
-func (r *Resolver) getCached(ifName string) (winipcfg.LUID, bool) {
+func (r *interfaceResolver) getCached(ifName string) (winipcfg.LUID, bool) {
 	key := r.canonKey(ifName)
 	r.cacheMu.RLock()
 	v, ok := r.cache[key]
@@ -200,9 +204,11 @@ func (r *Resolver) getCached(ifName string) (winipcfg.LUID, bool) {
 	return 0, false
 }
 
-func (r *Resolver) putCached(ifName string, luid winipcfg.LUID) {
+func (r *interfaceResolver) putCached(ifName string, luid winipcfg.LUID) {
 	r.cacheMu.Lock()
 	r.cache[r.canonKey(ifName)] = luid
 	r.cacheMu.Unlock()
 }
-func (r *Resolver) canonKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+func (r *interfaceResolver) canonKey(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}

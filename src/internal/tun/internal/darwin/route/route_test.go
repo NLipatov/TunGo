@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"tungo/internal/tun/internal/splitroute"
 )
 
 // ---------------------------------------------------------------------------
@@ -388,14 +390,14 @@ func TestV4_AddSplit_success(t *testing.T) {
 	cmd := newMockCommander()
 	// Pre-delete stubs (ignored errors)
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 	// Add stubs
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 
 	r := NewV4(cmd)
 	if err := r.AddSplit("utun3"); err != nil {
@@ -406,14 +408,14 @@ func TestV4_AddSplit_success(t *testing.T) {
 func TestV4_AddSplit_fileExistsIgnored(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 	// "File exists" should be silently ignored
 	cmd.stub([]byte("File exists"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 
 	r := NewV4(cmd)
 	if err := r.AddSplit("utun3"); err != nil {
@@ -424,11 +426,11 @@ func TestV4_AddSplit_fileExistsIgnored(t *testing.T) {
 func TestV4_AddSplit_commanderError(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 
 	r := NewV4(cmd)
 	if err := r.AddSplit("utun3"); err == nil {
@@ -439,9 +441,9 @@ func TestV4_AddSplit_commanderError(t *testing.T) {
 func TestV4_DelSplit_success(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 
 	r := NewV4(cmd)
 	if err := r.DelSplit("utun3"); err != nil {
@@ -452,9 +454,9 @@ func TestV4_DelSplit_success(t *testing.T) {
 func TestV4_DelSplit_commanderError(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("kernel error"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-net", v4SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-net", v4SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-net", splitroute.IPv4UpperHalf, "-interface", "utun3")
 
 	r := NewV4(cmd)
 	if err := r.DelSplit("utun3"); err == nil {
@@ -700,13 +702,13 @@ func TestV6_Del_commanderError(t *testing.T) {
 func TestV6_AddSplit_success(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 
 	r := NewV6(cmd)
 	if err := r.AddSplit("utun3"); err != nil {
@@ -717,13 +719,13 @@ func TestV6_AddSplit_success(t *testing.T) {
 func TestV6_AddSplit_fileExistsIgnored(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 	cmd.stub([]byte("File exists"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "add", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 
 	r := NewV6(cmd)
 	if err := r.AddSplit("utun3"); err != nil {
@@ -734,11 +736,11 @@ func TestV6_AddSplit_fileExistsIgnored(t *testing.T) {
 func TestV6_AddSplit_commanderError(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 
 	r := NewV6(cmd)
 	if err := r.AddSplit("utun3"); err == nil {
@@ -749,9 +751,9 @@ func TestV6_AddSplit_commanderError(t *testing.T) {
 func TestV6_DelSplit_success(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 
 	r := NewV6(cmd)
 	if err := r.DelSplit("utun3"); err != nil {
@@ -762,9 +764,9 @@ func TestV6_DelSplit_success(t *testing.T) {
 func TestV6_DelSplit_commanderError(t *testing.T) {
 	cmd := newMockCommander()
 	cmd.stub([]byte("kernel error"), errors.New("exit 1"),
-		"route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
-		"route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", "utun3")
+		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6UpperHalf, "-interface", "utun3")
 
 	r := NewV6(cmd)
 	if err := r.DelSplit("utun3"); err == nil {

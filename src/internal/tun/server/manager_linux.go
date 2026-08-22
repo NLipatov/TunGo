@@ -27,12 +27,12 @@ type Manager struct {
 func NewManager() *Manager {
 	return &Manager{
 		device: tunDeviceManager{
-			ip:    ip.NewWrapper(command.New()),
-			ioctl: ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+			ip:    ip.New(command.New()),
+			ioctl: ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		},
 		firewall: firewallConfigurator{
-			iptables: iptables.NewWrapper(command.New()),
-			sysctl:   sysctl.NewWrapper(command.New()),
+			iptables: iptables.New(command.New()),
+			sysctl:   sysctl.New(command.New()),
 			mss:      mssclamp.NewManager(command.New()),
 		},
 	}

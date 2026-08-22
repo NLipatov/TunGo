@@ -8,17 +8,12 @@ import (
 	"net/netip"
 	"strings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	// v6SplitOne covers addresses between :: (0000:0000:0000:0000:0000:0000:0000:0000)
-	// and 7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-	v6SplitOne = "::/1"
-	// v6SplitTwo covers addresses between 8000:: (8000:0000:0000:0000:0000:0000:0000:0000)
-	// and ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-	v6SplitTwo          = "8000::/1"
 	loopbackIFaceNameV6 = "lo0"
 	loopbackAddrV6      = "::1"
 	linkLocalPrefixV6   = "fe80:"
@@ -107,26 +102,26 @@ func (v *V6) Del(destIP string) error {
 }
 
 func (v *V6) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-inet6", v6SplitOne, "-interface", dev)
-	_ = v.runDeleteSplit("-inet6", v6SplitTwo, "-interface", dev)
+	_ = v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev)
+	_ = v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev)
 
 	if out, err := v.commander.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", dev,
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", dev,
 	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v6SplitOne, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6LowerHalf, err, out)
 	}
 	if out, err := v.commander.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", v6SplitTwo, "-interface", dev,
+		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", dev,
 	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v6SplitTwo, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6UpperHalf, err, out)
 	}
 	return nil
 }
 
 func (v *V6) DelSplit(dev string) error {
 	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", v6SplitOne, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", v6SplitTwo, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev) })
 	return eg.Wait()
 }
 

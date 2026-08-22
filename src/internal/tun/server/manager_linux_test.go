@@ -268,11 +268,18 @@ func (m *TunFactoryMockIPErrNthAddr) AddrAddDev(devName, cidr string) error {
 }
 
 // TunFactoryMockMSS implements mssclamp.Contract.
-type TunFactoryMockMSS struct{ log bytes.Buffer }
+type TunFactoryMockMSS struct {
+	log               bytes.Buffer
+	installedFamilies []mssclamp.Families
+}
 
-func (m *TunFactoryMockMSS) add(tag string)         { m.log.WriteString(tag + ";") }
-func (m *TunFactoryMockMSS) Install(_ string) error { m.add("mss_on"); return nil }
-func (m *TunFactoryMockMSS) Remove(_ string) error  { m.add("mss_off"); return nil }
+func (m *TunFactoryMockMSS) add(tag string) { m.log.WriteString(tag + ";") }
+func (m *TunFactoryMockMSS) Install(_ string, families mssclamp.Families) error {
+	m.add("mss_on")
+	m.installedFamilies = append(m.installedFamilies, families)
+	return nil
+}
+func (m *TunFactoryMockMSS) Remove(_ string) error { m.add("mss_off"); return nil }
 
 // Error injector for MSS clamping paths.
 type TunFactoryMockMSSErr struct {
@@ -281,11 +288,11 @@ type TunFactoryMockMSSErr struct {
 	err    error
 }
 
-func (m *TunFactoryMockMSSErr) Install(tunName string) error {
+func (m *TunFactoryMockMSSErr) Install(tunName string, families mssclamp.Families) error {
 	if m.errTag == "Install" {
 		return m.err
 	}
-	return m.TunFactoryMockMSS.Install(tunName)
+	return m.TunFactoryMockMSS.Install(tunName, families)
 }
 
 func (m *TunFactoryMockMSSErr) Remove(tunName string) error {

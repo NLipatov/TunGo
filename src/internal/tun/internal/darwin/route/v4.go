@@ -8,17 +8,12 @@ import (
 	"net/netip"
 	"strings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	// v4SplitOne covers half of IPv4 address space
-	// (addresses between 0.0.0.0 and 127.255.255.255)
-	v4SplitOne = "0.0.0.0/1"
-	// v4SplitTwo covers half of IPv4 address space
-	// (addresses between 128.0.0.0 and 255.255.255.255)
-	v4SplitTwo          = "128.0.0.0/1"
 	loopbackIFaceNameV4 = "lo0"
 	loopbackPrefixV4    = "127."
 )
@@ -104,24 +99,24 @@ func (v *V4) Del(destIP string) error {
 }
 
 func (v *V4) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-net", v4SplitOne, "-interface", dev)
-	_ = v.runDeleteSplit("-net", v4SplitTwo, "-interface", dev)
+	_ = v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev)
+	_ = v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev)
 
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", v4SplitOne, "-interface", dev); err != nil &&
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v4SplitOne, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4LowerHalf, err, out)
 	}
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", v4SplitTwo, "-interface", dev); err != nil &&
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v4SplitTwo, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4UpperHalf, err, out)
 	}
 	return nil
 }
 
 func (v *V4) DelSplit(dev string) error {
 	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-net", v4SplitOne, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-net", v4SplitTwo, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev) })
 	return eg.Wait()
 }
 

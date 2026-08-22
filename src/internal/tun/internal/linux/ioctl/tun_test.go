@@ -30,7 +30,7 @@ func TestDetectTunNameFromFd_Success(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := os.Open(os.DevNull)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestDetectTunNameFromFd_Error(t *testing.T) {
 			return 0, 0, unix.EPERM
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, _ := os.Open(os.DevNull)
 	defer func(f *os.File) {
@@ -79,7 +79,7 @@ func TestCreateTunInterface_Success(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := w.CreateTunInterface("tunTest")
 	if err != nil {
@@ -98,7 +98,7 @@ func TestCreateTunInterface_OpenError(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, "/path/does/not/exist")
+	w := New(mock, "/path/does/not/exist")
 
 	_, err := w.CreateTunInterface("foo")
 	if err == nil {
@@ -115,7 +115,7 @@ func TestCreateTunInterface_IoctlError(t *testing.T) {
 			return 0, 0, unix.EPERM
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := w.CreateTunInterface("tunError")
 	if err == nil {

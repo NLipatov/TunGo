@@ -9,19 +9,19 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/internal/tun/internal/windows/ipcfg/network_interface/resolver"
+	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
 type V4 struct {
-	resolver *resolver.Resolver
+	resolver *interfaceResolver
 }
 
 func NewV4() *V4 {
 	return &V4{
-		resolver: resolver.NewResolver(),
+		resolver: newInterfaceResolver(),
 	}
 }
 
@@ -128,7 +128,7 @@ func (v *V4) AddDefaultSplitRoutes(ifName string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range []string{v4SplitOne, v4SplitTwo} {
+	for _, s := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
 		pfx, _ := netip.ParsePrefix(s) // valid by const
 		if roteErr := luid.AddRoute(
 			pfx,
@@ -147,9 +147,9 @@ func (v *V4) DeleteDefaultSplitRoutes(ifName string) error {
 		return err
 	}
 	var last error
-	for _, s := range []string{v4SplitOne, v4SplitTwo} {
+	for _, s := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
 		pfx, _ := netip.ParsePrefix(s)
-		if err := luid.DeleteRoute(pfx, netip.IPv4Unspecified()); err != nil {
+		if err := luid.DeleteRoute(pfx, netip.IPv4Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
 			last = fmt.Errorf("DeleteDefaultSplitRoutes(%s): %w", s, err)
 		}
 	}
@@ -210,7 +210,7 @@ func (v *V4) DeleteRouteOnInterface(destination netip.Addr, ifName string) error
 		if !dp.Addr().Is4() || dp != pfx || r.InterfaceLUID != luid {
 			continue
 		}
-		if delErr := r.Delete(); delErr != nil {
+		if delErr := r.Delete(); delErr != nil && !errors.Is(delErr, windows.ERROR_NOT_FOUND) {
 			errs = append(errs, delErr)
 			continue
 		}

@@ -2,21 +2,23 @@ package ip
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/splitroute"
 )
 
-// Wrapper is a wrapper around ip command from the iproute2 tool collection
-type Wrapper struct {
+// Configurator manages Linux network interfaces and routes through iproute2.
+type Configurator struct {
 	commander command.Runner
 }
 
-func NewWrapper(commander command.Runner) Contract {
-	return &Wrapper{commander: commander}
+func New(commander command.Runner) *Configurator {
+	return &Configurator{commander: commander}
 }
 
 // TunTapAddDevTun Adds new TUN device
-func (i *Wrapper) TunTapAddDevTun(devName string) error {
+func (i *Configurator) TunTapAddDevTun(devName string) error {
 	createTunOutput, err := i.commander.CombinedOutput("ip", "tuntap",
 		"add", "dev", devName, "mode", "tun")
 	if err != nil {
@@ -27,7 +29,7 @@ func (i *Wrapper) TunTapAddDevTun(devName string) error {
 }
 
 // LinkDelete Deletes network device by name
-func (i *Wrapper) LinkDelete(devName string) error {
+func (i *Configurator) LinkDelete(devName string) error {
 	output, err := i.commander.CombinedOutput("ip", "link", "delete", devName)
 	if err != nil {
 		return fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
@@ -37,7 +39,7 @@ func (i *Wrapper) LinkDelete(devName string) error {
 }
 
 // LinkSetDevUp Sets network device status as UP
-func (i *Wrapper) LinkSetDevUp(devName string) error {
+func (i *Configurator) LinkSetDevUp(devName string) error {
 	startTunOutput, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "up")
 	if err != nil {
 		return fmt.Errorf("failed to start TUN %v: %v, output: %s", devName, err, startTunOutput)
@@ -47,7 +49,7 @@ func (i *Wrapper) LinkSetDevUp(devName string) error {
 }
 
 // AddrAddDev Assigns an IP to a network device
-func (i *Wrapper) AddrAddDev(devName string, cidr string) error {
+func (i *Configurator) AddrAddDev(devName string, cidr string) error {
 	output, assignIPErr := i.commander.CombinedOutput("ip", "addr", "add", cidr, "dev", devName)
 	if assignIPErr != nil {
 		return fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", devName, assignIPErr, output)
@@ -58,7 +60,7 @@ func (i *Wrapper) AddrAddDev(devName string, cidr string) error {
 
 // RouteDefault gets the default network device name.
 // It checks the IPv4 routing table first, then falls back to IPv6.
-func (i *Wrapper) RouteDefault() (string, error) {
+func (i *Configurator) RouteDefault() (string, error) {
 	if iface, err := i.parseDefaultRoute("ip", "route"); err == nil {
 		return iface, nil
 	}
@@ -70,7 +72,7 @@ func (i *Wrapper) RouteDefault() (string, error) {
 
 // parseDefaultRoute runs the given command and extracts the interface name
 // from the first "default" route line by searching for the "dev" keyword.
-func (i *Wrapper) parseDefaultRoute(name string, args ...string) (string, error) {
+func (i *Configurator) parseDefaultRoute(name string, args ...string) (string, error) {
 	out, err := i.commander.Output(name, args...)
 	if err != nil {
 		return "", err
@@ -93,8 +95,8 @@ func (i *Wrapper) parseDefaultRoute(name string, args ...string) (string, error)
 // through the given device. These are more specific than 0.0.0.0/0 so they take
 // priority without replacing the original default route. When the TUN device is
 // deleted, the kernel removes these routes automatically.
-func (i *Wrapper) RouteAddSplitDefaultDev(devName string) error {
-	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
+func (i *Configurator) RouteAddSplitDefaultDev(devName string) error {
+	for _, prefix := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
 		output, err := i.commander.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
 		if err != nil {
 			return fmt.Errorf("failed to add split route %s via %s: %v, output: %s",
@@ -106,8 +108,8 @@ func (i *Wrapper) RouteAddSplitDefaultDev(devName string) error {
 
 // Route6AddSplitDefaultDev adds IPv6 split default routes (::/1 + 8000::/1)
 // through the given device.
-func (i *Wrapper) Route6AddSplitDefaultDev(devName string) error {
-	for _, prefix := range []string{"::/1", "8000::/1"} {
+func (i *Configurator) Route6AddSplitDefaultDev(devName string) error {
+	for _, prefix := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
 		output, err := i.commander.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
 		if err != nil {
 			return fmt.Errorf("failed to add IPv6 split route %s via %s: %v, output: %s",
@@ -118,24 +120,28 @@ func (i *Wrapper) Route6AddSplitDefaultDev(devName string) error {
 }
 
 // RouteDelSplitDefault removes IPv4 split default routes through the given device.
-func (i *Wrapper) RouteDelSplitDefault(devName string) error {
-	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
+func (i *Configurator) RouteDelSplitDefault(devName string) error {
+	for _, prefix := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
 		_, _ = i.commander.CombinedOutput("ip", "route", "del", prefix, "dev", devName)
 	}
 	return nil
 }
 
 // Route6DelSplitDefault removes IPv6 split default routes through the given device.
-func (i *Wrapper) Route6DelSplitDefault(devName string) error {
-	for _, prefix := range []string{"::/1", "8000::/1"} {
+func (i *Configurator) Route6DelSplitDefault(devName string) error {
+	for _, prefix := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
 		_, _ = i.commander.CombinedOutput("ip", "-6", "route", "del", prefix, "dev", devName)
 	}
 	return nil
 }
 
 // RouteGet gets route to host by host ip
-func (i *Wrapper) RouteGet(hostIp string) (string, error) {
-	routeBytes, err := i.commander.Output("ip", "route", "get", hostIp)
+func (i *Configurator) RouteGet(hostIp string) (string, error) {
+	args, err := hostRouteArgs(hostIp, "route", "get", hostIp)
+	if err != nil {
+		return "", err
+	}
+	routeBytes, err := i.commander.Output("ip", args...)
 	if err != nil {
 		return "", fmt.Errorf("failed to get route to server IP: %v", err)
 	}
@@ -144,8 +150,12 @@ func (i *Wrapper) RouteGet(hostIp string) (string, error) {
 }
 
 // RouteAddDev adds a route to host via device
-func (i *Wrapper) RouteAddDev(hostIp string, ifName string) error {
-	output, err := i.commander.CombinedOutput("ip", "route", "add", hostIp, "dev", ifName)
+func (i *Configurator) RouteAddDev(hostIp string, ifName string) error {
+	args, err := hostRouteArgs(hostIp, "route", "add", hostIp, "dev", ifName)
+	if err != nil {
+		return err
+	}
+	output, err := i.commander.CombinedOutput("ip", args...)
 	if err != nil {
 		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
 	}
@@ -153,8 +163,12 @@ func (i *Wrapper) RouteAddDev(hostIp string, ifName string) error {
 }
 
 // RouteAddViaDev adds a route to host via device via gateway
-func (i *Wrapper) RouteAddViaDev(hostIp string, ifName string, gateway string) error {
-	output, err := i.commander.CombinedOutput("ip", "route", "add", hostIp, "via", gateway, "dev", ifName)
+func (i *Configurator) RouteAddViaDev(hostIp string, ifName string, gateway string) error {
+	args, err := hostRouteArgs(hostIp, "route", "add", hostIp, "via", gateway, "dev", ifName)
+	if err != nil {
+		return err
+	}
+	output, err := i.commander.CombinedOutput("ip", args...)
 	if err != nil {
 		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
 	}
@@ -162,16 +176,32 @@ func (i *Wrapper) RouteAddViaDev(hostIp string, ifName string, gateway string) e
 }
 
 // RouteDel deletes a route to host
-func (i *Wrapper) RouteDel(hostIp string) error {
-	output, err := i.commander.CombinedOutput("ip", "route", "del", hostIp)
+func (i *Configurator) RouteDel(hostIp string) error {
+	args, err := hostRouteArgs(hostIp, "route", "del", hostIp)
+	if err != nil {
+		return err
+	}
+	output, err := i.commander.CombinedOutput("ip", args...)
 	if err != nil {
 		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
 	}
 	return err
 }
 
+func hostRouteArgs(hostIP string, args ...string) ([]string, error) {
+	addr, err := netip.ParseAddr(hostIP)
+	if err != nil {
+		return nil, fmt.Errorf("invalid route address %q: %w", hostIP, err)
+	}
+	family := "-6"
+	if addr.Unmap().Is4() {
+		family = "-4"
+	}
+	return append([]string{family}, args...), nil
+}
+
 // LinkSetDevMTU sets device MTU
-func (i *Wrapper) LinkSetDevMTU(devName string, mtu int) error {
+func (i *Configurator) LinkSetDevMTU(devName string, mtu int) error {
 	output, err := i.commander.CombinedOutput("ip", "link",
 		"set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
 	if err != nil {
