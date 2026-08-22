@@ -2,6 +2,9 @@ package client
 
 import (
 	"fmt"
+	"log/slog"
+	"net/netip"
+
 	"tungo/internal/config/settings"
 )
 
@@ -22,22 +25,61 @@ type Configuration struct {
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
 }
 
+func (c *Configuration) ApplyClientDefaults() *Configuration {
+	active, err := c.activeSettings()
+	if err != nil {
+		return c
+	}
+	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
+	if active.MTU != 0 && active.MTU != effectiveMTU {
+		slog.Warn(
+			"client MTU was changed to a supported default",
+			"configured", active.MTU,
+			"effective", effectiveMTU,
+		)
+	}
+	active.MTU = effectiveMTU
+	return c
+}
+
+func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
+	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
+	switch {
+	case v6Subnet.IsValid() && v6Subnet.Addr().Unmap().Is6():
+		if mtu < settings.MinimumIPv6MTU || mtu > settings.MaximumMTU {
+			return settings.DefaultMTU
+		}
+	case v4Subnet.IsValid() && v4Subnet.Addr().Is4():
+		if mtu < settings.MinimumIPv4MTU || mtu > settings.MaximumMTU {
+			return settings.DefaultMTU
+		}
+	}
+	return mtu
+}
+
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
-	var active settings.Settings
-	switch c.Protocol {
-	case settings.UDP:
-		active = c.UDPSettings
-	case settings.TCP:
-		active = c.TCPSettings
-	case settings.WS, settings.WSS:
-		active = c.WSSettings
-	default:
-		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", c.Protocol)
+	configured, err := c.activeSettings()
+	if err != nil {
+		return settings.Settings{}, err
 	}
 
+	active := *configured
 	active.Protocol = c.Protocol
 	if err := active.DeriveIP(c.ClientID); err != nil {
 		return settings.Settings{}, err
 	}
 	return active, nil
+}
+
+func (c *Configuration) activeSettings() (*settings.Settings, error) {
+	switch c.Protocol {
+	case settings.UDP:
+		return &c.UDPSettings, nil
+	case settings.TCP:
+		return &c.TCPSettings, nil
+	case settings.WS, settings.WSS:
+		return &c.WSSettings, nil
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %v", c.Protocol)
+	}
 }

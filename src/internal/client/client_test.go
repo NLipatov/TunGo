@@ -20,16 +20,14 @@ type clientTestTunManager struct {
 	disposeCalls atomic.Int32
 }
 
-func (*clientTestTunManager) CreateDevice() (io.ReadWriteCloser, error) {
+func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriter, error) {
 	return nil, nil
 }
 
-func (m *clientTestTunManager) DisposeDevices() error {
+func (m *clientTestTunManager) CloseTunnel() error {
 	m.disposeCalls.Add(1)
 	return nil
 }
-
-func (*clientTestTunManager) SetRouteEndpoint(netip.AddrPort) {}
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	manager := &clientTestTunManager{}
@@ -60,12 +58,92 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("client did not stop after cancellation")
 	}
-	if got := manager.disposeCalls.Load(); got != 2 {
-		t.Fatalf("DisposeDevices() calls = %d, want before attempt and on exit", got)
+	if got := manager.disposeCalls.Load(); got != 1 {
+		t.Fatalf("CloseTunnel() calls = %d, want preflight cleanup", got)
 	}
 }
 
-func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
+type clientTestRemoteTransport struct {
+	io.ReadWriteCloser
+	remote netip.AddrPort
+}
+
+func (t clientTestRemoteTransport) RemoteAddrPort() netip.AddrPort {
+	return t.remote
+}
+
+type clientTestNoRemoteTransport struct{}
+
+func (clientTestNoRemoteTransport) Read([]byte) (int, error)    { return 0, io.EOF }
+func (clientTestNoRemoteTransport) Write(p []byte) (int, error) { return len(p), nil }
+func (clientTestNoRemoteTransport) Close() error                { return nil }
+
+func TestTransportServerAddr(t *testing.T) {
+	transport := clientTestRemoteTransport{remote: netip.MustParseAddrPort("[::ffff:192.0.2.10]:443")}
+
+	got, err := transportServerAddr(transport)
+	if err != nil {
+		t.Fatalf("transportServerAddr() error = %v", err)
+	}
+	if want := netip.MustParseAddr("192.0.2.10"); got != want {
+		t.Fatalf("transportServerAddr() = %s, want %s", got, want)
+	}
+}
+
+func TestTransportServerAddrRejectsMissingOrInvalidRemoteAddress(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport io.ReadWriteCloser
+	}{
+		{name: "missing provider", transport: clientTestNoRemoteTransport{}},
+		{name: "invalid address", transport: clientTestRemoteTransport{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := transportServerAddr(tt.transport); err == nil {
+				t.Fatal("transportServerAddr() error = nil")
+			}
+		})
+	}
+}
+
+func TestAllowedSources(t *testing.T) {
+	tests := []struct {
+		name string
+		s    settings.Settings
+		want []netip.Addr
+	}{
+		{name: "empty"},
+		{
+			name: "dual stack with mapped IPv4",
+			s: settings.Settings{Addressing: settings.Addressing{
+				IPv4: netip.MustParseAddr("::ffff:192.0.2.1"),
+				IPv6: netip.MustParseAddr("2001:db8::1"),
+			}},
+			want: []netip.Addr{
+				netip.MustParseAddr("192.0.2.1"),
+				netip.MustParseAddr("2001:db8::1"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := allowedSources(tt.s)
+			if len(got) != len(tt.want) {
+				t.Fatalf("allowedSources() length = %d, want %d: %v", len(got), len(tt.want), got)
+			}
+			for _, addr := range tt.want {
+				if _, ok := got[addr]; !ok {
+					t.Errorf("allowedSources() does not contain %s: %v", addr, got)
+				}
+			}
+		})
+	}
+}
+
+func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
 	manager := &clientTestTunManager{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
@@ -77,8 +155,8 @@ func TestClientWithCanceledContextOnlyCleansUp(t *testing.T) {
 	if err := client.Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("DisposeDevices() calls = %d, want final cleanup", got)
+	if got := manager.disposeCalls.Load(); got != 0 {
+		t.Fatalf("CloseTunnel() calls = %d, want no session cleanup", got)
 	}
 }
 
@@ -94,7 +172,7 @@ func TestRunSessionReturnsForwardError(t *testing.T) {
 		t.Fatalf("runSession() error = %v, want unsupported protocol", err)
 	}
 	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("DisposeDevices() calls = %d, want 1", got)
+		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
 	}
 }
 

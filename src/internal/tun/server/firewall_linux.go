@@ -110,7 +110,7 @@ func (f firewallConfigurator) configure(
 	}
 	fwdReady = true
 
-	if err = f.mss.Install(tunName); err != nil {
+	if err = f.mss.Install(tunName, mssclamp.Families{IPv4: ipv4, IPv6: ipv6}); err != nil {
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", tunName, err)
 	}
 

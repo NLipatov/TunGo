@@ -33,26 +33,15 @@ const (
 type CookieManager struct {
 	mu     sync.RWMutex
 	secret [32]byte
-	now    func() time.Time
 }
 
 // NewCookieManager creates a new CookieManager with a random secret.
 func NewCookieManager() (*CookieManager, error) {
-	cm := &CookieManager{
-		now: time.Now,
-	}
+	cm := &CookieManager{}
 	if _, err := rand.Read(cm.secret[:]); err != nil {
 		return nil, err
 	}
 	return cm, nil
-}
-
-// NewCookieManagerWithSecret creates a CookieManager with a specific secret (for testing).
-func NewCookieManagerWithSecret(secret [32]byte) *CookieManager {
-	return &CookieManager{
-		secret: secret,
-		now:    time.Now,
-	}
 }
 
 // ComputeCookieValue computes the cookie value for a client IP.
@@ -62,8 +51,10 @@ func (cm *CookieManager) ComputeCookieValue(clientIP netip.Addr) []byte {
 	cm.mu.RLock()
 	secret := cm.secret
 	cm.mu.RUnlock()
+	return computeCookieValue(secret, clientIP, currentCookieBucket())
+}
 
-	bucket := uint64(cm.now().Unix() / CookieBucketSeconds)
+func computeCookieValue(secret [32]byte, clientIP netip.Addr, bucket uint64) []byte {
 	ip16 := clientIP.As16()
 	data := make([]byte, 0, 24) // 16 bytes IP + 8 bytes timestamp
 	data = append(data, ip16[:]...)
@@ -73,6 +64,10 @@ func (cm *CookieManager) ComputeCookieValue(clientIP netip.Addr) []byte {
 	h, _ := blake2s.New128(secret[:])
 	h.Write(data)
 	return h.Sum(nil) // 16 bytes
+}
+
+func currentCookieBucket() uint64 {
+	return uint64(time.Now().Unix() / CookieBucketSeconds)
 }
 
 // deriveCookieEncryptionKey derives the key for cookie encryption.
@@ -140,54 +135,32 @@ func DecryptCookieReply(reply, clientEphemeral, serverPubKey []byte) ([]byte, er
 // ValidateCookie checks if a cookie is valid for the given client IP.
 // Checks both current and previous time bucket to handle clock drift.
 func (cm *CookieManager) ValidateCookie(clientIP netip.Addr, cookie []byte) bool {
-	// Check current bucket
-	expected := cm.ComputeCookieValue(clientIP)
-	if hmac.Equal(cookie, expected) {
-		return true
-	}
-
-	// Check previous bucket (transition period)
 	cm.mu.RLock()
 	secret := cm.secret
 	cm.mu.RUnlock()
+	return validateCookie(secret, clientIP, cookie, currentCookieBucket())
+}
 
-	bucket := uint64(cm.now().Unix()/CookieBucketSeconds - 1)
-	ip16 := clientIP.As16()
-	data := make([]byte, 0, 24)
-	data = append(data, ip16[:]...)
-	data = binary.LittleEndian.AppendUint64(data, bucket)
-
-	h, _ := blake2s.New128(secret[:])
-	h.Write(data)
-	expectedPrev := h.Sum(nil)
-
-	return hmac.Equal(cookie, expectedPrev)
+func validateCookie(secret [32]byte, clientIP netip.Addr, cookie []byte, bucket uint64) bool {
+	if hmac.Equal(cookie, computeCookieValue(secret, clientIP, bucket)) {
+		return true
+	}
+	return bucket > 0 && hmac.Equal(cookie, computeCookieValue(secret, clientIP, bucket-1))
 }
 
 // VerifyMAC2ForClient checks if msg1WithMAC carries a valid MAC2 for clientIP.
 // Checks both current and previous time bucket to handle boundary transitions.
 func (cm *CookieManager) VerifyMAC2ForClient(msg1WithMAC []byte, clientIP netip.Addr) bool {
-	cookie := cm.ComputeCookieValue(clientIP)
-	if VerifyMAC2(msg1WithMAC, cookie) {
-		return true
-	}
-
-	// Try previous bucket
 	cm.mu.RLock()
 	secret := cm.secret
 	cm.mu.RUnlock()
 
-	bucket := uint64(cm.now().Unix()/CookieBucketSeconds - 1)
-	ip16 := clientIP.As16()
-	data := make([]byte, 0, 24)
-	data = append(data, ip16[:]...)
-	data = binary.LittleEndian.AppendUint64(data, bucket)
-
-	h, _ := blake2s.New128(secret[:])
-	h.Write(data)
-	prevCookie := h.Sum(nil)
-
-	return VerifyMAC2(msg1WithMAC, prevCookie)
+	bucket := currentCookieBucket()
+	cookie := computeCookieValue(secret, clientIP, bucket)
+	if VerifyMAC2(msg1WithMAC, cookie) {
+		return true
+	}
+	return bucket > 0 && VerifyMAC2(msg1WithMAC, computeCookieValue(secret, clientIP, bucket-1))
 }
 
 // RotateSecret generates a new random secret.
