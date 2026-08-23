@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
@@ -84,8 +85,55 @@ func TestParseSlogTextLine_DecodesQuotedMessage(t *testing.T) {
 	if !ok {
 		t.Fatal("expected structured slog line to be parsed")
 	}
-	if want := "write \"failed\"\tpath=C:\\TunGo\nretry err=timeout"; message != want {
+	if want := "write \"failed\"    path=C:\\TunGo\nretry err=timeout"; message != want {
 		t.Fatalf("message = %q, want %q", message, want)
+	}
+}
+
+func TestParseSlogTextLine_SanitizesTerminalControls(t *testing.T) {
+	line := `time=2026-08-21T10:00:00.000+04:00 level=ERROR msg="before\x1b[2J\r\b\aafter"`
+
+	_, _, message, ok := parseSlogTextLine(line)
+	if !ok {
+		t.Fatal("expected structured slog line to be parsed")
+	}
+	if want := `before\x1b[2J\r\b\aafter`; message != want {
+		t.Fatalf("message = %q, want %q", message, want)
+	}
+}
+
+func TestRenderLogEntry_NarrowViewportKeepsColoredMarkers(t *testing.T) {
+	timestamp, err := time.Parse(time.RFC3339Nano, "2026-08-21T10:00:00.000+04:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows := renderLogEntry(timestamp, "WARN", "first message continues", 20)
+	marker := ansiFgBrightYellow + "│" + ansiReset
+	if len(rows) < 3 {
+		t.Fatalf("expected metadata and wrapped message rows, got %q", rows)
+	}
+	for _, row := range rows[1:] {
+		if !strings.HasPrefix(row, marker) {
+			t.Errorf("expected colored marker on message row %q", row)
+		}
+		if width := visibleWidthANSI(row); width > 20 {
+			t.Errorf("message row width = %d, want <= 20: %q", width, row)
+		}
+	}
+
+	for _, width := range []int{1, 2} {
+		rows := renderLogEntry(timestamp, "WARN", "message", width)
+		hasMarker := false
+		for _, row := range rows {
+			hasMarker = hasMarker || strings.Contains(row, marker)
+			if rowWidth := visibleWidthANSI(row); rowWidth > width {
+				t.Errorf("width %d: row width = %d: %q", width, rowWidth, row)
+			}
+		}
+		if !hasMarker {
+			t.Errorf("width %d: expected a colored marker in %q", width, rows)
+		}
 	}
 }
 

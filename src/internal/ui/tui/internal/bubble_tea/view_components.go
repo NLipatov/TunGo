@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const runtimeLogViewportSnapshotLimit = 4096
@@ -197,10 +198,29 @@ func displaySlogMessage(valueAndAttrs string) string {
 			if err != nil {
 				return valueAndAttrs
 			}
-			return message + valueAndAttrs[i+1:]
+			return sanitizeLogMessage(message) + valueAndAttrs[i+1:]
 		}
 	}
 	return valueAndAttrs
+}
+
+func sanitizeLogMessage(message string) string {
+	var sanitized strings.Builder
+	sanitized.Grow(len(message))
+	for _, r := range message {
+		switch {
+		case r == '\n':
+			sanitized.WriteRune(r)
+		case r == '\t':
+			sanitized.WriteString("    ")
+		case unicode.IsControl(r):
+			quoted := strconv.QuoteRune(r)
+			sanitized.WriteString(quoted[1 : len(quoted)-1])
+		default:
+			sanitized.WriteRune(r)
+		}
+	}
+	return sanitized.String()
 }
 
 func renderLogDateDivider(date string, width int) string {
@@ -215,10 +235,30 @@ func renderLogDateDivider(date string, width int) string {
 
 func renderLogEntry(timestamp time.Time, level, message string, width int) []string {
 	marker := renderLogLevelMarker(level)
-	prefix := timestamp.Format("15:04:05.000") + " " + padRightVisible(level, 5) + " " + marker + " "
+	formattedTime := timestamp.Format("15:04:05.000")
+	prefix := formattedTime + " " + padRightVisible(level, 5) + " " + marker + " "
 	prefixWidth := visibleWidthANSI(prefix)
+	if width <= 0 {
+		return []string{stripANSI(prefix) + message}
+	}
 	if width <= prefixWidth {
-		return wrapText(stripANSI(prefix)+message, width)
+		rows := wrapText(formattedTime+" "+level, width)
+		messagePrefix := marker + " "
+		messageWidth := width - 2
+		if messageWidth < 1 {
+			messagePrefix = marker
+			messageWidth = width - 1
+		}
+		if messageWidth < 1 {
+			for _, line := range wrapText(message, width) {
+				rows = append(rows, marker, line)
+			}
+			return rows
+		}
+		for _, line := range wrapText(message, messageWidth) {
+			rows = append(rows, messagePrefix+line)
+		}
+		return rows
 	}
 
 	messageLines := wrapText(message, width-prefixWidth)
