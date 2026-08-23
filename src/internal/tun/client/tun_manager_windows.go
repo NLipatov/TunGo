@@ -92,7 +92,12 @@ func createWindowsTun(ifName string) (io.ReadWriteCloser, error) {
 		if openErr != nil {
 			return nil, fmt.Errorf("create/open adapter: %w", err)
 		}
-		return wtun.NewTUN(existing)
+		tun, err := wtun.NewTUN(existing)
+		if err != nil {
+			_ = existing.Close()
+			return nil, err
+		}
+		return tun, nil
 	}
 	tun, err := wtun.NewTUN(adapter)
 	if err != nil {
