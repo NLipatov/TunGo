@@ -38,7 +38,7 @@ type rekeyV2Handshake interface {
 	FinishRekeyV2(msg2 []byte) (c2s, s2c []byte, err error)
 }
 
-func (c *Client) establishConnection(
+func (c *Client) connect(
 	ctx context.Context,
 ) (io.ReadWriteCloser, crypto, clientRekey, error) {
 	connSettings, err := c.configuration.ActiveSettings()
@@ -47,15 +47,15 @@ func (c *Client) establishConnection(
 	}
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
-	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
+	connectCtx, establishCancel := context.WithDeadline(ctx, deadline)
 	defer establishCancel()
 
-	adapter, err := dial(establishCtx, ctx, connSettings)
+	adapter, err := dial(connectCtx, ctx, connSettings)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", connSettings.Protocol, err)
 	}
 
-	return c.establishSecuredConnection(establishCtx, adapter, connSettings.Protocol)
+	return c.handshake(connectCtx, adapter, connSettings.Protocol)
 }
 
 func dial(
@@ -72,7 +72,7 @@ func dial(
 	}
 }
 
-func (c *Client) establishSecuredConnection(
+func (c *Client) handshake(
 	ctx context.Context,
 	adapter io.ReadWriteCloser,
 	protocol settings.Protocol,

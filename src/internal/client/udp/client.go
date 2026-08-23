@@ -36,7 +36,7 @@ type Client struct {
 func New(
 	ctx context.Context,
 	transport io.ReadWriteCloser,
-	tun io.ReadWriteCloser,
+	tun io.ReadWriter,
 	crypto crypto,
 	rekey rekeySession,
 	allowedSources map[netip.Addr]struct{},

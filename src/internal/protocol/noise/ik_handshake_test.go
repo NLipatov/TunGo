@@ -810,7 +810,7 @@ func TestSecurity_CookieBoundToEphemeral(t *testing.T) {
 	for i := range secret {
 		secret[i] = byte(i + 100)
 	}
-	cm := NewCookieManagerWithSecret(secret)
+	cm := cookieManagerWithSecret(secret)
 
 	clientIP, _ := netip.ParseAddr("192.168.1.100")
 	cookieReply, err := cm.CreateCookieReply(clientIP, eph1.Public, serverPubKey)

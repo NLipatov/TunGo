@@ -21,6 +21,7 @@ func read(path string) (*Configuration, error) {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}
 
+	configuration.ApplyClientDefaults()
 	if err := Validate(configuration); err != nil {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}

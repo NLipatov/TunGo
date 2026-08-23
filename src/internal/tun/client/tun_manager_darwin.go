@@ -3,68 +3,179 @@
 package client
 
 import (
+	"errors"
+	"fmt"
 	"io"
-	"log/slog"
 	"net/netip"
-	clientconfig "tungo/internal/config/client"
+
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
-	"tungo/internal/tun/internal/darwin/manager"
+	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/darwin/ifconfig"
+	"tungo/internal/tun/internal/darwin/route"
+	"tungo/internal/tun/internal/darwin/utun"
 )
 
-type clientManager interface {
-	CreateDevice() (io.ReadWriteCloser, error)
-	DisposeDevices() error
-	SetRouteEndpoint(netip.AddrPort)
+type tun interface {
+	io.ReadWriteCloser
+	Name() string
+}
+
+type interfaceConfigurator interface {
+	LinkAddrAdd(ifName string, prefix netip.Prefix) error
+	SetMTU(ifName string, mtu int) error
+}
+
+type routeConfigurator interface {
+	Add(destIP string) error
+	AddSplit(ifName string) error
+	DelSplit(ifName string) error
+	Del(destIP string) error
 }
 
 type Manager struct {
-	manager       clientManager
-	activeTunName string
-	configuration *clientconfig.Configuration
+	settings         settings.Settings
+	tun              tun
+	ifconfig4        interfaceConfigurator
+	ifconfig6        interfaceConfigurator
+	route4           routeConfigurator
+	route6           routeConfigurator
+	pinnedServerAddr netip.Addr
 }
 
-func New(conf *clientconfig.Configuration) (*Manager, error) {
-	connectionSettings, err := conf.ActiveSettings()
+func New(configuration *client.Configuration) (*Manager, error) {
+	active, err := configuration.ActiveSettings()
 	if err != nil {
 		return nil, err
 	}
-	concrete, err := manager.New(connectionSettings)
-	if err != nil {
-		return nil, err
-	}
+	cmd := command.New()
 	return &Manager{
-		manager:       concrete,
-		activeTunName: connectionSettings.TunName,
-		configuration: conf,
+		settings:  active,
+		ifconfig4: ifconfig.NewV4(cmd),
+		ifconfig6: ifconfig.NewV6(cmd),
+		route4:    route.NewV4(cmd),
+		route6:    route.NewV6(cmd),
 	}, nil
 }
 
-func (m *Manager) CreateDevice() (io.ReadWriteCloser, error) {
-	return m.manager.CreateDevice()
-}
-
-func (m *Manager) DisposeDevices() error {
-	activeErr := m.manager.DisposeDevices()
-	m.disposeStale(m.configuration.TCPSettings)
-	m.disposeStale(m.configuration.UDPSettings)
-	m.disposeStale(m.configuration.WSSettings)
-	return activeErr
-}
-
-func (m *Manager) disposeStale(s settings.Settings) {
-	if s.TunName == "" || s.TunName == m.activeTunName {
-		return
+func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
+	if !serverAddr.IsValid() {
+		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
-	cleanupManager, err := manager.New(s)
+	serverAddr = serverAddr.Unmap()
+	tun, err := utun.New()
 	if err != nil {
-		slog.Warn("failed to prepare stale TUN cleanup", "name", s.TunName, "err", err)
-		return
+		return nil, fmt.Errorf("create utun: %w", err)
 	}
-	if err := cleanupManager.DisposeDevices(); err != nil {
-		slog.Warn("failed to clean stale TUN configuration", "name", s.TunName, "err", err)
+	m.tun = tun
+	if err := m.setMTU(); err != nil {
+		return nil, errors.Join(err, m.CloseTunnel())
 	}
+	if err := m.pinServerRoute(serverAddr); err != nil {
+		return nil, errors.Join(err, m.CloseTunnel())
+	}
+	if err := m.assignAddresses(); err != nil {
+		return nil, errors.Join(err, m.CloseTunnel())
+	}
+	if err := m.addSplitRoutes(); err != nil {
+		return nil, errors.Join(err, m.CloseTunnel())
+	}
+	return m.tun, nil
 }
 
-func (m *Manager) SetRouteEndpoint(addr netip.AddrPort) {
-	m.manager.SetRouteEndpoint(addr)
+func (m *Manager) setMTU() error {
+	configurator := m.ifconfig4
+	if !hasIPv4(m.settings) {
+		configurator = m.ifconfig6
+	}
+	if err := configurator.SetMTU(m.tun.Name(), m.settings.MTU); err != nil {
+		return fmt.Errorf("set MTU %d on %s: %w", m.settings.MTU, m.tun.Name(), err)
+	}
+	return nil
+}
+
+func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
+	var route routeConfigurator
+	switch {
+	case serverAddr.Is4() && hasIPv4(m.settings):
+		route = m.route4
+	case serverAddr.Is6() && hasIPv6(m.settings):
+		route = m.route6
+	default:
+		return nil
+	}
+	if err := route.Add(serverAddr.String()); err != nil {
+		return fmt.Errorf("route to server %s: %w", serverAddr, err)
+	}
+	m.pinnedServerAddr = serverAddr
+	return nil
+}
+
+func (m *Manager) assignAddresses() error {
+	if hasIPv4(m.settings) {
+		prefix := netip.PrefixFrom(m.settings.IPv4, m.settings.IPv4.BitLen())
+		if err := m.ifconfig4.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
+			return fmt.Errorf("set IPv4 address %s on %s: %w", prefix, m.tun.Name(), err)
+		}
+	}
+	if hasIPv6(m.settings) {
+		prefix := netip.PrefixFrom(m.settings.IPv6, m.settings.IPv6Subnet.Bits())
+		if err := m.ifconfig6.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
+			return fmt.Errorf("set IPv6 address %s on %s: %w", prefix, m.tun.Name(), err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) addSplitRoutes() error {
+	if hasIPv4(m.settings) {
+		_ = m.route4.DelSplit(m.tun.Name())
+		if err := m.route4.AddSplit(m.tun.Name()); err != nil {
+			return fmt.Errorf("add IPv4 split default: %w", err)
+		}
+	}
+	if hasIPv6(m.settings) {
+		_ = m.route6.DelSplit(m.tun.Name())
+		if err := m.route6.AddSplit(m.tun.Name()); err != nil {
+			return fmt.Errorf("add IPv6 split default: %w", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) CloseTunnel() error {
+	var cleanupErrs []error
+	if m.tun != nil {
+		if hasIPv4(m.settings) {
+			if err := m.route4.DelSplit(m.tun.Name()); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))
+			}
+		}
+		if hasIPv6(m.settings) {
+			if err := m.route6.DelSplit(m.tun.Name()); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
+			}
+		}
+	}
+	if m.pinnedServerAddr.IsValid() {
+		var err error
+		if m.pinnedServerAddr.Is4() {
+			err = m.route4.Del(m.pinnedServerAddr.String())
+		} else {
+			err = m.route6.Del(m.pinnedServerAddr.String())
+		}
+		if err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.pinnedServerAddr, err))
+		} else {
+			m.pinnedServerAddr = netip.Addr{}
+		}
+	}
+	if m.tun != nil {
+		tun := m.tun
+		m.tun = nil
+		if err := tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
+		}
+	}
+	return errors.Join(cleanupErrs...)
 }

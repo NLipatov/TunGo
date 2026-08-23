@@ -388,17 +388,33 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	}
 }
 
-func TestDeriveClientSettings_udp_uses_safe_mtu(t *testing.T) {
-	serverS := settings.Settings{MTU: 1400}
-	got, err := deriveClientSettings(serverS, settings.Host{}, settings.UDP)
-	if err != nil {
-		t.Fatalf("deriveClientSettings returned error: %v", err)
+func TestDeriveClientSettings_UDPUsesDefaultMTU(t *testing.T) {
+	tests := []struct {
+		name       string
+		ipv6Subnet netip.Prefix
+		want       int
+	}{
+		{name: "IPv4", want: settings.DefaultMTU},
+		{name: "dual stack", ipv6Subnet: mustPrefix("fd00::/64"), want: settings.DefaultMTU},
 	}
-	if got.MTU != settings.SafeMTU {
-		t.Fatalf("UDP MTU: want SafeMTU (%d), got %d", settings.SafeMTU, got.MTU)
-	}
-	if got.TunName != clientUDPTunName {
-		t.Fatalf("TunName: want %q, got %q", clientUDPTunName, got.TunName)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serverS := settings.Settings{
+				Addressing: settings.Addressing{IPv6Subnet: tt.ipv6Subnet},
+				MTU:        1400,
+			}
+			got, err := deriveClientSettings(serverS, settings.Host{}, settings.UDP)
+			if err != nil {
+				t.Fatalf("deriveClientSettings returned error: %v", err)
+			}
+			if got.MTU != tt.want {
+				t.Fatalf("UDP MTU = %d, want %d", got.MTU, tt.want)
+			}
+			if got.TunName != clientUDPTunName {
+				t.Fatalf("TunName: want %q, got %q", clientUDPTunName, got.TunName)
+			}
+		})
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"tungo/internal/config/settings"
+	"tungo/internal/tun/internal/linux/mssclamp"
 )
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,9 @@ func TestConfigure_SuccessIPv4Only(t *testing.T) {
 	if !strings.Contains(mss.log.String(), "mss_on") {
 		t.Fatalf("expected MSS install in log, got %q", mss.log.String())
 	}
+	if len(mss.installedFamilies) != 1 || mss.installedFamilies[0] != (mssclamp.Families{IPv4: true}) {
+		t.Fatalf("MSS families = %v, want IPv4 only", mss.installedFamilies)
+	}
 }
 
 func TestConfigure_SuccessDualStack(t *testing.T) {
@@ -153,6 +157,9 @@ func TestConfigure_SuccessDualStack(t *testing.T) {
 	}
 	if ipt.lastEnable6MasqCIDR == "" {
 		t.Fatal("expected IPv6 masquerade CIDR to be set")
+	}
+	if len(mss.installedFamilies) != 1 || mss.installedFamilies[0] != (mssclamp.Families{IPv4: true, IPv6: true}) {
+		t.Fatalf("MSS families = %v, want dual stack", mss.installedFamilies)
 	}
 }
 

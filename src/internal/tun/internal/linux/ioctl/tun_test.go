@@ -30,7 +30,7 @@ func TestDetectTunNameFromFd_Success(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := os.Open(os.DevNull)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestDetectTunNameFromFd_Error(t *testing.T) {
 			return 0, 0, unix.EPERM
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, _ := os.Open(os.DevNull)
 	defer func(f *os.File) {
@@ -79,7 +79,7 @@ func TestCreateTunInterface_Success(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := w.CreateTunInterface("tunTest")
 	if err != nil {
@@ -98,7 +98,7 @@ func TestCreateTunInterface_OpenError(t *testing.T) {
 			return 0, 0, 0
 		},
 	}
-	w := NewWrapper(mock, "/path/does/not/exist")
+	w := New(mock, "/path/does/not/exist")
 
 	_, err := w.CreateTunInterface("foo")
 	if err == nil {
@@ -115,7 +115,7 @@ func TestCreateTunInterface_IoctlError(t *testing.T) {
 			return 0, 0, unix.EPERM
 		},
 	}
-	w := NewWrapper(mock, os.DevNull)
+	w := New(mock, os.DevNull)
 
 	f, err := w.CreateTunInterface("tunError")
 	if err == nil {
@@ -128,47 +128,3 @@ func TestCreateTunInterface_IoctlError(t *testing.T) {
 		t.Errorf("expected returned file to be nil on error, got %v", f)
 	}
 }
-
-func TestCreateTunInterface_CloseOnError(t *testing.T) {
-	closed := false
-	// create a fake File that records Close()
-	tmp := struct {
-		*os.File
-	}{}
-	// open real /dev/null but wrap Close
-	f, _ := os.Open(os.DevNull)
-	tmp.File = f
-	defer func() {
-		if !closed {
-			t.Error("expected Close to be called on failure")
-		}
-	}()
-
-	mock := &mockCommander{
-		IoctlFn: func(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno) {
-			return 0, 0, unix.EPERM
-		},
-	}
-	// override OpenFile for this test
-	origOpen := osOpenFile
-	osOpenFile = func(name string, flag int, perm os.FileMode) (*os.File, error) {
-		return tmp.File, nil
-	}
-	defer func() { osOpenFile = origOpen }()
-
-	w := NewWrapper(mock, "ignored")
-	_, err := w.CreateTunInterface("tunError")
-	if err == nil {
-		t.Fatal("expected ioctl failure")
-	}
-
-	// now call Close ourselves to detect
-	closed = true
-	_ = tmp.Close()
-}
-
-// osOpenFile allows us to stub os.OpenFile in tests
-var osOpenFile = os.OpenFile
-
-// in wrapper, change os.OpenFile to osOpenFile
-//    tun, err := osOpenFile(w.tunPath, os.O_RDWR, 0)

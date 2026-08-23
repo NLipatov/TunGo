@@ -13,7 +13,7 @@ func TestLoadMonitor_InitialState(t *testing.T) {
 		t.Fatal("should not be under load initially")
 	}
 
-	if lm.HandshakesPerSecond() != 0 {
+	if lm.handshakesPerSecond.Load() != 0 {
 		t.Fatal("should have zero handshakes initially")
 	}
 }
@@ -54,20 +54,6 @@ func TestLoadMonitor_UnderLoad(t *testing.T) {
 	}
 }
 
-func TestLoadMonitor_SetThreshold(t *testing.T) {
-	lm := NewLoadMonitor(100)
-	lm.handshakesPerSecond.Store(50)
-
-	if lm.UnderLoad() {
-		t.Fatal("should not be under load with 50 < 100")
-	}
-
-	lm.SetThreshold(40)
-	if !lm.UnderLoad() {
-		t.Fatal("should be under load with 50 > 40")
-	}
-}
-
 func TestLoadMonitor_ConcurrentAccess(t *testing.T) {
 	lm := NewLoadMonitor(1000)
 
@@ -79,7 +65,7 @@ func TestLoadMonitor_ConcurrentAccess(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				lm.RecordHandshake()
 				_ = lm.UnderLoad()
-				_ = lm.HandshakesPerSecond()
+				_ = lm.handshakesPerSecond.Load()
 			}
 		}()
 	}
@@ -121,7 +107,7 @@ func TestLoadMonitor_RateReset(t *testing.T) {
 	lm.RecordHandshake()
 
 	// The rate should have been updated
-	rate := lm.HandshakesPerSecond()
+	rate := lm.handshakesPerSecond.Load()
 	// Due to race conditions in test, we just verify the mechanism doesn't panic
 	_ = rate
 }

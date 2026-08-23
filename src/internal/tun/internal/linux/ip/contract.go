@@ -1,22 +1,21 @@
 package ip
 
-// Contract is a interface of a wrapper around ip command from the iproute2 tool collection
+import "net/netip"
+
+// Contract describes Linux network configuration operations provided through iproute2.
 type Contract interface {
 	TunTapAddDevTun(devName string) error
 	LinkDelete(devName string) error
 	LinkSetDevUp(devName string) error
 	LinkSetDevMTU(devName string, mtu int) error
 	AddrAddDev(devName string, cidr string) error
-	AddrShowDev(ipV int, ifName string) (string, error)
 	RouteDefault() (string, error)
-	RouteAddDefaultDev(devName string) error
-	Route6AddDefaultDev(devName string) error
 	RouteAddSplitDefaultDev(devName string) error
 	Route6AddSplitDefaultDev(devName string) error
 	RouteDelSplitDefault(devName string) error
 	Route6DelSplitDefault(devName string) error
-	RouteGet(hostIp string) (string, error)
-	RouteAddDev(hostIp string, ifName string) error
-	RouteAddViaDev(hostIp string, ifName string, gateway string) error
-	RouteDel(hostIp string) error
+	RouteGet(hostAddr netip.Addr) (string, error)
+	RouteReplaceDev(hostAddr netip.Addr, ifName string) error
+	RouteReplaceViaDev(hostAddr netip.Addr, ifName string, gateway netip.Addr) error
+	RouteDel(hostAddr netip.Addr) error
 }

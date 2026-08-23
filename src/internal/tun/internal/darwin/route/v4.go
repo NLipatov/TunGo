@@ -8,38 +8,34 @@ import (
 	"net/netip"
 	"strings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	// v4SplitOne covers half of IPv4 address space
-	// (addresses between 0.0.0.0 and 127.255.255.255)
-	v4SplitOne = "0.0.0.0/1"
-	// v4SplitTwo covers half of IPv4 address space
-	// (addresses between 128.0.0.0 and 255.255.255.255)
-	v4SplitTwo          = "128.0.0.0/1"
 	loopbackIFaceNameV4 = "lo0"
 	loopbackPrefixV4    = "127."
 )
 
-type v4 struct {
+type V4 struct {
 	commander command.Runner
 }
 
-func newV4(commander command.Runner) Contract {
-	return &v4{
+func NewV4(commander command.Runner) *V4 {
+	return &V4{
 		commander: commander,
 	}
 }
 
-func (v *v4) Get(destIP string) error {
+// Add installs a host route to destIP using its current gateway or interface.
+func (v *V4) Add(destIP string) error {
 	if ip, ipErr := netip.ParseAddr(destIP); ipErr != nil {
-		return fmt.Errorf("v4.Get: invalid IP %q: %w", destIP, ipErr)
+		return fmt.Errorf("v4.Add: invalid IP %q: %w", destIP, ipErr)
 	} else if !ip.Is4() {
-		return fmt.Errorf("v4.Get: non-IPv4 dest %q", destIP)
+		return fmt.Errorf("v4.Add: non-IPv4 dest %q", destIP)
 	} else if ip.IsLoopback() {
-		return fmt.Errorf("v4.Get: invalid IP: loopback %q", destIP)
+		return fmt.Errorf("v4.Add: invalid IP: loopback %q", destIP)
 	}
 	gateway, iFace, err := v.parseRoute(destIP)
 	if err != nil {
@@ -55,25 +51,26 @@ func (v *v4) Get(destIP string) error {
 	}
 	// If still loopback after fallback – treat as an error.
 	if v.isLoop(gateway, iFace) {
-		return fmt.Errorf("v4.Get: no non-loopback route found for destination: %q", destIP)
+		return fmt.Errorf("v4.Add: no non-loopback route found for destination: %q", destIP)
 	}
 	// Delete old route to destIP, ignore possible errors.
-	_ = v.deleteQuiet(destIP)
-	// For link-local gateways add interface scope if missing.
+	_ = v.Del(destIP)
+	// Use the gateway when present; link# identifies an on-link route
+	// that must be installed via the interface.
 	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
-		return v.addViaGatewayQuiet(destIP, gateway)
+		return v.addViaGateway(destIP, gateway)
 	}
 	if iFace != "" {
-		return v.addOnLinkQuiet(destIP, iFace)
+		return v.addOnLink(destIP, iFace)
 	}
 	return fmt.Errorf("no route found for %s", destIP)
 }
 
-func (v *v4) isLoop(gateway, iFace string) bool {
+func (v *V4) isLoop(gateway, iFace string) bool {
 	return iFace == loopbackIFaceNameV4 || strings.HasPrefix(gateway, loopbackPrefixV4)
 }
 
-func (v *v4) parseRoute(target string) (gw, iFace string, err error) {
+func (v *V4) parseRoute(target string) (gw, iFace string, err error) {
 	out, err := v.commander.CombinedOutput("route", "-n", "get", target)
 	if err != nil {
 		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
@@ -93,17 +90,7 @@ func (v *v4) parseRoute(target string) (gw, iFace string, err error) {
 	return gw, iFace, nil
 }
 
-func (v *v4) Add(ip, iFace string) error {
-	_ = v.deleteQuiet(ip)
-	return v.addOnLinkQuiet(ip, iFace)
-}
-
-func (v *v4) AddViaGateway(ip, gw string) error {
-	_ = v.deleteQuiet(ip)
-	return v.addViaGatewayQuiet(ip, gw)
-}
-
-func (v *v4) Del(destIP string) error {
+func (v *V4) Del(destIP string) error {
 	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", destIP)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
 		return fmt.Errorf("route delete %s failed: %v (%s)", destIP, err, out)
@@ -111,51 +98,29 @@ func (v *v4) Del(destIP string) error {
 	return nil
 }
 
-func (v *v4) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-net", v4SplitOne, "-interface", dev)
-	_ = v.runDeleteSplit("-net", v4SplitTwo, "-interface", dev)
+func (v *V4) AddSplit(dev string) error {
+	_ = v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev)
+	_ = v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev)
 
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", v4SplitOne, "-interface", dev); err != nil &&
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v4SplitOne, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4LowerHalf, err, out)
 	}
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", v4SplitTwo, "-interface", dev); err != nil &&
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", v4SplitTwo, err, out)
+		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4UpperHalf, err, out)
 	}
 	return nil
 }
 
-func (v *v4) DelSplit(dev string) error {
+func (v *V4) DelSplit(dev string) error {
 	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-net", v4SplitOne, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-net", v4SplitTwo, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev) })
 	return eg.Wait()
 }
 
-func (v *v4) DefaultGateway() (string, error) {
-	out, err := v.commander.CombinedOutput("route", "-n", "get", "default")
-	if err != nil {
-		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) == 2 && f[0] == "gateway:" {
-			return f[1], nil
-		}
-	}
-	return "", fmt.Errorf("defaultGateway: no gateway found")
-}
-
-func (v *v4) deleteQuiet(ip string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", ip)
-	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
-		return fmt.Errorf("route delete %s failed: %v (%s)", ip, err, out)
-	}
-	return nil
-}
-
-func (v *v4) addOnLinkQuiet(ip, iFace string) error {
+func (v *V4) addOnLink(ip, iFace string) error {
 	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", ip, "-interface", iFace)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iFace, err, out)
@@ -163,7 +128,7 @@ func (v *v4) addOnLinkQuiet(ip, iFace string) error {
 	return nil
 }
 
-func (v *v4) addViaGatewayQuiet(ip, gw string) error {
+func (v *V4) addViaGateway(ip, gw string) error {
 	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
@@ -171,7 +136,7 @@ func (v *v4) addViaGatewayQuiet(ip, gw string) error {
 	return nil
 }
 
-func (v *v4) runDeleteSplit(args ...string) error {
+func (v *V4) runDeleteSplit(args ...string) error {
 	full := append([]string{"-q", "-n", "delete"}, args...)
 	out, err := v.commander.CombinedOutput("route", full...)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {

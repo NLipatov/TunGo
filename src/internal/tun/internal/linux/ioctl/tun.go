@@ -11,19 +11,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type Wrapper struct {
+type Tun struct {
 	commander Commander
 	tunPath   string
 }
 
-func NewWrapper(commander Commander, tunPath string) Contract {
-	return &Wrapper{
+func New(commander Commander, tunPath string) *Tun {
+	return &Tun{
 		commander: commander,
 		tunPath:   tunPath,
 	}
 }
 
-func (w *Wrapper) DetectTunNameFromFd(fd *os.File) (string, error) {
+func (w *Tun) DetectTunNameFromFd(fd *os.File) (string, error) {
 	var ifr IfReq
 
 	_, _, errno := w.commander.Ioctl(
@@ -39,7 +39,7 @@ func (w *Wrapper) DetectTunNameFromFd(fd *os.File) (string, error) {
 	return name, nil
 }
 
-func (w *Wrapper) CreateTunInterface(name string) (*os.File, error) {
+func (w *Tun) CreateTunInterface(name string) (*os.File, error) {
 	tun, err := os.OpenFile(w.tunPath, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %v: %v", w.tunPath, err)

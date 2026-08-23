@@ -17,6 +17,7 @@ func TestValidate_AllowsIPv6OnlyActiveSettings(t *testing.T) {
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			Port:       8080,
 		},
+		MTU: settings.MinimumIPv6MTU,
 	}
 
 	if err := Validate(cfg); err != nil {
@@ -33,6 +34,7 @@ func TestValidate_FailsWhenNoIPv4AndNoIPv6Subnet(t *testing.T) {
 			Server:  mustHostForValidate(t, "198.51.100.10"),
 			Port:    9090,
 		},
+		MTU: settings.DefaultMTU,
 	}
 
 	err := Validate(cfg)
@@ -56,6 +58,7 @@ func validClientConfiguration(t *testing.T) Configuration {
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 				Port:       9090,
 			},
+			MTU: settings.DefaultMTU,
 		},
 	}
 }
@@ -70,6 +73,7 @@ func TestValidate_FailsWhenActivePortIsInvalid(t *testing.T) {
 			IPv4Subnet: netip.MustParsePrefix("10.1.0.0/24"),
 			Port:       0,
 		},
+		MTU: settings.DefaultMTU,
 	}
 
 	err := Validate(cfg)
@@ -88,6 +92,7 @@ func TestValidate_AllowsWSSZeroPort(t *testing.T) {
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),
 			Port:       0,
 		},
+		MTU: settings.DefaultMTU,
 	}
 
 	if err := Validate(cfg); err != nil {
@@ -105,6 +110,7 @@ func TestValidate_IgnoresNestedProtocol(t *testing.T) {
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),
 			Port:       443,
 		},
+		MTU:      settings.DefaultMTU,
 		Protocol: settings.UDP,
 	}
 
@@ -334,10 +340,65 @@ func TestValidate_WSSZeroPortRejectsNonWSS(t *testing.T) {
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),
 			Port:       0,
 		},
+		MTU: settings.DefaultMTU,
 	}
 
 	err := Validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid Port 0") {
 		t.Fatalf("expected port 0 to be rejected for WS protocol, got %v", err)
+	}
+}
+
+func TestValidate_RejectsMTUOutsideActiveFamilyRange(t *testing.T) {
+	tests := []struct {
+		name       string
+		ipv6Subnet netip.Prefix
+		mtu        int
+	}{
+		{name: "negative", mtu: -1},
+		{name: "IPv4 below minimum", mtu: settings.MinimumIPv4MTU - 1},
+		{name: "IPv6 below minimum", ipv6Subnet: netip.MustParsePrefix("fd00::/64"), mtu: settings.MinimumIPv6MTU - 1},
+		{name: "above maximum", mtu: settings.MaximumMTU + 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validClientConfiguration(t)
+			cfg.UDPSettings.IPv6Subnet = tt.ipv6Subnet
+			cfg.UDPSettings.MTU = tt.mtu
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid MTU") {
+				t.Fatalf("expected MTU validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsMismatchedSubnetFamilies(t *testing.T) {
+	tests := []struct {
+		name string
+		set  func(*settings.Settings)
+	}{
+		{
+			name: "IPv6 prefix in IPv4Subnet",
+			set: func(s *settings.Settings) {
+				s.IPv4Subnet = netip.MustParsePrefix("fd00::/64")
+			},
+		},
+		{
+			name: "IPv4 prefix in IPv6Subnet",
+			set: func(s *settings.Settings) {
+				s.IPv6Subnet = netip.MustParsePrefix("10.1.0.0/24")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validClientConfiguration(t)
+			tt.set(&cfg.UDPSettings)
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "Subnet is not an IPv") {
+				t.Fatalf("expected subnet family validation error, got %v", err)
+			}
+		})
 	}
 }

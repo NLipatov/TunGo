@@ -1,6 +1,8 @@
 package mssclamp
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"tungo/internal/platform/command"
@@ -13,7 +15,8 @@ const (
 	backendIptables
 	backendNft
 
-	nftTable        = "tungo_mss"
+	legacyNftTable  = "tungo_mss"
+	nftTablePrefix  = "tungo_mss_"
 	nftOutputChain  = "tungo_mss_output"
 	nftForwardChain = "tungo_mss_forward"
 )
@@ -23,26 +26,22 @@ const (
 // the UDP tunnel by advertising an MSS that fits the effective tunnel PMTU.
 type Manager struct {
 	commander command.Runner
-	backend   backend
-	ipv6      int8 // 0=unknown, 1=available, -1=unavailable
 }
 
 func NewManager(commander command.Runner) *Manager {
 	return &Manager{commander: commander}
 }
 
-// Install applies MSS clamping for IPv4 and IPv6 TCP SYN packets entering or
-// leaving the given TUN interface. The rules are added before packets are
-// encapsulated into the UDP tunnel to avoid PMTU blackholes for TLS traffic.
-func (m *Manager) Install(tunName string) error {
-	backend, err := m.detectBackend()
+// Install applies MSS clamping for the configured IP families.
+func (m *Manager) Install(tunName string, families Families) error {
+	backend, err := m.detectBackend(families)
 	if err != nil {
 		return err
 	}
 
 	switch backend {
 	case backendIptables:
-		return m.installIptables(tunName)
+		return m.installIptables(tunName, families)
 	case backendNft:
 		return m.installNft(tunName)
 	default:
@@ -50,39 +49,47 @@ func (m *Manager) Install(tunName string) error {
 	}
 }
 
-// Remove tears down MSS clamping rules bound to the given TUN interface.
+// Remove tears down every MSS clamping rule TunGo may own for the interface.
+// It does not depend on the current configuration so stale rules can be
+// removed after a crash or an IP-family change.
 func (m *Manager) Remove(tunName string) error {
-	backend, err := m.detectBackend()
-	if err != nil {
-		return err
+	var (
+		cleanupErrs []error
+		available   bool
+	)
+	if m.iptablesUsable() {
+		available = true
+		cleanupErrs = append(cleanupErrs, m.runCleanup(ipv4Rules(tunName, "-D", "delete")))
 	}
-
-	switch backend {
-	case backendIptables:
-		return m.removeIptables(tunName)
-	case backendNft:
-		return m.removeNft()
-	default:
-		return fmt.Errorf("unsupported MSS clamping backend")
+	if m.ip6tablesUsable() {
+		available = true
+		cleanupErrs = append(cleanupErrs, m.runCleanup(ipv6Rules(tunName, "-D", "delete")))
 	}
+	if m.nftUsable() {
+		available = true
+		cleanupErrs = append(cleanupErrs, m.removeNft(tunName))
+	}
+	if !available {
+		return fmt.Errorf("neither iptables nor nftables is available for TCP MSS clamping cleanup")
+	}
+	return errors.Join(cleanupErrs...)
 }
 
-func (m *Manager) detectBackend() (backend, error) {
-	if m.backend != backendUnknown {
-		return m.backend, nil
+func (m *Manager) detectBackend(families Families) (backend, error) {
+	if !families.IPv4 && !families.IPv6 {
+		return backendUnknown, fmt.Errorf("no IP families configured for TCP MSS clamping")
 	}
-
-	if _, err := m.commander.Output("iptables", "--version"); err == nil {
-		m.backend = backendIptables
-		return m.backend, nil
+	iptablesReady := !families.IPv4 || m.iptablesUsable()
+	if iptablesReady && families.IPv6 {
+		iptablesReady = m.ip6tablesUsable()
 	}
-
-	if _, err := m.commander.Output("nft", "--version"); err == nil {
-		m.backend = backendNft
-		return m.backend, nil
+	if iptablesReady {
+		return backendIptables, nil
 	}
-
-	return backendUnknown, fmt.Errorf("neither iptables nor nftables is available for TCP MSS clamping")
+	if m.nftUsable() {
+		return backendNft, nil
+	}
+	return backendUnknown, fmt.Errorf("neither iptables nor nftables can configure TCP MSS clamping for the requested IP families")
 }
 
 type describedCommand struct {
@@ -101,147 +108,118 @@ func (m *Manager) run(commands []describedCommand) error {
 	return nil
 }
 
-func (m *Manager) installIptables(tunName string) error {
-	ipv4Rules := []describedCommand{
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-A", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv4 OUTPUT TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-A", "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv4 FORWARD oif TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-A", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv4 FORWARD iif TCPMSS clamp for " + tunName,
-		},
+func (m *Manager) runCleanup(commands []describedCommand) error {
+	var cleanupErrs []error
+	for _, cmd := range commands {
+		output, err := m.commander.CombinedOutput(cmd.name, cmd.args...)
+		if err != nil && !ruleMissing(output, err) {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to %s: %v, output: %s", cmd.desc, err, output))
+		}
 	}
-	if err := m.run(ipv4Rules); err != nil {
-		return err
-	}
-
-	if !m.ip6tablesUsable() {
-		return nil
-	}
-
-	ipv6Rules := []describedCommand{
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-A", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv6 OUTPUT TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-A", "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv6 FORWARD oif TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-A", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "add IPv6 FORWARD iif TCPMSS clamp for " + tunName,
-		},
-	}
-	return m.run(ipv6Rules)
+	return errors.Join(cleanupErrs...)
 }
 
-func (m *Manager) removeIptables(tunName string) error {
-	ipv4Rules := []describedCommand{
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-D", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv4 OUTPUT TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-D", "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv4 FORWARD oif TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "iptables",
-			args: []string{"-t", "mangle", "-D", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv4 FORWARD iif TCPMSS clamp for " + tunName,
-		},
+func (m *Manager) installIptables(tunName string, families Families) error {
+	var rules []describedCommand
+	if families.IPv4 {
+		rules = append(rules, ipv4Rules(tunName, "-A", "add")...)
 	}
-	if err := m.run(ipv4Rules); err != nil {
-		return err
+	if families.IPv6 {
+		rules = append(rules, ipv6Rules(tunName, "-A", "add")...)
 	}
-
-	if !m.ip6tablesUsable() {
-		return nil
-	}
-
-	ipv6Rules := []describedCommand{
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-D", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv6 OUTPUT TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-D", "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv6 FORWARD oif TCPMSS clamp for " + tunName,
-		},
-		{
-			name: "ip6tables",
-			args: []string{"-t", "mangle", "-D", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
-			desc: "delete IPv6 FORWARD iif TCPMSS clamp for " + tunName,
-		},
-	}
-	return m.run(ipv6Rules)
+	return m.run(rules)
 }
 
-// ip6tablesUsable reports whether ip6tables can manage mangle rules.
-// On kernels with ipv6.disable=1 the ip6_tables module is absent and
-// all ip6tables commands fail. The result is cached for the Manager lifetime.
+func ipv4Rules(tunName, operation, action string) []describedCommand {
+	return []describedCommand{
+		{
+			name: "iptables",
+			args: []string{"-t", "mangle", operation, "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv4 OUTPUT TCPMSS clamp for " + tunName,
+		},
+		{
+			name: "iptables",
+			args: []string{"-t", "mangle", operation, "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv4 FORWARD oif TCPMSS clamp for " + tunName,
+		},
+		{
+			name: "iptables",
+			args: []string{"-t", "mangle", operation, "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv4 FORWARD iif TCPMSS clamp for " + tunName,
+		},
+	}
+}
+
+func ipv6Rules(tunName, operation, action string) []describedCommand {
+	return []describedCommand{
+		{
+			name: "ip6tables",
+			args: []string{"-t", "mangle", operation, "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv6 OUTPUT TCPMSS clamp for " + tunName,
+		},
+		{
+			name: "ip6tables",
+			args: []string{"-t", "mangle", operation, "FORWARD", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv6 FORWARD oif TCPMSS clamp for " + tunName,
+		},
+		{
+			name: "ip6tables",
+			args: []string{"-t", "mangle", operation, "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
+			desc: action + " IPv6 FORWARD iif TCPMSS clamp for " + tunName,
+		},
+	}
+}
+
+func (m *Manager) iptablesUsable() bool {
+	_, err := m.commander.Output("iptables", "--version")
+	return err == nil
+}
+
 func (m *Manager) ip6tablesUsable() bool {
-	if m.ipv6 != 0 {
-		return m.ipv6 > 0
-	}
 	_, err := m.commander.CombinedOutput("ip6tables", "-t", "mangle", "-L", "-n")
-	if err == nil {
-		m.ipv6 = 1
-	} else {
-		m.ipv6 = -1
-	}
-	return m.ipv6 > 0
+	return err == nil
+}
+
+func (m *Manager) nftUsable() bool {
+	_, err := m.commander.Output("nft", "--version")
+	return err == nil
 }
 
 func (m *Manager) installNft(tunName string) error {
-	// Clean up any stale table from previous runs so we can install a fresh set.
-	_, _ = m.commander.CombinedOutput("nft", "delete", "table", "inet", nftTable)
+	table := nftTableName(tunName)
+	// Clean up stale rules for this TUN and the table used by older versions.
+	_, _ = m.commander.CombinedOutput("nft", "delete", "table", "inet", table)
+	_, _ = m.commander.CombinedOutput("nft", "delete", "table", "inet", legacyNftTable)
 
 	commands := []describedCommand{
 		{
 			name: "nft",
-			args: []string{"add", "table", "inet", nftTable},
+			args: []string{"add", "table", "inet", table},
 			desc: "create nftable table for MSS clamping",
 		},
 		{
 			name: "nft",
-			args: []string{"add", "chain", "inet", nftTable, nftOutputChain, "{", "type", "route", "hook", "output", "priority", "mangle", ";", "policy", "accept", ";", "}"},
+			args: []string{"add", "chain", "inet", table, nftOutputChain, "{", "type", "route", "hook", "output", "priority", "mangle", ";", "policy", "accept", ";", "}"},
 			desc: "create nftable output chain",
 		},
 		{
 			name: "nft",
-			args: []string{"add", "chain", "inet", nftTable, nftForwardChain, "{", "type", "filter", "hook", "forward", "priority", "mangle", ";", "policy", "accept", ";", "}"},
+			args: []string{"add", "chain", "inet", table, nftForwardChain, "{", "type", "filter", "hook", "forward", "priority", "mangle", ";", "policy", "accept", ";", "}"},
 			desc: "create nftable forward chain",
 		},
 		{
 			name: "nft",
-			args: append([]string{"add", "rule", "inet", nftTable, nftOutputChain, "oifname", tunName}, nftClampRule()...),
+			args: append([]string{"add", "rule", "inet", table, nftOutputChain, "oifname", tunName}, nftClampRule()...),
 			desc: "add nft OUTPUT TCPMSS clamp for " + tunName,
 		},
 		{
 			name: "nft",
-			args: append([]string{"add", "rule", "inet", nftTable, nftForwardChain, "oifname", tunName}, nftClampRule()...),
+			args: append([]string{"add", "rule", "inet", table, nftForwardChain, "oifname", tunName}, nftClampRule()...),
 			desc: "add nft FORWARD oif TCPMSS clamp for " + tunName,
 		},
 		{
 			name: "nft",
-			args: append([]string{"add", "rule", "inet", nftTable, nftForwardChain, "iifname", tunName}, nftClampRule()...),
+			args: append([]string{"add", "rule", "inet", table, nftForwardChain, "iifname", tunName}, nftClampRule()...),
 			desc: "add nft FORWARD iif TCPMSS clamp for " + tunName,
 		},
 	}
@@ -249,8 +227,15 @@ func (m *Manager) installNft(tunName string) error {
 	return m.run(commands)
 }
 
-func (m *Manager) removeNft() error {
-	output, err := m.commander.CombinedOutput("nft", "delete", "table", "inet", nftTable)
+func (m *Manager) removeNft(tunName string) error {
+	return errors.Join(
+		m.deleteNftTable(nftTableName(tunName)),
+		m.deleteNftTable(legacyNftTable),
+	)
+}
+
+func (m *Manager) deleteNftTable(table string) error {
+	output, err := m.commander.CombinedOutput("nft", "delete", "table", "inet", table)
 	if err != nil {
 		// Treat missing tables as benign; they mean nothing is left to clean up.
 		msg := strings.ToLower(err.Error() + string(output))
@@ -264,6 +249,18 @@ func (m *Manager) removeNft() error {
 	return nil
 }
 
+func nftTableName(tunName string) string {
+	return nftTablePrefix + hex.EncodeToString([]byte(tunName))
+}
+
 func nftClampRule() []string {
-	return []string{"tcp", "flags", "syn|rst", "==", "syn", "tcp", "option", "maxseg", "size", "set", "clamp", "to", "pmtu"}
+	return []string{"tcp", "flags", "syn", "/", "syn,rst", "tcp", "option", "maxseg", "size", "set", "rt", "mtu"}
+}
+
+func ruleMissing(output []byte, err error) bool {
+	message := strings.ToLower(err.Error() + " " + string(output))
+	return strings.Contains(message, "bad rule") ||
+		strings.Contains(message, "does a matching rule exist") ||
+		strings.Contains(message, "no chain/target/match") ||
+		strings.Contains(message, "rule does not exist")
 }
