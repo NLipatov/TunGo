@@ -149,28 +149,28 @@ func (i *Configurator) RouteGet(hostIp string) (string, error) {
 	return string(routeBytes), nil
 }
 
-// RouteAddDev adds a route to host via device
-func (i *Configurator) RouteAddDev(hostIp string, ifName string) error {
-	args, err := hostRouteArgs(hostIp, "route", "add", hostIp, "dev", ifName)
+// RouteReplaceDev ensures that a host route exists via the device.
+func (i *Configurator) RouteReplaceDev(hostIp string, ifName string) error {
+	args, err := hostRouteArgs(hostIp, "route", "replace", hostIp, "dev", ifName)
 	if err != nil {
 		return err
 	}
 	output, err := i.commander.CombinedOutput("ip", args...)
 	if err != nil {
-		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
+		return fmt.Errorf("failed to replace route: %s, output: %s", err, output)
 	}
 	return err
 }
 
-// RouteAddViaDev adds a route to host via device via gateway
-func (i *Configurator) RouteAddViaDev(hostIp string, ifName string, gateway string) error {
-	args, err := hostRouteArgs(hostIp, "route", "add", hostIp, "via", gateway, "dev", ifName)
+// RouteReplaceViaDev ensures that a host route exists via the gateway and device.
+func (i *Configurator) RouteReplaceViaDev(hostIp string, ifName string, gateway string) error {
+	args, err := hostRouteArgs(hostIp, "route", "replace", hostIp, "via", gateway, "dev", ifName)
 	if err != nil {
 		return err
 	}
 	output, err := i.commander.CombinedOutput("ip", args...)
 	if err != nil {
-		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
+		return fmt.Errorf("failed to replace route: %s, output: %s", err, output)
 	}
 	return err
 }

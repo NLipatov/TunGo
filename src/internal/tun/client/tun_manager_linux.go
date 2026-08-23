@@ -115,12 +115,12 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 			return fmt.Errorf("failed to parse route to server IP")
 		}
 		if viaGateway == "" {
-			err = m.ip.RouteAddDev(serverAddrString, devInterface)
+			err = m.ip.RouteReplaceDev(serverAddrString, devInterface)
 		} else {
-			err = m.ip.RouteAddViaDev(serverAddrString, devInterface, viaGateway)
+			err = m.ip.RouteReplaceViaDev(serverAddrString, devInterface, viaGateway)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to add route to server IP: %v", err)
+			return fmt.Errorf("failed to replace route to server IP: %v", err)
 		}
 		m.pinnedServerAddr = serverAddr
 	}

@@ -13,7 +13,7 @@ type Contract interface {
 	RouteDelSplitDefault(devName string) error
 	Route6DelSplitDefault(devName string) error
 	RouteGet(hostIp string) (string, error)
-	RouteAddDev(hostIp string, ifName string) error
-	RouteAddViaDev(hostIp string, ifName string, gateway string) error
+	RouteReplaceDev(hostIp string, ifName string) error
+	RouteReplaceViaDev(hostIp string, ifName string, gateway string) error
 	RouteDel(hostIp string) error
 }

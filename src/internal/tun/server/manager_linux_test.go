@@ -41,8 +41,8 @@ func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error { return nil
 func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string) error     { return nil }
 func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string) error    { return nil }
 func (m *TunFactoryMockIP) RouteGet(_ string) (string, error)       { return "", nil }
-func (m *TunFactoryMockIP) RouteAddDev(_, _ string) error           { return nil }
-func (m *TunFactoryMockIP) RouteAddViaDev(_, _, _ string) error     { return nil }
+func (m *TunFactoryMockIP) RouteReplaceDev(_, _ string) error       { return nil }
+func (m *TunFactoryMockIP) RouteReplaceViaDev(_, _, _ string) error { return nil }
 func (m *TunFactoryMockIP) RouteDel(_ string) error                 { return nil }
 
 // Variant: RouteDefault returns empty iface (to hit "skipping iptables forwarding disable").

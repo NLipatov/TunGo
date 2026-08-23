@@ -20,12 +20,12 @@ import (
 // clienttunManagerIPMock simulates `ip` contract and records call sequence.
 // `failStep` makes the corresponding step return an error.
 type clienttunManagerIPMock struct {
-	log             bytes.Buffer
-	routeReply      string
-	failStep        string
-	routeGetTargets []string
-	routeAddTargets []string
-	routeDelTargets []string
+	log                 bytes.Buffer
+	routeReply          string
+	failStep            string
+	routeGetTargets     []string
+	routeReplaceTargets []string
+	routeDelTargets     []string
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -46,13 +46,13 @@ func (m *clienttunManagerIPMock) RouteGet(target string) (string, error) {
 	m.routeGetTargets = append(m.routeGetTargets, target)
 	return m.routeReply, nil
 }
-func (m *clienttunManagerIPMock) RouteAddDev(target, _ string) error {
-	m.routeAddTargets = append(m.routeAddTargets, target)
-	return m.mark("radd")
+func (m *clienttunManagerIPMock) RouteReplaceDev(target, _ string) error {
+	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
+	return m.mark("rreplace")
 }
-func (m *clienttunManagerIPMock) RouteAddViaDev(target, _, _ string) error {
-	m.routeAddTargets = append(m.routeAddTargets, target)
-	return m.mark("raddvia")
+func (m *clienttunManagerIPMock) RouteReplaceViaDev(target, _, _ string) error {
+	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
+	return m.mark("rreplacevia")
 }
 func (m *clienttunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
 func (m *clienttunManagerIPMock) Route6AddSplitDefaultDev(string) error { return m.mark("splitdef6") }
@@ -163,8 +163,8 @@ func newMgr(
 		RouteDelSplitDefault(string) error
 		Route6DelSplitDefault(string) error
 		RouteGet(string) (string, error)
-		RouteAddDev(string, string) error
-		RouteAddViaDev(string, string, string) error
+		RouteReplaceDev(string, string) error
+		RouteReplaceViaDev(string, string, string) error
 		RouteDel(string) error
 	},
 	ioctlMock interface {
@@ -277,7 +277,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	}
 	defer func() { _ = m.CloseTunnel() }()
 
-	want := "add;up;addr;raddvia;splitdef;mtu;"
+	want := "add;up;addr;rreplacevia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -311,7 +311,7 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	}
 	defer func() { _ = m.CloseTunnel() }()
 
-	want := "add;up;addr;radd;splitdef;mtu;"
+	want := "add;up;addr;rreplace;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -389,7 +389,7 @@ func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "radd", "splitdef", "mtu"}
+	steps := []string{"add", "up", "addr", "rreplace", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
@@ -400,7 +400,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "raddvia", "splitdef", "mtu"}
+	steps := []string{"add", "up", "addr", "rreplacevia", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
@@ -436,7 +436,7 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 
 func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
-	// and add route to IPv6 server.
+	// and replace the route to the IPv6 server.
 	ipMock := &clienttunManagerIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
 	var installedFamilies []mssclamp.Families
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
@@ -466,8 +466,8 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	if len(ipMock.routeGetTargets) != 1 || ipMock.routeGetTargets[0] != testServerAddrV6.String() {
 		t.Fatalf("route lookup targets = %v, want [%s]", ipMock.routeGetTargets, testServerAddrV6)
 	}
-	if len(ipMock.routeAddTargets) != 1 || ipMock.routeAddTargets[0] != testServerAddrV6.String() {
-		t.Fatalf("route add targets = %v, want [%s]", ipMock.routeAddTargets, testServerAddrV6)
+	if len(ipMock.routeReplaceTargets) != 1 || ipMock.routeReplaceTargets[0] != testServerAddrV6.String() {
+		t.Fatalf("route replace targets = %v, want [%s]", ipMock.routeReplaceTargets, testServerAddrV6)
 	}
 	if len(installedFamilies) != 1 || installedFamilies[0] != (mssclamp.Families{IPv4: true, IPv6: true}) {
 		t.Fatalf("MSS families = %v, want dual stack", installedFamilies)
@@ -492,7 +492,7 @@ func TestOpenTunnel_IPv6Only_FullPath(t *testing.T) {
 	}
 	defer func() { _ = mgr.CloseTunnel() }()
 
-	want := "add;up;addr;raddvia;splitdef6;mtu;"
+	want := "add;up;addr;rreplacevia;splitdef6;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call order = %q, want %q", got, want)
 	}
@@ -513,8 +513,8 @@ func TestOpenTunnelSingleStackSkipsUncoveredServerFamily(t *testing.T) {
 	}
 	defer func() { _ = mgr.CloseTunnel() }()
 
-	if len(ipMock.routeGetTargets) != 0 || len(ipMock.routeAddTargets) != 0 || mgr.pinnedServerAddr.IsValid() {
-		t.Fatalf("unexpected pinned route: get=%v add=%v cached=%s", ipMock.routeGetTargets, ipMock.routeAddTargets, mgr.pinnedServerAddr)
+	if len(ipMock.routeGetTargets) != 0 || len(ipMock.routeReplaceTargets) != 0 || mgr.pinnedServerAddr.IsValid() {
+		t.Fatalf("unexpected pinned route: get=%v replace=%v cached=%s", ipMock.routeGetTargets, ipMock.routeReplaceTargets, mgr.pinnedServerAddr)
 	}
 }
 

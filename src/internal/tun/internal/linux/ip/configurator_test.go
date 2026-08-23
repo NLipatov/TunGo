@@ -261,34 +261,34 @@ func TestRouteGet(t *testing.T) {
 	})
 }
 
-func TestRouteAddDev(t *testing.T) {
+func TestRouteReplaceDev(t *testing.T) {
 	recorder := &recordingCommander{}
-	if err := New(recorder).RouteAddDev("2001:db8::1", "tun0"); err != nil {
+	if err := New(recorder).RouteReplaceDev("2001:db8::1", "tun0"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"ip", "-6", "route", "add", "2001:db8::1", "dev", "tun0"}
+	want := []string{"ip", "-6", "route", "replace", "2001:db8::1", "dev", "tun0"}
 	if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], want) {
 		t.Fatalf("calls = %v, want %v", recorder.combinedCalls, want)
 	}
 	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "output", errors.New("fail")).RouteAddDev("1.1.1.1", "tun0")
+		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceDev("1.1.1.1", "tun0")
 		if err == nil {
 			t.Fatal("expected error")
 		}
 	})
 }
 
-func TestRouteAddViaDev(t *testing.T) {
+func TestRouteReplaceViaDev(t *testing.T) {
 	recorder := &recordingCommander{}
-	if err := New(recorder).RouteAddViaDev("1.1.1.1", "tun0", "10.0.0.1"); err != nil {
+	if err := New(recorder).RouteReplaceViaDev("1.1.1.1", "tun0", "10.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"ip", "-4", "route", "add", "1.1.1.1", "via", "10.0.0.1", "dev", "tun0"}
+	want := []string{"ip", "-4", "route", "replace", "1.1.1.1", "via", "10.0.0.1", "dev", "tun0"}
 	if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], want) {
 		t.Fatalf("calls = %v, want %v", recorder.combinedCalls, want)
 	}
 	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "output", errors.New("fail")).RouteAddViaDev("1.1.1.1", "tun0", "10.0.0.1")
+		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceViaDev("1.1.1.1", "tun0", "10.0.0.1")
 		if err == nil {
 			t.Fatal("expected error")
 		}
