@@ -77,6 +77,18 @@ func TestRenderLogsViewportContent_ColorsMarkersByLevel(t *testing.T) {
 	}
 }
 
+func TestParseSlogTextLine_DecodesQuotedMessage(t *testing.T) {
+	line := `time=2026-08-21T10:00:00.000+04:00 level=ERROR msg="write \"failed\"\tpath=C:\\TunGo\nretry" err=timeout`
+
+	_, _, message, ok := parseSlogTextLine(line)
+	if !ok {
+		t.Fatal("expected structured slog line to be parsed")
+	}
+	if want := "write \"failed\"\tpath=C:\\TunGo\nretry err=timeout"; message != want {
+		t.Fatalf("message = %q, want %q", message, want)
+	}
+}
+
 func TestTruncateWithEllipsis_EdgeCases(t *testing.T) {
 	if got := truncateWithEllipsis("abcdef", 0); got != "abcdef" {
 		t.Fatalf("expected unchanged for width<=0, got %q", got)

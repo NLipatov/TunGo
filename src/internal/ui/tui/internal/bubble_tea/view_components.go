@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -192,7 +193,11 @@ func displaySlogMessage(valueAndAttrs string) string {
 		case valueAndAttrs[i] == '\\':
 			escaped = true
 		case valueAndAttrs[i] == '"':
-			return valueAndAttrs[1:i] + valueAndAttrs[i+1:]
+			message, err := strconv.Unquote(valueAndAttrs[:i+1])
+			if err != nil {
+				return valueAndAttrs
+			}
+			return message + valueAndAttrs[i+1:]
 		}
 	}
 	return valueAndAttrs
