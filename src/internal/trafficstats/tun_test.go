@@ -10,7 +10,6 @@ type meteredTunStub struct {
 	readErr  error
 	writeN   int
 	writeErr error
-	closed   bool
 }
 
 func (t *meteredTunStub) Read(p []byte) (int, error) {
@@ -21,12 +20,7 @@ func (t *meteredTunStub) Write([]byte) (int, error) {
 	return t.writeN, t.writeErr
 }
 
-func (t *meteredTunStub) Close() error {
-	t.closed = true
-	return nil
-}
-
-func TestWrapTunCountsActualIOBytesAndDelegatesClose(t *testing.T) {
+func TestWrapTunCountsActualIOBytes(t *testing.T) {
 	readErr := errors.New("read")
 	writeErr := errors.New("write")
 	raw := &meteredTunStub{
@@ -47,10 +41,6 @@ func TestWrapTunCountsActualIOBytesAndDelegatesClose(t *testing.T) {
 	if n, err := tun.Write(make([]byte, 8)); n != 3 || !errors.Is(err, writeErr) {
 		t.Fatalf("Write() = (%d, %v), want (3, %v)", n, err, writeErr)
 	}
-	if err := tun.Close(); err != nil || !raw.closed {
-		t.Fatalf("Close() error = %v, delegated = %v", err, raw.closed)
-	}
-
 	snapshot := collector.Snapshot()
 	if snapshot.TXBytesTotal != 4 || snapshot.RXBytesTotal != 3 {
 		t.Fatalf("snapshot = %+v, want TX=4 RX=3", snapshot)

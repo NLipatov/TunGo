@@ -1,15 +1,43 @@
 package mssclamp
 
 import (
-	"reflect"
+	"errors"
 	"strings"
 	"testing"
+)
+
+const (
+	iptablesProbe  = "iptables --version"
+	ip6tablesProbe = "ip6tables -t mangle -L -n"
+	nftProbe       = "nft --version"
 )
 
 type recordingCommander struct {
 	calls     []string
 	outputMap map[string][]byte
 	errMap    map[string]error
+}
+
+func newRecordingCommander(available ...string) *recordingCommander {
+	errMap := map[string]error{
+		iptablesProbe:  errors.New("iptables unavailable"),
+		ip6tablesProbe: errors.New("ip6tables unavailable"),
+		nftProbe:       errors.New("nft unavailable"),
+	}
+	for _, command := range available {
+		switch command {
+		case "iptables":
+			delete(errMap, iptablesProbe)
+		case "ip6tables":
+			delete(errMap, ip6tablesProbe)
+		case "nft":
+			delete(errMap, nftProbe)
+		}
+	}
+	return &recordingCommander{
+		outputMap: make(map[string][]byte),
+		errMap:    errMap,
+	}
 }
 
 func (m *recordingCommander) record(name string, args ...string) string {
@@ -33,182 +61,238 @@ func (m *recordingCommander) Run(name string, args ...string) error {
 	return m.errMap[cmd]
 }
 
-func TestManager_InstallAndRemove_Iptables(t *testing.T) {
-	cmd := &recordingCommander{
-		outputMap: map[string][]byte{
-			"iptables --version": {},
+func TestInstallPrefersIptablesWhenItCoversRequestedFamilies(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		families   Families
+		available  []string
+		wantProbes []string
+		wantRules  []string
+		absent     []string
+	}{
+		{
+			name:       "IPv4 only",
+			families:   Families{IPv4: true},
+			available:  []string{"iptables", "nft"},
+			wantProbes: []string{iptablesProbe},
+			wantRules:  []string{"iptables -t mangle -A OUTPUT", "iptables -t mangle -A FORWARD -o", "iptables -t mangle -A FORWARD -i"},
+			absent:     []string{"ip6tables", "nft --version"},
 		},
-		errMap: map[string]error{},
-	}
-
-	m := NewManager(cmd)
-	if err := m.Install("tun0"); err != nil {
-		t.Fatalf("Install returned error: %v", err)
-	}
-	if err := m.Remove("tun0"); err != nil {
-		t.Fatalf("Remove returned error: %v", err)
-	}
-
-	expected := []string{
-		"iptables --version",
-		// Install IPv4
-		"iptables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		// Probe ip6tables availability
-		"ip6tables -t mangle -L -n",
-		// Install IPv6
-		"ip6tables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"ip6tables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"ip6tables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		// Remove IPv4
-		"iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		// ip6tables probe cached — no second probe
-		// Remove IPv6
-		"ip6tables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"ip6tables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"ip6tables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-	}
-
-	if !reflect.DeepEqual(expected, cmd.calls) {
-		t.Fatalf("unexpected commands.\nwant: %v\n got: %v", expected, cmd.calls)
+		{
+			name:       "IPv6 only",
+			families:   Families{IPv6: true},
+			available:  []string{"ip6tables", "nft"},
+			wantProbes: []string{ip6tablesProbe},
+			wantRules:  []string{"ip6tables -t mangle -A OUTPUT", "ip6tables -t mangle -A FORWARD -o", "ip6tables -t mangle -A FORWARD -i"},
+			absent:     []string{"iptables --version", "nft --version"},
+		},
+		{
+			name:       "dual stack",
+			families:   Families{IPv4: true, IPv6: true},
+			available:  []string{"iptables", "ip6tables", "nft"},
+			wantProbes: []string{iptablesProbe, ip6tablesProbe},
+			wantRules: []string{
+				"iptables -t mangle -A OUTPUT",
+				"iptables -t mangle -A FORWARD -o",
+				"iptables -t mangle -A FORWARD -i",
+				"ip6tables -t mangle -A OUTPUT",
+				"ip6tables -t mangle -A FORWARD -o",
+				"ip6tables -t mangle -A FORWARD -i",
+			},
+			absent: []string{"nft --version"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := newRecordingCommander(test.available...)
+			if err := NewManager(cmd).Install("tun0", test.families); err != nil {
+				t.Fatalf("Install() error = %v", err)
+			}
+			calls := strings.Join(cmd.calls, "\n")
+			for _, want := range append(test.wantProbes, test.wantRules...) {
+				if !strings.Contains(calls, want) {
+					t.Errorf("calls do not contain %q:\n%s", want, calls)
+				}
+			}
+			for _, absent := range test.absent {
+				if strings.Contains(calls, absent) {
+					t.Errorf("calls unexpectedly contain %q:\n%s", absent, calls)
+				}
+			}
+		})
 	}
 }
 
-func TestManager_InstallAndRemove_Iptables_IPv4Only(t *testing.T) {
-	cmd := &recordingCommander{
-		outputMap: map[string][]byte{
-			"iptables --version": {},
+func TestInstallFallsBackToNftWhenIptablesCannotCoverRequestedFamilies(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		families   Families
+		available  []string
+		wantProbes []string
+	}{
+		{
+			name:       "IPv4",
+			families:   Families{IPv4: true},
+			available:  []string{"nft"},
+			wantProbes: []string{iptablesProbe, nftProbe},
 		},
-		errMap: map[string]error{
-			// ip6tables probe fails — simulates ipv6.disable=1
-			"ip6tables -t mangle -L -n": assertError("ip6_tables module not found"),
+		{
+			name:       "IPv6",
+			families:   Families{IPv6: true},
+			available:  []string{"nft"},
+			wantProbes: []string{ip6tablesProbe, nftProbe},
 		},
-	}
-
-	m := NewManager(cmd)
-	if err := m.Install("tun0"); err != nil {
-		t.Fatalf("Install returned error: %v", err)
-	}
-	if err := m.Remove("tun0"); err != nil {
-		t.Fatalf("Remove returned error: %v", err)
-	}
-
-	expected := []string{
-		"iptables --version",
-		// Install IPv4 only
-		"iptables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		// ip6tables probe — fails, IPv6 skipped
-		"ip6tables -t mangle -L -n",
-		// Remove IPv4 only (ip6tables cached as unavailable)
-		"iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-		"iptables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
-	}
-
-	if !reflect.DeepEqual(expected, cmd.calls) {
-		t.Fatalf("unexpected commands.\nwant: %v\n got: %v", expected, cmd.calls)
+		{
+			name:       "dual stack without ip6tables",
+			families:   Families{IPv4: true, IPv6: true},
+			available:  []string{"iptables", "nft"},
+			wantProbes: []string{iptablesProbe, ip6tablesProbe, nftProbe},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := newRecordingCommander(test.available...)
+			if err := NewManager(cmd).Install("tun0", test.families); err != nil {
+				t.Fatalf("Install() error = %v", err)
+			}
+			calls := strings.Join(cmd.calls, "\n")
+			for _, want := range test.wantProbes {
+				if !strings.Contains(calls, want) {
+					t.Errorf("calls do not contain %q:\n%s", want, calls)
+				}
+			}
+			if !strings.Contains(calls, "nft add table inet "+nftTableName("tun0")) {
+				t.Errorf("nft rules were not installed:\n%s", calls)
+			}
+			if !strings.Contains(calls, "tcp flags syn / syn,rst tcp option maxseg size set rt mtu") {
+				t.Errorf("nft MSS rule is invalid:\n%s", calls)
+			}
+			if strings.Contains(calls, "iptables -t mangle -A") || strings.Contains(calls, "ip6tables -t mangle -A") {
+				t.Errorf("iptables rules were mixed with nft rules:\n%s", calls)
+			}
+		})
 	}
 }
 
-func TestManager_Install_IptablesErrorBubblesUp(t *testing.T) {
-	cmd := &recordingCommander{
-		outputMap: map[string][]byte{
-			"iptables --version": {},
-		},
-		errMap: map[string]error{
-			"iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": assertError("fail"),
-		},
+func TestNftTablesAreScopedToTun(t *testing.T) {
+	cmd := newRecordingCommander("nft")
+	manager := NewManager(cmd)
+	for _, tunName := range []string{"tun-0", "tun-1"} {
+		if err := manager.Install(tunName, Families{IPv4: true}); err != nil {
+			t.Fatalf("Install(%q) error = %v", tunName, err)
+		}
 	}
 
-	m := NewManager(cmd)
-	err := m.Install("tun0")
+	firstTable := nftTableName("tun-0")
+	secondTable := nftTableName("tun-1")
+	if firstTable == secondTable {
+		t.Fatalf("both TUNs use table %q", firstTable)
+	}
+	calls := strings.Join(cmd.calls, "\n")
+	for _, table := range []string{firstTable, secondTable} {
+		if !strings.Contains(calls, "nft add table inet "+table) {
+			t.Errorf("table %q was not created:\n%s", table, calls)
+		}
+		if count := strings.Count(calls, "nft delete table inet "+table); count != 1 {
+			t.Errorf("table %q deleted %d times, want 1:\n%s", table, count, calls)
+		}
+	}
+
+	cmd.calls = nil
+	if err := manager.Remove("tun-0"); err != nil {
+		t.Fatalf("Remove(%q) error = %v", "tun-0", err)
+	}
+	calls = strings.Join(cmd.calls, "\n")
+	if !strings.Contains(calls, "nft delete table inet "+firstTable) {
+		t.Errorf("selected TUN table was not deleted:\n%s", calls)
+	}
+	if strings.Contains(calls, "nft delete table inet "+secondTable) {
+		t.Errorf("another TUN table was deleted:\n%s", calls)
+	}
+}
+
+func TestInstallRejectsMissingFamilies(t *testing.T) {
+	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	if err := NewManager(cmd).Install("tun0", Families{}); err == nil {
+		t.Fatal("Install() error = nil")
+	}
+	if len(cmd.calls) != 0 {
+		t.Fatalf("commands executed for empty families: %v", cmd.calls)
+	}
+}
+
+func TestInstallFailsWhenNoBackendCoversRequestedFamilies(t *testing.T) {
+	cmd := newRecordingCommander("iptables")
+	err := NewManager(cmd).Install("tun0", Families{IPv4: true, IPv6: true})
+	if err == nil || !strings.Contains(err.Error(), "requested IP families") {
+		t.Fatalf("Install() error = %v", err)
+	}
+}
+
+func TestInstallReturnsIptablesRuleError(t *testing.T) {
+	cmd := newRecordingCommander("iptables")
+	failedCommand := "iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+	cmd.errMap[failedCommand] = errors.New("permission denied")
+
+	err := NewManager(cmd).Install("tun0", Families{IPv4: true})
 	if err == nil || !strings.Contains(err.Error(), "FORWARD") {
-		t.Fatalf("expected FORWARD error, got: %v", err)
+		t.Fatalf("Install() error = %v", err)
 	}
 }
 
-func TestManager_InstallAndRemove_NftFallback(t *testing.T) {
-	cmd := &recordingCommander{
-		outputMap: map[string][]byte{
-			"nft --version": {},
-		},
-		errMap: map[string]error{
-			"iptables --version": assertError("missing"),
-		},
-	}
+func TestRemoveCleansEveryAvailableBackend(t *testing.T) {
+	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	missingRule := "iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+	cmd.errMap[missingRule] = errors.New("Bad rule (does a matching rule exist in that chain?)")
+	missingTable := "nft delete table inet " + nftTableName("tun0")
+	cmd.outputMap[missingTable] = []byte("No such table")
+	cmd.errMap[missingTable] = errors.New("delete failed")
+	legacyTable := "nft delete table inet " + legacyNftTable
+	cmd.outputMap[legacyTable] = []byte("No such table")
+	cmd.errMap[legacyTable] = errors.New("delete failed")
 
-	m := NewManager(cmd)
-	if err := m.Install("tunX"); err != nil {
-		t.Fatalf("Install returned error: %v", err)
+	if err := NewManager(cmd).Remove("tun0"); err != nil {
+		t.Fatalf("Remove() error = %v", err)
 	}
-	if err := m.Remove("tunX"); err != nil {
-		t.Fatalf("Remove returned error: %v", err)
-	}
-
-	expected := []string{
-		"iptables --version",
-		"nft --version",
-		"nft delete table inet tungo_mss",
-		"nft add table inet tungo_mss",
-		"nft add chain inet tungo_mss tungo_mss_output { type route hook output priority mangle ; policy accept ; }",
-		"nft add chain inet tungo_mss tungo_mss_forward { type filter hook forward priority mangle ; policy accept ; }",
-		"nft add rule inet tungo_mss tungo_mss_output oifname tunX tcp flags syn|rst == syn tcp option maxseg size set clamp to pmtu",
-		"nft add rule inet tungo_mss tungo_mss_forward oifname tunX tcp flags syn|rst == syn tcp option maxseg size set clamp to pmtu",
-		"nft add rule inet tungo_mss tungo_mss_forward iifname tunX tcp flags syn|rst == syn tcp option maxseg size set clamp to pmtu",
-		"nft delete table inet tungo_mss",
-	}
-
-	if !reflect.DeepEqual(expected, cmd.calls) {
-		t.Fatalf("unexpected commands.\nwant: %v\n got: %v", expected, cmd.calls)
+	calls := strings.Join(cmd.calls, "\n")
+	for _, want := range []string{
+		iptablesProbe,
+		"iptables -t mangle -D FORWARD -i",
+		ip6tablesProbe,
+		"ip6tables -t mangle -D FORWARD -i",
+		nftProbe,
+		missingTable,
+	} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("calls do not contain %q:\n%s", want, calls)
+		}
 	}
 }
 
-func TestManager_DetectBackendNoneAvailable(t *testing.T) {
-	cmd := &recordingCommander{
-		errMap: map[string]error{
-			"iptables --version": assertError("no iptables"),
-			"nft --version":      assertError("no nft"),
-		},
-		outputMap: map[string][]byte{},
+func TestRemoveReturnsRealErrorsAfterTryingEveryBackend(t *testing.T) {
+	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	v4Failure := "iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+	v6Failure := "ip6tables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+	nftFailure := "nft delete table inet " + nftTableName("tun0")
+	cmd.errMap[v4Failure] = errors.New("v4 denied")
+	cmd.errMap[v6Failure] = errors.New("v6 denied")
+	cmd.errMap[nftFailure] = errors.New("nft denied")
+
+	err := NewManager(cmd).Remove("tun0")
+	if err == nil {
+		t.Fatal("Remove() error = nil")
 	}
-
-	m := NewManager(cmd)
-	if err := m.Install("tun0"); err == nil {
-		t.Fatal("expected Install to fail when no backend is available")
+	for _, want := range []string{"v4 denied", "v6 denied", "nft denied"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Remove() error = %v, want %q", err, want)
+		}
 	}
-}
-
-func TestManager_RemoveNftMissingTableIsBenign(t *testing.T) {
-	cmd := &recordingCommander{
-		outputMap: map[string][]byte{
-			"nft delete table inet tungo_mss": []byte("Error: Could not delete table: No such file or directory\n"),
-		},
-		errMap: map[string]error{
-			"nft delete table inet tungo_mss": assertError("no table"),
-		},
-	}
-
-	m := NewManager(cmd)
-	m.backend = backendNft
-
-	// Delete should succeed despite missing nft table.
-	if err := m.Remove("tunY"); err != nil {
-		t.Fatalf("expected Remove to ignore missing nft table, got: %v", err)
-	}
-
-	if len(cmd.calls) != 1 || cmd.calls[0] != "nft delete table inet tungo_mss" {
-		t.Fatalf("unexpected commands: %v", cmd.calls)
+	if calls := strings.Join(cmd.calls, "\n"); !strings.Contains(calls, "ip6tables -t mangle -D FORWARD -i") || !strings.Contains(calls, nftFailure) {
+		t.Fatalf("cleanup stopped after first error:\n%s", calls)
 	}
 }
 
-// assertError is a helper to keep errMap literals terse.
-func assertError(msg string) error { return &fakeErr{msg: msg} }
-
-type fakeErr struct{ msg string }
-
-func (f *fakeErr) Error() string { return f.msg }
+func TestRemoveFailsWhenNoCleanupBackendIsAvailable(t *testing.T) {
+	cmd := newRecordingCommander()
+	if err := NewManager(cmd).Remove("tun0"); err == nil {
+		t.Fatal("Remove() error = nil")
+	}
+}

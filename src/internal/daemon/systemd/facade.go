@@ -24,7 +24,6 @@ type Control interface {
 
 type UnitInstaller struct {
 	commander command.Runner
-	hooks     Hooks
 	config    Config
 }
 
@@ -34,20 +33,12 @@ func NewUnitInstaller(commander command.Runner) *UnitInstaller {
 	}
 	return &UnitInstaller{
 		commander: commander,
-		hooks: Hooks{
-			Stat:      statPath,
-			Lstat:     lstatPath,
-			LookPath:  lookPath,
-			WriteFile: writeFilePath,
-			ReadFile:  readFilePath,
-			Remove:    removePath,
-		},
-		config: defaultSystemdConfig,
+		config:    DefaultConfig(),
 	}
 }
 
 func (i *UnitInstaller) Available() bool {
-	return Available(i.hooks, i.config.RuntimeDir)
+	return available(i.config.RuntimeDir)
 }
 
 // Setup installs the selected runtime unit and preserves its running state.
@@ -97,10 +88,10 @@ func (i *UnitInstaller) installUnit(args []string) (string, error) {
 	if !i.Available() {
 		return "", fmt.Errorf("systemd is not available")
 	}
-	if err := ValidateTungoBinaryForSystemd(i.hooks, i.config.BinaryPath); err != nil {
+	if err := validateTungoBinaryForSystemd(i.config.BinaryPath); err != nil {
 		return "", err
 	}
-	if err := i.hooks.WriteFile(i.config.UnitPath, []byte(UnitFileContent(i.config.BinaryPath, args)), 0644); err != nil {
+	if err := os.WriteFile(i.config.UnitPath, []byte(UnitFileContent(i.config.BinaryPath, args)), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", i.config.UnitPath, err)
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
@@ -114,7 +105,7 @@ func (i *UnitInstaller) installUnit(args []string) (string, error) {
 
 func (i *UnitInstaller) rollbackInstallUnit(installErr error) error {
 	rollbackErrs := make([]error, 0, 2)
-	if err := i.hooks.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback %s: %w", i.config.UnitPath, err))
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
@@ -138,7 +129,7 @@ func (i *UnitInstaller) RemoveUnit() error {
 	if err := i.commander.Run("systemctl", "disable", i.config.UnitName); err != nil && !IsSystemdDisabledError(err) {
 		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
 	}
-	if err := i.hooks.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to remove %s: %w", i.config.UnitPath, err)
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
@@ -273,7 +264,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 
 	status.Role = DetectUnitRoleFromExecStart(status.ExecStart)
 	if status.Role == UnitRoleUnknown && status.Managed {
-		if unitBody, readErr := i.hooks.ReadFile(i.config.UnitPath); readErr == nil {
+		if unitBody, readErr := os.ReadFile(i.config.UnitPath); readErr == nil {
 			status.Role = DetectUnitRole(string(unitBody))
 		}
 	}

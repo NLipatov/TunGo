@@ -1,10 +1,15 @@
 package systemd
 
-func Available(h Hooks, runtimeDir string) bool {
-	if _, err := h.Stat(runtimeDir); err != nil {
+import (
+	"os"
+	"os/exec"
+)
+
+func available(runtimeDir string) bool {
+	if _, err := os.Stat(runtimeDir); err != nil {
 		return false
 	}
-	if _, err := h.LookPath("systemctl"); err != nil {
+	if _, err := exec.LookPath("systemctl"); err != nil {
 		return false
 	}
 	return true

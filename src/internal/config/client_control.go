@@ -92,6 +92,7 @@ func parseClientConfigurationJSON(input string) (clientconfig.Configuration, err
 	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
 		return clientconfig.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
 	}
+	cfg.ApplyClientDefaults()
 	if err := clientconfig.Validate(cfg); err != nil {
 		return clientconfig.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
 	}

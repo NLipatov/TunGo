@@ -31,9 +31,9 @@ type tun struct {
 	closed atomic.Bool
 }
 
-// newTUN takes ownership of f on success (it closes f before returning).
+// New takes ownership of f on success (it closes f before returning).
 // On error, ownership remains with the caller (f is not closed).
-func newTUN(f *os.File) (io.ReadWriteCloser, error) {
+func New(f *os.File) (io.ReadWriteCloser, error) {
 	if f == nil {
 		return nil, errors.New("nil file")
 	}
@@ -191,8 +191,6 @@ func (w *tun) Close() error {
 	}
 	return firstErr
 }
-
-func (w *tun) Fd() uintptr { return uintptr(w.fd) }
 
 func (w *tun) waitRead() error {
 	var evs [1]unix.EpollEvent

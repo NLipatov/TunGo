@@ -2,1801 +2,300 @@ package systemd
 
 import (
 	"errors"
-	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
+	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"tungo/internal/config"
 )
 
-type mockCommander struct {
-	runCalls            [][2]string
-	runErr              error
-	runErrByArg         map[string]error
-	combinedOutputCalls [][2]string
-	combinedOutput      []byte
-	combinedOutputErr   error
-	combinedOutputByArg map[string]mockCombinedOutputResult
-}
-
-type mockCombinedOutputResult struct {
+type systemdCommandResult struct {
 	output []byte
 	err    error
 }
 
-type mockFileInfo struct {
-	name string
-	mode os.FileMode
-	sys  interface{}
+type systemdTestCommander struct {
+	runs        []string
+	queries     []string
+	runErrors   map[string]error
+	queryResult map[string]systemdCommandResult
 }
 
-func (m mockFileInfo) Name() string       { return m.name }
-func (m mockFileInfo) Size() int64        { return 0 }
-func (m mockFileInfo) Mode() os.FileMode  { return m.mode }
-func (m mockFileInfo) ModTime() time.Time { return time.Time{} }
-func (m mockFileInfo) IsDir() bool        { return m.mode.IsDir() }
-func (m mockFileInfo) Sys() interface{}   { return m.sys }
-
-type mockStatWithUID struct {
-	Uid uint64
+func (c *systemdTestCommander) Run(_ string, args ...string) error {
+	operation := firstSystemdArg(args)
+	c.runs = append(c.runs, operation)
+	return c.runErrors[operation]
 }
 
-func statWithUID(uid uint64) interface{} {
-	return &mockStatWithUID{Uid: uid}
+func (c *systemdTestCommander) Output(_ string, args ...string) ([]byte, error) {
+	return c.CombinedOutput("systemctl", args...)
 }
 
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
-	arg0 := ""
-	if len(args) > 0 {
-		arg0 = args[0]
+func (c *systemdTestCommander) CombinedOutput(_ string, args ...string) ([]byte, error) {
+	operation := firstSystemdArg(args)
+	c.queries = append(c.queries, operation)
+	result := c.queryResult[operation]
+	return result.output, result.err
+}
+
+func firstSystemdArg(args []string) string {
+	if len(args) == 0 {
+		return ""
 	}
-	m.combinedOutputCalls = append(m.combinedOutputCalls, [2]string{name, arg0})
-	if result, ok := m.combinedOutputByArg[arg0]; ok {
-		return result.output, result.err
-	}
-	return m.combinedOutput, m.combinedOutputErr
+	return args[0]
 }
 
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
-	return m.CombinedOutput(name, args...)
-}
-
-func (m *mockCommander) Run(name string, args ...string) error {
-	arg0 := ""
-	if len(args) > 0 {
-		arg0 = args[0]
-	}
-	m.runCalls = append(m.runCalls, [2]string{name, arg0})
-	if err, ok := m.runErrByArg[arg0]; ok {
-		return err
-	}
-	return m.runErr
-}
-
-func withSystemdHooks(
-	t *testing.T,
-	stat func(string) (os.FileInfo, error),
-	look func(string) (string, error),
-	write func(string, []byte, os.FileMode) error,
-	read ...func(string) ([]byte, error),
-) {
+func newSystemdTestInstaller(t *testing.T, commander *systemdTestCommander) *UnitInstaller {
 	t.Helper()
-	prevStat := statPath
-	prevLstat := lstatPath
-	prevLook := lookPath
-	prevWrite := writeFilePath
-	prevRead := readFilePath
-	prevRemove := removePath
-	readHook := func(string) ([]byte, error) { return []byte(""), nil }
-	if len(read) > 0 && read[0] != nil {
-		readHook = read[0]
+	if runtime.GOOS == "windows" {
+		t.Skip("systemd executable ownership is Unix-specific")
 	}
-	statPath = func(path string) (os.FileInfo, error) {
-		info, err := stat(path)
-		if err != nil {
-			return nil, err
+
+	binDir := t.TempDir()
+	systemctlPath := filepath.Join(binDir, "systemctl")
+	if err := os.WriteFile(systemctlPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	binaryPath := rootOwnedExecutable(t)
+	runtimeDir := t.TempDir()
+	installer := NewUnitInstaller(commander)
+	installer.config = Config{
+		RuntimeDir: runtimeDir,
+		UnitPath:   filepath.Join(runtimeDir, "tungo.service"),
+		UnitName:   "tungo.service",
+		BinaryPath: binaryPath,
+	}
+	return installer
+}
+
+func rootOwnedExecutable(t *testing.T) string {
+	t.Helper()
+	for _, path := range []string{"/bin/sh", "/usr/bin/true", "/bin/true"} {
+		if validateTungoBinaryForSystemd(path) == nil {
+			return path
 		}
-		if info != nil {
-			return info, nil
-		}
-		switch path {
-		case systemdRuntimeDir:
-			return mockFileInfo{name: "system", mode: os.ModeDir | 0o755, sys: statWithUID(0)}, nil
-		case tungoBinaryPath:
-			return mockFileInfo{name: "tungo", mode: 0o755, sys: statWithUID(0)}, nil
-		case systemdUnitPath:
-			return mockFileInfo{name: "tungo.service", mode: 0o644, sys: statWithUID(0)}, nil
-		default:
-			return mockFileInfo{name: "file", mode: 0o644, sys: statWithUID(0)}, nil
-		}
 	}
-	lstatPath = statPath
-	lookPath = look
-	writeFilePath = write
-	readFilePath = readHook
-	removePath = func(string) error { return nil }
-	t.Cleanup(func() {
-		statPath = prevStat
-		lstatPath = prevLstat
-		lookPath = prevLook
-		writeFilePath = prevWrite
-		readFilePath = prevRead
-		removePath = prevRemove
-	})
+	t.Skip("no root-owned executable available")
+	return ""
 }
 
-func TestAvailable_TrueWhenRuntimeDirAndSystemctlExist(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	if !installer.Available() {
-		t.Fatal("expected Available()=true")
-	}
-}
-
-func TestAvailable_FalseWhenRuntimeDirMissing(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	if installer.Available() {
-		t.Fatal("expected Available()=false when /run/systemd/system is missing")
-	}
-}
-
-func TestAvailable_FalseWhenSystemctlMissing(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "", exec.ErrNotFound
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	if installer.Available() {
-		t.Fatal("expected Available()=false when systemctl is missing")
-	}
-}
-
-func TestNewUnitInstaller_NilCommander_UsesDefault(t *testing.T) {
+func TestNewUnitInstaller_Defaults(t *testing.T) {
 	installer := NewUnitInstaller(nil)
 	if installer.commander == nil {
-		t.Fatal("expected default commander when nil commander is provided")
+		t.Fatal("NewUnitInstaller(nil) returned a nil commander")
+	}
+	if installer.config != DefaultConfig() {
+		t.Fatalf("config = %+v, want %+v", installer.config, DefaultConfig())
 	}
 }
 
-func TestInstallRuntimeUnit_ServerWritesServerModeAndEnablesService(t *testing.T) {
-	var gotPath string
-	var gotContent string
-	var gotPerm os.FileMode
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(path string, data []byte, perm os.FileMode) error {
-			gotPath = path
-			gotContent = string(data)
-			gotPerm = perm
-			return nil
-		},
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+func TestSetup_InactiveUnit(t *testing.T) {
+	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+		"is-active": {output: []byte("inactive\n")},
+	}}
+	installer := newSystemdTestInstaller(t, commander)
 
-	path, err := installer.installRuntimeUnit(config.ModeServer)
+	path, err := installer.Setup(config.ModeServer)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("Setup() error = %v", err)
 	}
-	if path != systemdUnitPath {
-		t.Fatalf("path: got %q want %q", path, systemdUnitPath)
+	if path != installer.config.UnitPath {
+		t.Fatalf("Setup() path = %q, want %q", path, installer.config.UnitPath)
 	}
-	if gotPath != systemdUnitPath {
-		t.Fatalf("write path: got %q want %q", gotPath, systemdUnitPath)
-	}
-	if gotPerm != 0644 {
-		t.Fatalf("write perm: got %v want 0644", gotPerm)
-	}
-	if !strings.Contains(gotContent, `ExecStart="/usr/local/bin/tungo" s`) {
-		t.Fatalf("expected server unit content, got %q", gotContent)
-	}
-	if len(cmd.runCalls) != 2 {
-		t.Fatalf("expected 2 systemctl calls, got %d", len(cmd.runCalls))
-	}
-	if cmd.runCalls[0] != [2]string{"systemctl", "daemon-reload"} {
-		t.Fatalf("unexpected first command: %v", cmd.runCalls[0])
-	}
-	if cmd.runCalls[1] != [2]string{"systemctl", "enable"} {
-		t.Fatalf("unexpected second command: %v", cmd.runCalls[1])
-	}
-}
-
-func TestInstallRuntimeUnit_ClientWritesClientMode(t *testing.T) {
-	var gotContent string
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(_ string, data []byte, _ os.FileMode) error {
-			gotContent = string(data)
-			return nil
-		},
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.installRuntimeUnit(config.ModeClient)
+	body, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(gotContent, `ExecStart="/usr/local/bin/tungo" c`) {
-		t.Fatalf("expected client unit content, got %q", gotContent)
+	if !strings.Contains(string(body), " s") {
+		t.Fatalf("server unit body = %q", body)
 	}
-}
-
-func TestInstallRuntimeUnit_InvalidMode(t *testing.T) {
-	installer := NewUnitInstaller(&mockCommander{})
-
-	_, err := installer.installRuntimeUnit(0)
-	if err == nil || !strings.Contains(err.Error(), "unsupported runtime mode") {
-		t.Fatalf("expected invalid runtime mode error, got %v", err)
+	if want := []string{"daemon-reload", "enable"}; !reflect.DeepEqual(commander.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryMissing(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return nil, os.ErrNotExist
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+func TestSetup_ActiveUnit(t *testing.T) {
+	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+		"is-active": {output: []byte("active\n")},
+	}}
+	installer := newSystemdTestInstaller(t, commander)
 
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "tungo executable is not installed at /usr/local/bin/tungo") {
-		t.Fatalf("expected missing /usr/local/bin/tungo error, got %v", err)
+	if _, err := installer.Setup(config.ModeClient); err != nil {
+		t.Fatalf("Setup() error = %v", err)
 	}
-	if len(cmd.runCalls) != 0 {
-		t.Fatalf("expected no systemctl calls, got %v", cmd.runCalls)
+	want := []string{"stop", "daemon-reload", "enable", "start"}
+	if !reflect.DeepEqual(commander.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o644, sys: statWithUID(0)}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+func TestSetup_RejectsInvalidModeBeforeIO(t *testing.T) {
+	commander := &systemdTestCommander{}
+	installer := NewUnitInstaller(commander)
 
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "is not executable") {
-		t.Fatalf("expected not executable error, got %v", err)
+	if _, err := installer.Setup(0); err == nil || !strings.Contains(err.Error(), "invalid daemon mode") {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if len(commander.runs) != 0 || len(commander.queries) != 0 {
+		t.Fatalf("unexpected systemctl calls: runs=%v queries=%v", commander.runs, commander.queries)
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryIsSymlink(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: os.ModeSymlink | 0o777, sys: statWithUID(0)}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+func TestSetup_RestartsActiveUnitAfterWriteError(t *testing.T) {
+	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+		"is-active": {output: []byte("active\n")},
+	}}
+	installer := newSystemdTestInstaller(t, commander)
+	installer.config.UnitPath = filepath.Join(t.TempDir(), "missing", "tungo.service")
 
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
-		t.Fatalf("expected symlink error, got %v", err)
+	if _, err := installer.Setup(config.ModeServer); err == nil {
+		t.Fatal("Setup() error = nil")
+	}
+	want := []string{"stop", "start"}
+	if !reflect.DeepEqual(commander.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryOwnedByNonRoot(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o755, sys: statWithUID(1000)}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+func TestInstallUnit_EnableFailureRollsBackFile(t *testing.T) {
+	enableErr := errors.New("enable failed")
+	commander := &systemdTestCommander{runErrors: map[string]error{"enable": enableErr}}
+	installer := newSystemdTestInstaller(t, commander)
 
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "must be owned by root") {
-		t.Fatalf("expected non-root owner error, got %v", err)
+	_, err := installer.installUnit([]string{"c"})
+	if !errors.Is(err, enableErr) {
+		t.Fatalf("installUnit() error = %v", err)
+	}
+	if _, statErr := os.Stat(installer.config.UnitPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("rolled-back unit stat error = %v", statErr)
+	}
+	want := []string{"daemon-reload", "enable", "daemon-reload"}
+	if !reflect.DeepEqual(commander.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryGroupWritable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o775, sys: statWithUID(0)}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "must not be writable by group or others") {
-		t.Fatalf("expected unsafe mode error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenSystemctlCommandFails(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.installRuntimeUnit(config.ModeServer)
-	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
-		t.Fatalf("expected daemon-reload error, got %v", err)
-	}
-}
-
-func TestInstallUnit_DaemonReloadFailure_RollsBackWrittenUnit(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	removedPath := ""
-	removePath = func(path string) error {
-		removedPath = path
-		return nil
-	}
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"daemon-reload": errors.New("reload failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
-		t.Fatalf("expected daemon-reload error, got %v", err)
-	}
-	if removedPath != systemdUnitPath {
-		t.Fatalf("expected rollback remove path %q, got %q", systemdUnitPath, removedPath)
-	}
-}
-
-func TestRollbackInstallUnit_IgnoresMissingUnitFile(t *testing.T) {
-	installer := NewUnitInstaller(&mockCommander{})
-	installer.hooks.Remove = func(string) error { return os.ErrNotExist }
-	want := errors.New("install failed")
-
-	err := installer.rollbackInstallUnit(want)
-	if !errors.Is(err, want) {
-		t.Fatalf("expected original install error, got %v", err)
-	}
-}
-
-func TestRollbackInstallUnit_ReturnsRemoveRollbackError(t *testing.T) {
-	installer := NewUnitInstaller(&mockCommander{})
-	installer.hooks.Remove = func(string) error { return errors.New("remove failed") }
-	want := errors.New("install failed")
-
-	err := installer.rollbackInstallUnit(want)
-	if !errors.Is(err, want) {
-		t.Fatalf("expected original install error, got %v", err)
-	}
-	if err == nil || !strings.Contains(err.Error(), "failed to rollback") {
-		t.Fatalf("expected rollback error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenSystemdUnavailable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(string) (string, error) { return "", exec.ErrNotFound },
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
-		t.Fatalf("expected unavailable systemd error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenWriteFails(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return errors.New("write failed") },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "failed to write") {
-		t.Fatalf("expected write error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenEnableFails(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"enable": errors.New("enable failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
-		t.Fatalf("expected enable error, got %v", err)
-	}
-}
-
-func TestInstallUnit_EnableFailure_RollsBackWrittenUnit(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	removedPath := ""
-	removePath = func(path string) error {
-		removedPath = path
-		return nil
-	}
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"enable": errors.New("enable failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
-		t.Fatalf("expected enable error, got %v", err)
-	}
-	if removedPath != systemdUnitPath {
-		t.Fatalf("expected rollback remove path %q, got %q", systemdUnitPath, removedPath)
-	}
-}
-
-func TestIsUnitActive_ReturnsTrueWhenServiceIsActive(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutput: []byte("active\n")}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !active {
-		t.Fatal("expected active=true")
-	}
-	if len(cmd.combinedOutputCalls) != 1 || cmd.combinedOutputCalls[0] != [2]string{"systemctl", "is-active"} {
-		t.Fatalf("unexpected combined output calls: %v", cmd.combinedOutputCalls)
-	}
-}
-
-func TestIsUnitActive_ReturnsTrueWhenServiceIsActivating(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutput: []byte("activating\n")}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !active {
-		t.Fatal("expected active=true when service is activating")
-	}
-}
-
-func TestIsUnitActive_ReturnsTrueWhenServiceIsDeactivating(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutput: []byte("deactivating\n")}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !active {
-		t.Fatal("expected active=true when service is deactivating")
-	}
-}
-
-func TestIsUnitActive_ReturnsTrueWhenServiceIsReloading(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutput: []byte("reloading\n")}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !active {
-		t.Fatal("expected active=true when service is reloading")
-	}
-}
-
-func TestIsUnitActive_ReturnsFalseWhenServiceIsInactive(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutputErr: commandExitError(t, 3)}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if active {
-		t.Fatal("expected active=false when service is inactive")
-	}
-}
-
-func TestIsUnitActive_ReturnsFalseWhenServiceIsMissing(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutputErr: commandExitError(t, 4)}
-	installer := NewUnitInstaller(cmd)
-
-	active, err := installer.IsUnitActive()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if active {
-		t.Fatal("expected active=false when unit is missing")
-	}
-}
-
-func TestIsUnitActive_FailsOnUnexpectedError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{combinedOutputErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.IsUnitActive()
-	if err == nil || !strings.Contains(err.Error(), "is-active") {
-		t.Fatalf("expected is-active error, got %v", err)
-	}
-}
-
-func TestIsUnitActive_FailsWhenSystemdUnavailable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(string) (string, error) { return "", exec.ErrNotFound },
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.IsUnitActive()
-	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
-		t.Fatalf("expected unavailable error, got %v", err)
-	}
-}
-
-func TestStopUnit_RunsSystemctlStop(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	if err := installer.StopUnit(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "stop"} {
-		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
-	}
-}
-
-func TestStopUnit_FailsOnCommandError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-
-	err := installer.StopUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl stop") {
-		t.Fatalf("expected stop error, got %v", err)
-	}
-}
-
-func TestStartUnit_RunsSystemctlStart(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	if err := installer.StartUnit(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "start"} {
-		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
-	}
-}
-
-func TestStartUnit_FailsOnCommandError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-	err := installer.StartUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl start") {
-		t.Fatalf("expected start error, got %v", err)
-	}
-}
-
-func TestEnableUnit_RunsSystemctlEnable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	if err := installer.EnableUnit(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "enable"} {
-		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
-	}
-}
-
-func TestEnableUnit_FailsOnCommandError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-	err := installer.EnableUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
-		t.Fatalf("expected enable error, got %v", err)
-	}
-}
-
-func TestDisableUnit_RunsSystemctlDisable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	if err := installer.DisableUnit(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "disable"} {
-		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
-	}
-}
-
-func TestDisableUnit_FailsOnCommandError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
-	installer := NewUnitInstaller(cmd)
-	err := installer.DisableUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl disable") {
-		t.Fatalf("expected disable error, got %v", err)
-	}
-}
-
-func TestOperations_FailWhenSystemdUnavailable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(string) (string, error) { return "", exec.ErrNotFound },
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-
-	ops := []struct {
-		name string
-		run  func(*UnitInstaller) error
+func TestIsUnitActive(t *testing.T) {
+	tests := []struct {
+		state string
+		want  bool
 	}{
-		{name: "remove", run: func(i *UnitInstaller) error { return i.RemoveUnit() }},
-		{name: "stop", run: func(i *UnitInstaller) error { return i.StopUnit() }},
-		{name: "start", run: func(i *UnitInstaller) error { return i.StartUnit() }},
-		{name: "enable", run: func(i *UnitInstaller) error { return i.EnableUnit() }},
-		{name: "disable", run: func(i *UnitInstaller) error { return i.DisableUnit() }},
+		{state: "active\n", want: true},
+		{state: "activating\n", want: true},
+		{state: "deactivating\n", want: true},
+		{state: "inactive\n", want: false},
 	}
-	for _, tc := range ops {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.run(installer)
-			if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
-				t.Fatalf("expected unavailable error, got %v", err)
+	for _, tt := range tests {
+		t.Run(strings.TrimSpace(tt.state), func(t *testing.T) {
+			commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+				"is-active": {output: []byte(tt.state)},
+			}}
+			installer := newSystemdTestInstaller(t, commander)
+			got, err := installer.IsUnitActive()
+			if err != nil || got != tt.want {
+				t.Fatalf("IsUnitActive() = (%v, %v), want (%v, nil)", got, err, tt.want)
 			}
 		})
 	}
 }
 
-func TestRemoveUnit_StopsDisablesRemovesAndReloads(t *testing.T) {
-	removedPath := ""
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	removePath = func(path string) error {
-		removedPath = path
-		return nil
+func TestUnitOperations(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*UnitInstaller) error
+		want string
+	}{
+		{name: "start", call: (*UnitInstaller).StartUnit, want: "start"},
+		{name: "stop", call: (*UnitInstaller).StopUnit, want: "stop"},
+		{name: "enable", call: (*UnitInstaller).EnableUnit, want: "enable"},
+		{name: "disable", call: (*UnitInstaller).DisableUnit, want: "disable"},
 	}
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			commander := &systemdTestCommander{}
+			installer := newSystemdTestInstaller(t, commander)
+			if err := tt.call(installer); err != nil {
+				t.Fatalf("%s error = %v", tt.name, err)
+			}
+			if want := []string{tt.want}; !reflect.DeepEqual(commander.runs, want) {
+				t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+			}
+		})
+	}
+}
+
+func TestRemoveUnit(t *testing.T) {
+	commander := &systemdTestCommander{}
+	installer := newSystemdTestInstaller(t, commander)
+	if err := os.WriteFile(installer.config.UnitPath, []byte("unit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := installer.RemoveUnit(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("RemoveUnit() error = %v", err)
 	}
-	if removedPath != systemdUnitPath {
-		t.Fatalf("remove path: got %q want %q", removedPath, systemdUnitPath)
+	if _, err := os.Stat(installer.config.UnitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unit stat error = %v", err)
 	}
-	if len(cmd.runCalls) != 3 {
-		t.Fatalf("expected 3 systemctl calls, got %d", len(cmd.runCalls))
-	}
-	if cmd.runCalls[0] != [2]string{"systemctl", "stop"} {
-		t.Fatalf("unexpected first command: %v", cmd.runCalls[0])
-	}
-	if cmd.runCalls[1] != [2]string{"systemctl", "disable"} {
-		t.Fatalf("unexpected second command: %v", cmd.runCalls[1])
-	}
-	if cmd.runCalls[2] != [2]string{"systemctl", "daemon-reload"} {
-		t.Fatalf("unexpected third command: %v", cmd.runCalls[2])
+	want := []string{"stop", "disable", "daemon-reload"}
+	if !reflect.DeepEqual(commander.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
 	}
 }
 
-func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("disabled\n"), err: commandExitError(t, 4)},
-			"is-active":  {output: []byte("inactive\n"), err: commandExitError(t, 4)},
-			"show": {
-				output: []byte("LoadState=not-found\nActiveState=inactive\nSubState=dead\nResult=success\nExecMainStatus=0\nExecStart=\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
+func TestStatus(t *testing.T) {
+	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+		"is-enabled": {output: []byte("enabled\n")},
+		"is-active":  {output: []byte("active\n")},
+		"show": {output: []byte(strings.Join([]string{
+			"LoadState=loaded",
+			"ActiveState=active",
+			"SubState=running",
+			"Result=success",
+			"ExecMainStatus=0",
+			"ExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo c ; }",
+			"FragmentPath=/etc/systemd/system/tungo.service",
+		}, "\n"))},
+	}}
+	installer := newSystemdTestInstaller(t, commander)
+	installer.config.UnitPath = "/etc/systemd/system/tungo.service"
 
 	status, err := installer.Status()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("Status() error = %v", err)
 	}
-	if status.Installed ||
-		status.UnitFileState != UnitFileStateDisabled ||
-		status.ActiveState != UnitActiveStateInactive ||
-		status.LoadState != UnitLoadStateNotFound {
-		t.Fatalf("expected empty status for missing unit, got %+v", status)
-	}
-	if status.Role != UnitRoleUnknown {
-		t.Fatalf("expected unknown role, got %q", status.Role)
-	}
-	if len(cmd.combinedOutputCalls) == 0 || len(cmd.runCalls) != 0 {
-		t.Fatalf("expected status probing systemctl calls for missing unit, got run=%v combined=%v", cmd.runCalls, cmd.combinedOutputCalls)
+	if !status.Installed || !status.Managed || status.Role != UnitRoleClient {
+		t.Fatalf("Status() = %+v", status)
 	}
 }
 
-func TestStatus_NotInstalled_DefaultsUnknownStates(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("unknown\n")},
-			"is-active":  {output: []byte("unknown\n")},
-			"show": {
-				output: []byte("LoadState=not-found\nActiveState=unknown\nSubState=dead\nResult=success\nExecMainStatus=0\nExecStart=\n"),
-			},
-		},
+func TestStatus_DetectsRoleFromManagedUnitFile(t *testing.T) {
+	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+		"is-enabled": {output: []byte("enabled\n")},
+		"is-active":  {output: []byte("inactive\n")},
+	}}
+	installer := newSystemdTestInstaller(t, commander)
+	commander.queryResult["show"] = systemdCommandResult{output: []byte(
+		"LoadState=loaded\nActiveState=inactive\nFragmentPath=" + installer.config.UnitPath + "\n",
+	)}
+	if err := os.WriteFile(
+		installer.config.UnitPath,
+		[]byte(UnitFileContent("/usr/local/bin/tungo", []string{"s"})),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
 	}
-	installer := NewUnitInstaller(cmd)
 
 	status, err := installer.Status()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if status.Installed {
-		t.Fatalf("expected missing unit to be not installed, got %+v", status)
-	}
-	if status.UnitFileState != UnitFileStateDisabled {
-		t.Fatalf("expected unknown unit-file state to default to disabled, got %+v", status)
-	}
-	if status.ActiveState != UnitActiveStateInactive {
-		t.Fatalf("expected unknown active state to default to inactive, got %+v", status)
-	}
-}
-
-func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=active\nFragmentPath=/etc/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !status.Installed ||
-		status.UnitFileState != UnitFileStateEnabled ||
-		status.ActiveState != UnitActiveStateActive {
-		t.Fatalf("expected installed+enabled+active states, got %+v", status)
-	}
-	if status.Role != UnitRoleClient {
-		t.Fatalf("expected client role, got %q", status.Role)
-	}
-}
-
-func TestStatus_InstalledEnabledActivatingClient_IsNotActive(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("activating\n")},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if status.ActiveState != UnitActiveStateActivating {
-		t.Fatalf("expected activating active-state, got %+v", status)
-	}
-}
-
-func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo s\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("disabled\n"), err: commandExitError(t, 1)},
-			"is-active":  {output: []byte("inactive\n"), err: commandExitError(t, 3)},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=inactive\nFragmentPath=/etc/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !status.Installed {
-		t.Fatalf("expected installed status, got %+v", status)
-	}
-	if status.UnitFileState != UnitFileStateDisabled || status.ActiveState != UnitActiveStateInactive {
-		t.Fatalf("expected disabled+inactive states, got %+v", status)
+		t.Fatalf("Status() error = %v", err)
 	}
 	if status.Role != UnitRoleServer {
-		t.Fatalf("expected server role, got %q", status.Role)
+		t.Fatalf("Status().Role = %q, want %q", status.Role, UnitRoleServer)
 	}
-}
-
-func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("static\n")},
-			"is-active":  {output: []byte("deactivating\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart=/usr/bin/other --flag\nFragmentPath=/usr/lib/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if status.UnitFileState != UnitFileState("static") {
-		t.Fatalf("expected raw unit-file state static, got %q", status.UnitFileState)
-	}
-	if status.ActiveState != UnitActiveStateDeactivating {
-		t.Fatalf("expected active-state deactivating, got %q", status.ActiveState)
-	}
-	if status.LoadState != UnitLoadStateLoaded ||
-		status.SubState != "stop-sigterm" ||
-		status.Result != "exit-code" ||
-		status.ExecMainStatus != "203" ||
-		status.ExecStart != "/usr/bin/other --flag" ||
-		status.FragmentPath != "/usr/lib/systemd/system/tungo.service" {
-		t.Fatalf("expected raw show properties, got %+v", status)
-	}
-	if status.Managed {
-		t.Fatalf("expected unmanaged status for non-/etc unit fragment, got %+v", status)
-	}
-	if status.Role != UnitRoleUnknown {
-		t.Fatalf("expected stale managed unit role to be ignored, got %q", status.Role)
-	}
-}
-
-func TestStatus_ManagedTrueWhenFragmentPathInEtc(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=/usr/local/bin/tungo c\nFragmentPath=/etc/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !status.Managed {
-		t.Fatalf("expected managed status for /etc fragment path, got %+v", status)
-	}
-}
-
-func TestStatus_FailsOnUnexpectedIsEnabledError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputErr: errors.New("boom"),
-	}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "is-enabled") {
-		t.Fatalf("expected is-enabled error, got %v", err)
-	}
-}
-
-func TestStatus_FailsWhenSystemdUnavailable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(string) (string, error) { return "", exec.ErrNotFound },
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
-		t.Fatalf("expected unavailable error, got %v", err)
-	}
-}
-
-func TestStatus_FailsWhenShowFails(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show":       {err: errors.New("show failed")},
-		},
-	})
-	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "systemctl show") {
-		t.Fatalf("expected show error, got %v", err)
-	}
-}
-
-func TestStatus_FailsWhenIsActiveFails(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {err: errors.New("active failed")},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "is-active") {
-		t.Fatalf("expected is-active error, got %v", err)
-	}
-}
-
-func TestStatus_ReadUnitFailure_DoesNotFail(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return nil, errors.New("read failed") },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=/usr/local/bin/tungo c\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("expected status to succeed when unit file is unreadable, got %v", err)
-	}
-	if status.Role != UnitRoleClient {
-		t.Fatalf("expected role from ExecStart fallback, got %q", status.Role)
-	}
-}
-
-func TestStatus_DetectsRoleFromUnitFileWhenExecStartUnknown(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return []byte("[Service]\nExecStart=/usr/local/bin/tungo s\n"), nil },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=\nFragmentPath=/etc/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("expected status to succeed, got %v", err)
-	}
-	if status.Role != UnitRoleServer {
-		t.Fatalf("expected server role from unit file, got %q", status.Role)
-	}
-}
-
-func TestStatus_UnknownRoleReadUnitFailureKeepsUnknown(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-		func(string) ([]byte, error) { return nil, errors.New("read failed") },
-	)
-	cmd := &mockCommander{
-		combinedOutputByArg: map[string]mockCombinedOutputResult{
-			"is-enabled": {output: []byte("enabled\n")},
-			"is-active":  {output: []byte("active\n")},
-			"show": {
-				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=\nFragmentPath=/etc/systemd/system/tungo.service\n"),
-			},
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-
-	status, err := installer.Status()
-	if err != nil {
-		t.Fatalf("expected status to succeed, got %v", err)
-	}
-	if status.Role != UnitRoleUnknown {
-		t.Fatalf("expected unknown role, got %q", status.Role)
-	}
-}
-
-func TestRemoveUnit_FailsOnStopError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"stop": errors.New("stop failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	err := installer.RemoveUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl stop") {
-		t.Fatalf("expected stop error, got %v", err)
-	}
-}
-
-func TestRemoveUnit_FailsOnDisableError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"disable": errors.New("disable failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	err := installer.RemoveUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemctl disable") {
-		t.Fatalf("expected disable error, got %v", err)
-	}
-}
-
-func TestRemoveUnit_FailsOnRemoveError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	removePath = func(string) error { return errors.New("remove failed") }
-	installer := NewUnitInstaller(&mockCommander{})
-	err := installer.RemoveUnit()
-	if err == nil || !strings.Contains(err.Error(), "failed to remove") {
-		t.Fatalf("expected remove error, got %v", err)
-	}
-}
-
-func TestRemoveUnit_FailsOnDaemonReloadError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{
-		runErrByArg: map[string]error{
-			"daemon-reload": errors.New("reload failed"),
-		},
-	}
-	installer := NewUnitInstaller(cmd)
-	err := installer.RemoveUnit()
-	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
-		t.Fatalf("expected daemon-reload error, got %v", err)
-	}
-}
-
-func TestDetectUnitRole(t *testing.T) {
-	if got := DetectUnitRole("ExecStart=tungo c\n"); got != UnitRoleClient {
-		t.Fatalf("expected client role, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=tungo s\n"); got != UnitRoleServer {
-		t.Fatalf("expected server role, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != UnitRoleClient {
-		t.Fatalf("expected client role for absolute path, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != UnitRoleServer {
-		t.Fatalf("expected server role for absolute path, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != UnitRoleServer {
-		t.Fatalf("expected server role for wrapped command, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != UnitRoleClient {
-		t.Fatalf("expected client role for command with extra args, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=/usr/bin/other\n"); got != UnitRoleUnknown {
-		t.Fatalf("expected unknown role, got %q", got)
-	}
-	if got := DetectUnitRole("ExecStart=\n"); got != UnitRoleUnknown {
-		t.Fatalf("expected unknown role for empty exec start, got %q", got)
-	}
-	if got := DetectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != UnitRoleServer {
-		t.Fatalf("expected server role for systemctl show ExecStart, got %q", got)
-	}
-	if got := DetectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != UnitRoleClient {
-		t.Fatalf("expected client role for systemctl show ExecStart, got %q", got)
-	}
-}
-
-func TestInstallUnit_FailsWhenLstatReturnsUnexpectedError(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	lstatPath = func(path string) (os.FileInfo, error) {
-		if path == tungoBinaryPath {
-			return nil, errors.New("lstat failed")
-		}
-		return nil, nil
-	}
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "failed to lstat") {
-		t.Fatalf("expected lstat error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenLstatReturnsNilInfo(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	lstatPath = func(path string) (os.FileInfo, error) {
-		if path == tungoBinaryPath {
-			return nil, nil
-		}
-		return nil, nil
-	}
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "empty file info") {
-		t.Fatalf("expected empty file info error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenTungoBinaryIsNotRegular(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: os.ModeDir | 0o755, sys: statWithUID(0)}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "is not a regular file") {
-		t.Fatalf("expected non-regular file error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenOwnerCannotBeVerified(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o755, sys: nil}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.installRuntimeUnit(config.ModeClient)
-	if err == nil || !strings.Contains(err.Error(), "failed to verify owner") {
-		t.Fatalf("expected owner verification error, got %v", err)
-	}
-}
-
-func commandExitError(t *testing.T, code int) error {
-	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=TestCommandExitHelperProcess")
-	cmd.Env = append(
-		os.Environ(),
-		"GO_WANT_HELPER_PROCESS=1",
-		fmt.Sprintf("GO_HELPER_EXIT_CODE=%d", code),
-	)
-	err := cmd.Run()
-	if err == nil {
-		t.Fatalf("expected non-zero exit error for code %d", code)
-	}
-	return err
-}
-
-func TestCommandExitHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-	code, err := strconv.Atoi(os.Getenv("GO_HELPER_EXIT_CODE"))
-	if err != nil {
-		os.Exit(2)
-	}
-	os.Exit(code)
 }

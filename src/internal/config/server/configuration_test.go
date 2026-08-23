@@ -190,9 +190,19 @@ func TestValidate_MTUTooSmall(t *testing.T) {
 	}
 }
 
+func TestValidate_IPv6MTUTooSmall(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd00::1")
+	cfg.TCPSettings.MTU = settings.MinimumIPv6MTU - 1
+	if err := Validate(*cfg); err == nil {
+		t.Fatal("expected error for IPv6 MTU below minimum")
+	}
+}
+
 func TestValidate_MTUTooLarge(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.MTU = 9500 // above 9000
+	cfg.TCPSettings.MTU = settings.MaximumMTU + 1
 	if err := Validate(*cfg); err == nil {
 		t.Fatalf("expected error for MTU too large")
 	}

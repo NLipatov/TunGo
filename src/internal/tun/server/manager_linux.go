@@ -19,32 +19,26 @@ import (
 	"tungo/internal/tun/internal/linux/sysctl"
 )
 
-type tunWrapper interface {
-	Wrap(*os.File) (io.ReadWriteCloser, error)
-}
-
 type Manager struct {
 	device   tunDeviceManager
 	firewall firewallConfigurator
-	wrapper  tunWrapper
 }
 
 func NewManager() *Manager {
 	return &Manager{
 		device: tunDeviceManager{
-			ip:    ip.NewWrapper(command.New()),
-			ioctl: ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+			ip:    ip.New(command.New()),
+			ioctl: ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		},
 		firewall: firewallConfigurator{
-			iptables: iptables.NewWrapper(command.New()),
-			sysctl:   sysctl.NewWrapper(command.New()),
+			iptables: iptables.New(command.New()),
+			sysctl:   sysctl.New(command.New()),
 			mss:      mssclamp.NewManager(command.New()),
 		},
-		wrapper: epoll.NewWrapper(),
 	}
 }
 
-func (s Manager) CreateDevice(connSettings settings.Settings) (io.ReadWriteCloser, error) {
+func (s Manager) OpenTunnel(connSettings settings.Settings) (io.ReadWriteCloser, error) {
 	ipv4 := connSettings.IPv4Subnet.IsValid() && connSettings.IPv4Subnet.Addr().Is4()
 	ipv6 := connSettings.IPv6Subnet.IsValid()
 
@@ -60,35 +54,35 @@ func (s Manager) CreateDevice(connSettings settings.Settings) (io.ReadWriteClose
 	tunName, err := s.device.detectName(tunFile)
 	if err != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to configure a server: failed to determine tunnel ifName: %w", err)
 	}
 
 	extIface, err := s.device.externalInterface()
 	if err != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to configure a server: %w", err)
 	}
 
 	if configureErr := s.firewall.configure(tunName, extIface, connSettings, ipv4, ipv6); configureErr != nil {
 		_ = tunFile.Close()
-		if cleanupErr := s.DisposeDevices(connSettings); cleanupErr != nil {
+		if cleanupErr := s.CloseTunnel(connSettings); cleanupErr != nil {
 			return nil, fmt.Errorf("failed to configure a server: %s; cleanup failed: %v", configureErr, cleanupErr)
 		}
 		return nil, fmt.Errorf("failed to configure a server: %s", configureErr)
 	}
 
-	dev, wrapErr := s.wrapper.Wrap(tunFile)
+	dev, wrapErr := epoll.New(tunFile)
 	if wrapErr != nil {
 		_ = tunFile.Close()
-		_ = s.DisposeDevices(connSettings)
+		_ = s.CloseTunnel(connSettings)
 		return nil, fmt.Errorf("failed to wrap TUN device: %w", wrapErr)
 	}
 	return dev, nil
 }
 
-func (s Manager) DisposeDevices(connSettings settings.Settings) error {
+func (s Manager) CloseTunnel(connSettings settings.Settings) error {
 	ifName := connSettings.TunName
 	ifaceExists := true
 

@@ -4,9 +4,10 @@ import "golang.org/x/crypto/chacha20poly1305"
 
 const (
 	DefaultEthernetMTU = 1500
-	SafeMTU            = 1200
+	DefaultMTU         = 1280
 	MinimumIPv4MTU     = 576
 	MinimumIPv6MTU     = 1280
+	MaximumMTU         = 9000
 	// TCPChacha20Overhead is the poly1305 tag + 2-byte epoch prefix prepended
 	// to every TCP frame. Nonce is not on the wire — it is derived from the
 	// deterministic counter incremented based on strict TCP-delivery order.

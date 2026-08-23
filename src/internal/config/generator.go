@@ -167,7 +167,7 @@ func deriveClientSettings(
 ) (settings.Settings, error) {
 	mtu := serverSettings.MTU
 	if protocol == settings.UDP {
-		mtu = settings.SafeMTU
+		mtu = settings.DefaultMTU
 	}
 	tunName, err := deriveClientTunName(protocol)
 	if err != nil {

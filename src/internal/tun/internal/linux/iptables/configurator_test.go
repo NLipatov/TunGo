@@ -25,14 +25,14 @@ func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
-func newWrapperWithMocks(out map[string][]byte, errs map[string]error) *Wrapper {
-	return NewWrapper(&mockCommander{
+func newConfiguratorWithMocks(out map[string][]byte, errs map[string]error) *Configurator {
+	return New(&mockCommander{
 		outputMap: out,
 		errMap:    errs,
 	})
 }
 
-func TestWrapper_AllCommands(t *testing.T) {
+func TestConfigurator_AllCommands(t *testing.T) {
 	const dev = "eth0"
 	const tun = "tun0"
 	const v4CIDR = "10.0.0.0/24"
@@ -41,7 +41,7 @@ func TestWrapper_AllCommands(t *testing.T) {
 	successOut := map[string][]byte{}
 	noErr := map[string]error{}
 
-	w := newWrapperWithMocks(successOut, noErr)
+	w := newConfiguratorWithMocks(successOut, noErr)
 
 	tests := []struct {
 		name string
@@ -74,7 +74,7 @@ func TestWrapper_AllCommands(t *testing.T) {
 	}
 }
 
-func TestWrapper_IPv6_Errors(t *testing.T) {
+func TestConfigurator_IPv6_Errors(t *testing.T) {
 	const dev = "eth0"
 	const tun = "tun0"
 	const v6CIDR = "fd00::/64"
@@ -97,7 +97,7 @@ func TestWrapper_IPv6_Errors(t *testing.T) {
 	} {
 		failAll.errMap[cmd] = errFail
 	}
-	w := &Wrapper{commander: failAll}
+	w := &Configurator{commander: failAll}
 
 	tests := []struct {
 		name string
@@ -122,7 +122,7 @@ func TestWrapper_IPv6_Errors(t *testing.T) {
 	}
 }
 
-func TestWrapper_IPv4_Errors(t *testing.T) {
+func TestConfigurator_IPv4_Errors(t *testing.T) {
 	const dev = "eth0"
 	const tun = "tun0"
 	const cidr = "10.0.0.0/24"
@@ -144,7 +144,7 @@ func TestWrapper_IPv4_Errors(t *testing.T) {
 	} {
 		failAll.errMap[cmd] = errFail
 	}
-	w := &Wrapper{commander: failAll}
+	w := &Configurator{commander: failAll}
 
 	tests := []struct {
 		name string
@@ -169,8 +169,8 @@ func TestWrapper_IPv4_Errors(t *testing.T) {
 	}
 }
 
-func TestWrapper_MasqueradeWithoutSourceCIDR(t *testing.T) {
-	w := newWrapperWithMocks(map[string][]byte{}, map[string]error{})
+func TestConfigurator_MasqueradeWithoutSourceCIDR(t *testing.T) {
+	w := newConfiguratorWithMocks(map[string][]byte{}, map[string]error{})
 
 	if err := w.EnableDevMasquerade("eth0", ""); err != nil {
 		t.Fatalf("EnableDevMasquerade() error = %v", err)
