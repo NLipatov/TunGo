@@ -232,6 +232,67 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 	}
 }
 
+func TestWindowsManagerReturnsConfigurationErrors(t *testing.T) {
+	failure := errors.New("configuration failed")
+	tests := []struct {
+		name string
+		fail func(*windowsNetConfigMock, *windowsNetConfigMock)
+		run  func(*Manager) error
+	}{
+		{
+			name: "IPv4 address",
+			fail: func(v4, _ *windowsNetConfigMock) { v4.setAddressErr = failure },
+			run:  (*Manager).assignAddresses,
+		},
+		{
+			name: "IPv6 address",
+			fail: func(_, v6 *windowsNetConfigMock) { v6.setAddressErr = failure },
+			run:  (*Manager).assignAddresses,
+		},
+		{
+			name: "IPv4 split routes",
+			fail: func(v4, _ *windowsNetConfigMock) { v4.addSplitErr = failure },
+			run:  (*Manager).addSplitRoutes,
+		},
+		{
+			name: "IPv6 split routes",
+			fail: func(_, v6 *windowsNetConfigMock) { v6.addSplitErr = failure },
+			run:  (*Manager).addSplitRoutes,
+		},
+		{
+			name: "IPv4 MTU",
+			fail: func(v4, _ *windowsNetConfigMock) { v4.setMTUErr = failure },
+			run:  (*Manager).setMTU,
+		},
+		{
+			name: "IPv6 MTU",
+			fail: func(_, v6 *windowsNetConfigMock) { v6.setMTUErr = failure },
+			run:  (*Manager).setMTU,
+		},
+		{
+			name: "IPv4 DNS",
+			fail: func(v4, _ *windowsNetConfigMock) { v4.setDNSErr = failure },
+			run:  (*Manager).setDNS,
+		},
+		{
+			name: "IPv6 DNS",
+			fail: func(_, v6 *windowsNetConfigMock) { v6.setDNSErr = failure },
+			run:  (*Manager).setDNS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+			test.fail(netConfig4, netConfig6)
+
+			if err := test.run(manager); !errors.Is(err, failure) {
+				t.Fatalf("configuration error = %v, want %v", err, failure)
+			}
+		})
+	}
+}
+
 func TestWindowsManagerDNSFlushIsBestEffortDuringSetup(t *testing.T) {
 	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
 	netConfig4.flushDNSErr = errors.New("flush IPv4 failed")
@@ -268,6 +329,34 @@ func TestWindowsManagerPinsServerRouteWithMatchingConfigurator(t *testing.T) {
 	}
 	if manager.pinnedServerAddr != serverAddr || manager.pinnedServerIf != "Ethernet6" {
 		t.Fatalf("pinned route = %s@%s", manager.pinnedServerAddr, manager.pinnedServerIf)
+	}
+}
+
+func TestWindowsManagerPinsServerRouteViaGateway(t *testing.T) {
+	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+	netConfig4.bestRouteGateway = netip.MustParseAddr("192.0.2.1")
+	netConfig4.bestRouteIf = "Ethernet0"
+	serverAddr := netip.MustParseAddr("198.51.100.1")
+
+	if err := manager.pinServerRoute(serverAddr); err != nil {
+		t.Fatalf("pinServerRoute() error = %v", err)
+	}
+	want := []string{"198.51.100.1 via 192.0.2.1 dev Ethernet0"}
+	if !reflect.DeepEqual(netConfig4.addedRoutes, want) {
+		t.Fatalf("routes = %v, want %v", netConfig4.addedRoutes, want)
+	}
+}
+
+func TestWindowsManagerReturnsBestRouteError(t *testing.T) {
+	failure := errors.New("route lookup failed")
+	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+	netConfig4.bestRouteErr = failure
+
+	if err := manager.pinServerRoute(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
+		t.Fatalf("pinServerRoute() error = %v, want %v", err, failure)
+	}
+	if len(netConfig4.addedRoutes) != 0 || manager.pinnedServerAddr.IsValid() || manager.pinnedServerIf != "" {
+		t.Fatal("failed route lookup changed pinned route state")
 	}
 }
 

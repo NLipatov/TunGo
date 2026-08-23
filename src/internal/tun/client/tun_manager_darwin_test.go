@@ -165,6 +165,65 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 	}
 }
 
+func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
+	failure := errors.New("configuration failed")
+	tests := []struct {
+		name   string
+		active settings.Settings
+		fail   func(*darwinIfconfigMock, *darwinIfconfigMock, *darwinRouteMock, *darwinRouteMock)
+		run    func(*Manager) error
+	}{
+		{
+			name:   "IPv4 MTU",
+			active: darwinSettings(true, false),
+			fail:   func(v4, _ *darwinIfconfigMock, _, _ *darwinRouteMock) { v4.mtuErr = failure },
+			run:    (*Manager).setMTU,
+		},
+		{
+			name:   "IPv6 MTU",
+			active: darwinSettings(false, true),
+			fail:   func(_, v6 *darwinIfconfigMock, _, _ *darwinRouteMock) { v6.mtuErr = failure },
+			run:    (*Manager).setMTU,
+		},
+		{
+			name:   "IPv4 address",
+			active: darwinSettings(true, true),
+			fail:   func(v4, _ *darwinIfconfigMock, _, _ *darwinRouteMock) { v4.addrErr = failure },
+			run:    (*Manager).assignAddresses,
+		},
+		{
+			name:   "IPv6 address",
+			active: darwinSettings(true, true),
+			fail:   func(_, v6 *darwinIfconfigMock, _, _ *darwinRouteMock) { v6.addrErr = failure },
+			run:    (*Manager).assignAddresses,
+		},
+		{
+			name:   "IPv4 split routes",
+			active: darwinSettings(true, true),
+			fail:   func(_, _ *darwinIfconfigMock, v4, _ *darwinRouteMock) { v4.splitErr = failure },
+			run:    (*Manager).addSplitRoutes,
+		},
+		{
+			name:   "IPv6 split routes",
+			active: darwinSettings(true, true),
+			fail:   func(_, _ *darwinIfconfigMock, _, v6 *darwinRouteMock) { v6.splitErr = failure },
+			run:    (*Manager).addSplitRoutes,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, ifconfig4, ifconfig6, route4, route6 := newDarwinTestManager(t, test.active)
+			manager.tun = &tunMock{name: "utun42"}
+			test.fail(ifconfig4, ifconfig6, route4, route6)
+
+			if err := test.run(manager); !errors.Is(err, failure) {
+				t.Fatalf("configuration error = %v, want %v", err, failure)
+			}
+		})
+	}
+}
+
 func TestDarwinManagerRejectsInvalidServerAddress(t *testing.T) {
 	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, true))
 	if _, err := manager.OpenTunnel(netip.Addr{}); err == nil {

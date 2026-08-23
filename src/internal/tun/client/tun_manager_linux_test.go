@@ -87,6 +87,7 @@ type clienttunManagerMSSMock struct {
 	installErr        error
 	removeErr         error
 	installedFamilies *[]mssclamp.Families
+	removedTunNames   *[]string
 }
 
 type clientTunMock struct {
@@ -131,7 +132,12 @@ func (m clienttunManagerMSSMock) Install(_ string, families mssclamp.Families) e
 	}
 	return m.installErr
 }
-func (m clienttunManagerMSSMock) Remove(string) error { return m.removeErr }
+func (m clienttunManagerMSSMock) Remove(tunName string) error {
+	if m.removedTunNames != nil {
+		*m.removedTunNames = append(*m.removedTunNames, tunName)
+	}
+	return m.removeErr
+}
 
 func (clienttunManagerIOCTLMock) DetectTunNameFromFd(*os.File) (string, error) { return "tun0", nil }
 func (m clienttunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) {
@@ -388,34 +394,64 @@ func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
 	assertOpenTunnelRolledBack(t, m, ipMock)
 }
 
-func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "rreplace", "splitdef", "mtu"}
-	for _, step := range steps {
-		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
-			t.Fatalf("expected error on step %s", step)
-		}
+func TestConfigureTUNErrorRollback(t *testing.T) {
+	paths := []struct {
+		name       string
+		routeReply string
+		steps      []string
+	}{
+		{
+			name:       "on-link server",
+			routeReply: "198.51.100.1 dev eth0",
+			steps:      []string{"add", "up", "addr", "rreplace", "splitdef", "mtu"},
+		},
+		{
+			name:       "server via gateway",
+			routeReply: "198.51.100.1 via 192.0.2.1 dev eth0",
+			steps:      []string{"add", "up", "addr", "rreplacevia", "splitdef", "mtu"},
+		},
+	}
+
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			for _, step := range path.steps {
+				t.Run(step, func(t *testing.T) {
+					ipMock := &clienttunManagerIPMock{routeReply: path.routeReply, failStep: step}
+					m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+					if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+						t.Fatalf("expected error on step %s", step)
+					}
+					if m.pinnedServerAddr.IsValid() {
+						t.Fatalf("failed step %s retained pinned route state", step)
+					}
+					wantRouteDeletes := 0
+					if step == "splitdef" || step == "mtu" {
+						wantRouteDeletes = 1
+					}
+					if len(ipMock.routeDelTargets) != wantRouteDeletes {
+						t.Fatalf("failed step %s route deletions = %v, want %d", step, ipMock.routeDelTargets, wantRouteDeletes)
+					}
+				})
+			}
+		})
 	}
 }
 
-func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "rreplacevia", "splitdef", "mtu"}
-	for _, step := range steps {
-		ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-		if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
-			t.Fatalf("expected error on step %s", step)
-		}
-	}
-}
-
-func TestCloseTunnel_NoErrors(t *testing.T) {
+func TestCloseTunnelCleansEveryConfiguredProfile(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	var removedTunNames []string
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
+		removedTunNames: &removedTunNames,
+	})
 
 	if err := m.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel error: %v", err)
+	}
+	if got, want := strings.Join(removedTunNames, ","), "tun1,tun0,tun2"; got != want {
+		t.Fatalf("MSS cleanup interfaces = %q, want %q", got, want)
+	}
+	if got := strings.Count(ipMock.log.String(), "ldel;"); got != 3 {
+		t.Fatalf("LinkDelete() calls = %d, want 3", got)
 	}
 }
 
@@ -521,22 +557,24 @@ func TestOpenTunnelSingleStackSkipsUncoveredServerFamily(t *testing.T) {
 func TestOpenTunnel_IPv6_AddrAddError(t *testing.T) {
 	// When IPv6 AddrAddDev fails, creation should fail.
 	calls := 0
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
-	// Override AddrAddDev to fail on the second call (IPv6).
-	origMark := ipMock.mark
-	_ = origMark
-	mgr := newMgr(settings.UDP, &clienttunManagerIPMockFailNthAddr{
+	ipMock := &clienttunManagerIPMockFailNthAddr{
 		clienttunManagerIPMock: clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
 		failOnCall:             2,
 		callCount:              &calls,
-	}, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	}
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
 
-	mgr.settings.IPv6 = mustAddr("fd00::2")
-	mgr.settings.IPv6Subnet = mustPrefix("fd00::/64")
+	active := mgr.settings
+	active.IPv6 = mustAddr("fd00::2")
+	active.IPv6Subnet = mustPrefix("fd00::/64")
+	setLinuxActiveSettings(mgr, active)
 
 	_, err := mgr.OpenTunnel(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on IPv6 addr add failure")
+	}
+	if mgr.pinnedServerAddr.IsValid() || len(ipMock.routeDelTargets) != 0 {
+		t.Fatalf("failed address assignment changed pinned route state: pinned=%s deleted=%v", mgr.pinnedServerAddr, ipMock.routeDelTargets)
 	}
 }
 
@@ -546,13 +584,16 @@ func TestOpenTunnel_IPv6_Route6DefaultError(t *testing.T) {
 		failStep:   "splitdef6",
 	}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-	mgr.settings.IPv6 = mustAddr("fd00::2")
-	mgr.settings.IPv6Subnet = mustPrefix("fd00::/64")
+	active := mgr.settings
+	active.IPv6 = mustAddr("fd00::2")
+	active.IPv6Subnet = mustPrefix("fd00::/64")
+	setLinuxActiveSettings(mgr, active)
 
 	_, err := mgr.OpenTunnel(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on Route6AddSplitDefaultDev failure")
 	}
+	assertOpenTunnelRolledBack(t, mgr, ipMock)
 }
 
 func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
