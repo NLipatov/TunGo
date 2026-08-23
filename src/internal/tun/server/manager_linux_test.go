@@ -730,16 +730,20 @@ func TestConfigure_Errors(t *testing.T) {
 	}
 
 	// MSS clamping error
+	mssBase := &TunFactoryMockMSS{}
 	f4 := newFactory(
 		&TunFactoryMockIP{},
 		&TunFactoryMockIPT{},
-		&TunFactoryMockMSSErr{TunFactoryMockMSS: &TunFactoryMockMSS{}, errTag: "Install", err: errors.New("clamp_err")},
+		&TunFactoryMockMSSErr{TunFactoryMockMSS: mssBase, errTag: "Install", err: errors.New("clamp_err")},
 		&TunFactoryMockIOCTL{},
 		&TunFactoryMockSys{},
 	)
 	_, err = f4.OpenTunnel(baseCfg)
 	if err == nil || !strings.Contains(err.Error(), "clamp_err") {
 		t.Errorf("expected clamping error, got %v", err)
+	}
+	if !strings.Contains(mssBase.log.String(), "mss_off;") {
+		t.Errorf("expected MSS cleanup after failed install, log=%q", mssBase.log.String())
 	}
 }
 

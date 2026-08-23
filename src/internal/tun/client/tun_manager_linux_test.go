@@ -304,6 +304,27 @@ func TestOpenTunnelRejectsInvalidServerAddr(t *testing.T) {
 	}
 }
 
+func TestOpenTunnelNormalizesIPv4MappedServerAddr(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+
+	if _, err := m.OpenTunnel(mustAddr("::ffff:198.51.100.1")); err != nil {
+		t.Fatalf("OpenTunnel() error = %v", err)
+	}
+	if got := ipMock.routeGetTargets; len(got) != 1 || got[0] != testServerAddrV4 {
+		t.Fatalf("RouteGet() targets = %v, want [%s]", got, testServerAddrV4)
+	}
+	if m.pinnedServerAddr != testServerAddrV4 {
+		t.Fatalf("pinnedServerAddr = %s, want %s", m.pinnedServerAddr, testServerAddrV4)
+	}
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if got := ipMock.routeDelTargets; len(got) != 1 || got[0] != testServerAddrV4 {
+		t.Fatalf("RouteDel() targets = %v, want [%s]", got, testServerAddrV4)
+	}
+}
+
 func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
 	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
@@ -468,7 +489,11 @@ func TestCloseTunnelCleansEveryConfiguredProfile(t *testing.T) {
 
 func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	mssMock := clienttunManagerMSSMock{installErr: errors.New("iptables fail")}
+	var removedTunNames []string
+	mssMock := clienttunManagerMSSMock{
+		installErr:      errors.New("iptables fail"),
+		removedTunNames: &removedTunNames,
+	}
 	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock)
 
 	_, err := m.OpenTunnel(testServerAddrV4)
@@ -479,6 +504,9 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertOpenTunnelRolledBack(t, m, ipMock)
+	if got, want := strings.Join(removedTunNames, ","), "tun1,tun0,tun2"; got != want {
+		t.Fatalf("MSS rollback interfaces = %q, want %q", got, want)
+	}
 }
 
 func TestOpenTunnel_IPv6_FullPath(t *testing.T) {

@@ -292,15 +292,15 @@ func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
 	route4.delSplitErr = errors.New("split4 failed")
 	route6.delSplitErr = errors.New("split6 failed")
-	route6.delErr = errors.New("route6 failed")
-	manager.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	route4.delErr = errors.New("route4 failed")
+	manager.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
 	manager.tun = &tunMock{name: "utun42", closeErr: errors.New("TUN close failed")}
 
 	err := manager.CloseTunnel()
 	if err == nil {
 		t.Fatal("CloseTunnel() error = nil")
 	}
-	for _, want := range []string{"split4 failed", "split6 failed", "route6 failed", "TUN close failed"} {
+	for _, want := range []string{"split4 failed", "split6 failed", "route4 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
 		}
@@ -312,7 +312,7 @@ func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 		t.Fatal("failed route cleanup cleared retry state")
 	}
 
-	route6.delErr = nil
+	route4.delErr = nil
 	if err := manager.CloseTunnel(); err != nil {
 		t.Fatalf("retry CloseTunnel() error = %v", err)
 	}
