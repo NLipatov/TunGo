@@ -236,11 +236,12 @@ func TestRoute6DelSplitDefault(t *testing.T) {
 func TestRouteGet(t *testing.T) {
 	for _, test := range []struct {
 		name string
-		host string
+		host netip.Addr
 		want []string
 	}{
-		{name: "IPv4", host: "1.1.1.1", want: []string{"ip", "-4", "route", "get", "1.1.1.1"}},
-		{name: "IPv6", host: "2001:db8::1", want: []string{"ip", "-6", "route", "get", "2001:db8::1"}},
+		{name: "IPv4", host: netip.MustParseAddr("1.1.1.1"), want: []string{"ip", "-4", "route", "get", "1.1.1.1"}},
+		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), want: []string{"ip", "-4", "route", "get", "192.0.2.1"}},
+		{name: "IPv6", host: netip.MustParseAddr("2001:db8::1"), want: []string{"ip", "-6", "route", "get", "2001:db8::1"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &recordingCommander{output: []byte("route dev eth0")}
@@ -254,24 +255,39 @@ func TestRouteGet(t *testing.T) {
 		})
 	}
 	t.Run("error", func(t *testing.T) {
-		_, err := newConfigurator(false, "output", errors.New("fail")).RouteGet("1.1.1.1")
+		_, err := newConfigurator(false, "output", errors.New("fail")).RouteGet(netip.MustParseAddr("1.1.1.1"))
 		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("invalid address", func(t *testing.T) {
+		if _, err := New(&recordingCommander{}).RouteGet(netip.Addr{}); err == nil {
 			t.Fatal("expected error")
 		}
 	})
 }
 
 func TestRouteReplaceDev(t *testing.T) {
-	recorder := &recordingCommander{}
-	if err := New(recorder).RouteReplaceDev("2001:db8::1", "tun0"); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"ip", "-6", "route", "replace", "2001:db8::1", "dev", "tun0"}
-	if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], want) {
-		t.Fatalf("calls = %v, want %v", recorder.combinedCalls, want)
+	for _, test := range []struct {
+		name string
+		host netip.Addr
+		want []string
+	}{
+		{name: "IPv6", host: netip.MustParseAddr("2001:db8::1"), want: []string{"ip", "-6", "route", "replace", "2001:db8::1", "dev", "tun0"}},
+		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), want: []string{"ip", "-4", "route", "replace", "192.0.2.1", "dev", "tun0"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommander{}
+			if err := New(recorder).RouteReplaceDev(test.host, "tun0"); err != nil {
+				t.Fatal(err)
+			}
+			if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], test.want) {
+				t.Fatalf("calls = %v, want %v", recorder.combinedCalls, test.want)
+			}
+		})
 	}
 	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceDev("1.1.1.1", "tun0")
+		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceDev(netip.MustParseAddr("1.1.1.1"), "tun0")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -279,16 +295,37 @@ func TestRouteReplaceDev(t *testing.T) {
 }
 
 func TestRouteReplaceViaDev(t *testing.T) {
-	recorder := &recordingCommander{}
-	if err := New(recorder).RouteReplaceViaDev("1.1.1.1", "tun0", "10.0.0.1"); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"ip", "-4", "route", "replace", "1.1.1.1", "via", "10.0.0.1", "dev", "tun0"}
-	if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], want) {
-		t.Fatalf("calls = %v, want %v", recorder.combinedCalls, want)
+	for _, test := range []struct {
+		name    string
+		host    netip.Addr
+		gateway netip.Addr
+		want    []string
+	}{
+		{name: "IPv4", host: netip.MustParseAddr("1.1.1.1"), gateway: netip.MustParseAddr("10.0.0.1"), want: []string{"ip", "-4", "route", "replace", "1.1.1.1", "via", "10.0.0.1", "dev", "tun0"}},
+		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), gateway: netip.MustParseAddr("::ffff:192.0.2.254"), want: []string{"ip", "-4", "route", "replace", "192.0.2.1", "via", "192.0.2.254", "dev", "tun0"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommander{}
+			if err := New(recorder).RouteReplaceViaDev(test.host, "tun0", test.gateway); err != nil {
+				t.Fatal(err)
+			}
+			if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], test.want) {
+				t.Fatalf("calls = %v, want %v", recorder.combinedCalls, test.want)
+			}
+		})
 	}
 	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceViaDev("1.1.1.1", "tun0", "10.0.0.1")
+		err := newConfigurator(false, "output", errors.New("fail")).RouteReplaceViaDev(
+			netip.MustParseAddr("1.1.1.1"),
+			"tun0",
+			netip.MustParseAddr("10.0.0.1"),
+		)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("invalid gateway", func(t *testing.T) {
+		err := New(&recordingCommander{}).RouteReplaceViaDev(netip.MustParseAddr("1.1.1.1"), "tun0", netip.Addr{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -296,29 +333,30 @@ func TestRouteReplaceViaDev(t *testing.T) {
 }
 
 func TestRouteDel(t *testing.T) {
-	recorder := &recordingCommander{}
-	if err := New(recorder).RouteDel("2001:db8::1"); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"ip", "-6", "route", "del", "2001:db8::1"}
-	if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], want) {
-		t.Fatalf("calls = %v, want %v", recorder.combinedCalls, want)
+	for _, test := range []struct {
+		name string
+		host netip.Addr
+		want []string
+	}{
+		{name: "IPv6", host: netip.MustParseAddr("2001:db8::1"), want: []string{"ip", "-6", "route", "del", "2001:db8::1"}},
+		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), want: []string{"ip", "-4", "route", "del", "192.0.2.1"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &recordingCommander{}
+			if err := New(recorder).RouteDel(test.host); err != nil {
+				t.Fatal(err)
+			}
+			if len(recorder.combinedCalls) != 1 || !reflect.DeepEqual(recorder.combinedCalls[0], test.want) {
+				t.Fatalf("calls = %v, want %v", recorder.combinedCalls, test.want)
+			}
+		})
 	}
 	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "output", errors.New("fail")).RouteDel("1.1.1.1")
+		err := newConfigurator(false, "output", errors.New("fail")).RouteDel(netip.MustParseAddr("1.1.1.1"))
 		if err == nil {
 			t.Fatal("expected error")
 		}
 	})
-}
-
-func TestHostRouteArgsRejectsInvalidAddress(t *testing.T) {
-	if _, err := hostRouteArgs("invalid", "route"); err == nil {
-		t.Fatal("hostRouteArgs() error = nil")
-	}
-	if args, err := hostRouteArgs(netip.MustParseAddr("192.0.2.1").String(), "route"); err != nil || args[0] != "-4" {
-		t.Fatalf("hostRouteArgs() = %v, %v", args, err)
-	}
 }
 
 func TestLinkSetDevMTU(t *testing.T) {

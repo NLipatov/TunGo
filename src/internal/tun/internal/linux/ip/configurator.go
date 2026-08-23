@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+
 	"tungo/internal/platform/command"
 	"tungo/internal/tun/internal/splitroute"
 )
@@ -135,13 +136,14 @@ func (i *Configurator) Route6DelSplitDefault(devName string) error {
 	return nil
 }
 
-// RouteGet gets route to host by host ip
-func (i *Configurator) RouteGet(hostIp string) (string, error) {
-	args, err := hostRouteArgs(hostIp, "route", "get", hostIp)
+// RouteGet gets the route to a host.
+func (i *Configurator) RouteGet(hostAddr netip.Addr) (string, error) {
+	hostAddr = hostAddr.Unmap()
+	family, err := familyArg(hostAddr)
 	if err != nil {
 		return "", err
 	}
-	routeBytes, err := i.commander.Output("ip", args...)
+	routeBytes, err := i.commander.Output("ip", family, "route", "get", hostAddr.String())
 	if err != nil {
 		return "", fmt.Errorf("failed to get route to server IP: %v", err)
 	}
@@ -150,54 +152,64 @@ func (i *Configurator) RouteGet(hostIp string) (string, error) {
 }
 
 // RouteReplaceDev ensures that a host route exists via the device.
-func (i *Configurator) RouteReplaceDev(hostIp string, ifName string) error {
-	args, err := hostRouteArgs(hostIp, "route", "replace", hostIp, "dev", ifName)
+func (i *Configurator) RouteReplaceDev(hostAddr netip.Addr, ifName string) error {
+	hostAddr = hostAddr.Unmap()
+	family, err := familyArg(hostAddr)
 	if err != nil {
 		return err
 	}
-	output, err := i.commander.CombinedOutput("ip", args...)
+	output, err := i.commander.CombinedOutput(
+		"ip", family, "route", "replace", hostAddr.String(), "dev", ifName,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to replace route: %s, output: %s", err, output)
 	}
-	return err
+	return nil
 }
 
 // RouteReplaceViaDev ensures that a host route exists via the gateway and device.
-func (i *Configurator) RouteReplaceViaDev(hostIp string, ifName string, gateway string) error {
-	args, err := hostRouteArgs(hostIp, "route", "replace", hostIp, "via", gateway, "dev", ifName)
+func (i *Configurator) RouteReplaceViaDev(hostAddr netip.Addr, ifName string, gateway netip.Addr) error {
+	hostAddr = hostAddr.Unmap()
+	family, err := familyArg(hostAddr)
 	if err != nil {
 		return err
 	}
-	output, err := i.commander.CombinedOutput("ip", args...)
+	if !gateway.IsValid() {
+		return fmt.Errorf("invalid route gateway %q", gateway)
+	}
+	gateway = gateway.Unmap()
+	output, err := i.commander.CombinedOutput(
+		"ip", family, "route", "replace", hostAddr.String(), "via", gateway.String(), "dev", ifName,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to replace route: %s, output: %s", err, output)
 	}
-	return err
+	return nil
 }
 
-// RouteDel deletes a route to host
-func (i *Configurator) RouteDel(hostIp string) error {
-	args, err := hostRouteArgs(hostIp, "route", "del", hostIp)
+// RouteDel deletes a route to a host.
+func (i *Configurator) RouteDel(hostAddr netip.Addr) error {
+	hostAddr = hostAddr.Unmap()
+	family, err := familyArg(hostAddr)
 	if err != nil {
 		return err
 	}
-	output, err := i.commander.CombinedOutput("ip", args...)
+	output, err := i.commander.CombinedOutput("ip", family, "route", "del", hostAddr.String())
 	if err != nil {
 		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
 	}
-	return err
+	return nil
 }
 
-func hostRouteArgs(hostIP string, args ...string) ([]string, error) {
-	addr, err := netip.ParseAddr(hostIP)
-	if err != nil {
-		return nil, fmt.Errorf("invalid route address %q: %w", hostIP, err)
+func familyArg(addr netip.Addr) (string, error) {
+	switch {
+	case addr.Is4():
+		return "-4", nil
+	case addr.Is6():
+		return "-6", nil
+	default:
+		return "", fmt.Errorf("invalid route address %q", addr)
 	}
-	family := "-6"
-	if addr.Unmap().Is4() {
-		family = "-4"
-	}
-	return append([]string{family}, args...), nil
 }
 
 // LinkSetDevMTU sets device MTU

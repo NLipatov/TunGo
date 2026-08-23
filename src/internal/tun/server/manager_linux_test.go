@@ -40,10 +40,13 @@ func (m *TunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error  { return nil
 func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error { return nil }
 func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string) error     { return nil }
 func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string) error    { return nil }
-func (m *TunFactoryMockIP) RouteGet(_ string) (string, error)       { return "", nil }
-func (m *TunFactoryMockIP) RouteReplaceDev(_, _ string) error       { return nil }
-func (m *TunFactoryMockIP) RouteReplaceViaDev(_, _, _ string) error { return nil }
-func (m *TunFactoryMockIP) RouteDel(_ string) error                 { return nil }
+
+func (m *TunFactoryMockIP) RouteGet(_ netip.Addr) (string, error)        { return "", nil }
+func (m *TunFactoryMockIP) RouteReplaceDev(_ netip.Addr, _ string) error { return nil }
+func (m *TunFactoryMockIP) RouteReplaceViaDev(_ netip.Addr, _ string, _ netip.Addr) error {
+	return nil
+}
+func (m *TunFactoryMockIP) RouteDel(_ netip.Addr) error { return nil }
 
 // Variant: RouteDefault returns empty iface (to hit "skipping iptables forwarding disable").
 type TunFactoryMockIPRouteEmpty struct{ TunFactoryMockIP }

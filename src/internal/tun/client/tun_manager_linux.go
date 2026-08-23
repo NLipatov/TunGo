@@ -96,8 +96,7 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 	}
 
 	if serverAddr.Is4() && hasIPv4(m.settings) || serverAddr.Is6() && hasIPv6(m.settings) {
-		serverAddrString := serverAddr.String()
-		routeInfo, err := m.ip.RouteGet(serverAddrString)
+		routeInfo, err := m.ip.RouteGet(serverAddr)
 		if err != nil {
 			return err
 		}
@@ -115,9 +114,13 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 			return fmt.Errorf("failed to parse route to server IP")
 		}
 		if viaGateway == "" {
-			err = m.ip.RouteReplaceDev(serverAddrString, devInterface)
+			err = m.ip.RouteReplaceDev(serverAddr, devInterface)
 		} else {
-			err = m.ip.RouteReplaceViaDev(serverAddrString, devInterface, viaGateway)
+			gateway, parseErr := netip.ParseAddr(viaGateway)
+			if parseErr != nil {
+				return fmt.Errorf("failed to parse route gateway %q: %w", viaGateway, parseErr)
+			}
+			err = m.ip.RouteReplaceViaDev(serverAddr, devInterface, gateway)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to replace route to server IP: %v", err)
@@ -173,7 +176,7 @@ func (m *Manager) CloseTunnel() error {
 		m.removeTunInterface(m.configuration.WSSettings),
 	)
 	if m.pinnedServerAddr.IsValid() {
-		if err := m.ip.RouteDel(m.pinnedServerAddr.String()); err != nil {
+		if err := m.ip.RouteDel(m.pinnedServerAddr); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.pinnedServerAddr, err))
 		} else {
 			m.pinnedServerAddr = netip.Addr{}

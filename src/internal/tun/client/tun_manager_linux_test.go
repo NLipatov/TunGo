@@ -23,9 +23,9 @@ type clienttunManagerIPMock struct {
 	log                 bytes.Buffer
 	routeReply          string
 	failStep            string
-	routeGetTargets     []string
-	routeReplaceTargets []string
-	routeDelTargets     []string
+	routeGetTargets     []netip.Addr
+	routeReplaceTargets []netip.Addr
+	routeDelTargets     []netip.Addr
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -42,15 +42,15 @@ func (m *clienttunManagerIPMock) LinkSetDevUp(string) error       { return m.mar
 func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
 func (m *clienttunManagerIPMock) AddrAddDev(string, string) error { return m.mark("addr") }
 func (m *clienttunManagerIPMock) RouteDefault() (string, error)   { return "eth0", nil }
-func (m *clienttunManagerIPMock) RouteGet(target string) (string, error) {
+func (m *clienttunManagerIPMock) RouteGet(target netip.Addr) (string, error) {
 	m.routeGetTargets = append(m.routeGetTargets, target)
 	return m.routeReply, nil
 }
-func (m *clienttunManagerIPMock) RouteReplaceDev(target, _ string) error {
+func (m *clienttunManagerIPMock) RouteReplaceDev(target netip.Addr, _ string) error {
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplace")
 }
-func (m *clienttunManagerIPMock) RouteReplaceViaDev(target, _, _ string) error {
+func (m *clienttunManagerIPMock) RouteReplaceViaDev(target netip.Addr, _ string, _ netip.Addr) error {
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplacevia")
 }
@@ -64,7 +64,7 @@ func (m *clienttunManagerIPMock) Route6DelSplitDefault(string) error {
 	m.log.WriteString("splitdel6;")
 	return nil
 }
-func (m *clienttunManagerIPMock) RouteDel(target string) error {
+func (m *clienttunManagerIPMock) RouteDel(target netip.Addr) error {
 	m.routeDelTargets = append(m.routeDelTargets, target)
 	return m.mark("rdel")
 }
@@ -72,7 +72,7 @@ func (m *clienttunManagerIPMock) RouteDel(target string) error {
 // clienttunManagerIPGetErr forces RouteGet to return an error.
 type clienttunManagerIPGetErr struct{ clienttunManagerIPMock }
 
-func (m *clienttunManagerIPGetErr) RouteGet(string) (string, error) {
+func (m *clienttunManagerIPGetErr) RouteGet(netip.Addr) (string, error) {
 	return "", fmt.Errorf("failed to get route to server IP: %w", errors.New("geterr"))
 }
 
@@ -168,10 +168,10 @@ func newMgr(
 		Route6AddSplitDefaultDev(string) error
 		RouteDelSplitDefault(string) error
 		Route6DelSplitDefault(string) error
-		RouteGet(string) (string, error)
-		RouteReplaceDev(string, string) error
-		RouteReplaceViaDev(string, string, string) error
-		RouteDel(string) error
+		RouteGet(netip.Addr) (string, error)
+		RouteReplaceDev(netip.Addr, string) error
+		RouteReplaceViaDev(netip.Addr, string, netip.Addr) error
+		RouteDel(netip.Addr) error
 	},
 	ioctlMock interface {
 		DetectTunNameFromFd(*os.File) (string, error)
@@ -234,7 +234,7 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 	if m.pinnedServerAddr.IsValid() {
 		t.Fatalf("pinnedServerAddr = %s, want cleared after failed OpenTunnel", m.pinnedServerAddr)
 	}
-	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4.String() {
+	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4 {
 		t.Fatalf("RouteDel() targets = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 	cleanupSteps := []string{"ldel;", "rdel;"}
@@ -345,6 +345,17 @@ func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
 	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
 		t.Fatal("expected parse error (no dev)")
 	} else if !strings.Contains(err.Error(), "failed to parse route to server IP") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOpenTunnel_ParseRouteError_InvalidGateway(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via invalid dev eth0"}
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+		t.Fatal("expected invalid gateway error")
+	} else if !strings.Contains(err.Error(), "failed to parse route gateway") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -499,10 +510,10 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	if strings.Count(got, "addr;") != 2 {
 		t.Fatalf("expected 2 addr calls (IPv4 + IPv6), got: %s", got)
 	}
-	if len(ipMock.routeGetTargets) != 1 || ipMock.routeGetTargets[0] != testServerAddrV6.String() {
+	if len(ipMock.routeGetTargets) != 1 || ipMock.routeGetTargets[0] != testServerAddrV6 {
 		t.Fatalf("route lookup targets = %v, want [%s]", ipMock.routeGetTargets, testServerAddrV6)
 	}
-	if len(ipMock.routeReplaceTargets) != 1 || ipMock.routeReplaceTargets[0] != testServerAddrV6.String() {
+	if len(ipMock.routeReplaceTargets) != 1 || ipMock.routeReplaceTargets[0] != testServerAddrV6 {
 		t.Fatalf("route replace targets = %v, want [%s]", ipMock.routeReplaceTargets, testServerAddrV6)
 	}
 	if len(installedFamilies) != 1 || installedFamilies[0] != (mssclamp.Families{IPv4: true, IPv6: true}) {
@@ -532,7 +543,7 @@ func TestOpenTunnel_IPv6Only_FullPath(t *testing.T) {
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call order = %q, want %q", got, want)
 	}
-	if got := ipMock.routeGetTargets; len(got) != 1 || got[0] != testServerAddrV6.String() {
+	if got := ipMock.routeGetTargets; len(got) != 1 || got[0] != testServerAddrV6 {
 		t.Fatalf("RouteGet() targets = %v, want [%s]", got, testServerAddrV6)
 	}
 	if len(installedFamilies) != 1 || installedFamilies[0] != (mssclamp.Families{IPv6: true}) {
@@ -620,7 +631,7 @@ func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
 	if err := mgr.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel() error = %v", err)
 	}
-	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4.String() {
+	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4 {
 		t.Fatalf("deleted host routes = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 }

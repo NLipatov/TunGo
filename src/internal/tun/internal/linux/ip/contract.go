@@ -1,5 +1,7 @@
 package ip
 
+import "net/netip"
+
 // Contract describes Linux network configuration operations provided through iproute2.
 type Contract interface {
 	TunTapAddDevTun(devName string) error
@@ -12,8 +14,8 @@ type Contract interface {
 	Route6AddSplitDefaultDev(devName string) error
 	RouteDelSplitDefault(devName string) error
 	Route6DelSplitDefault(devName string) error
-	RouteGet(hostIp string) (string, error)
-	RouteReplaceDev(hostIp string, ifName string) error
-	RouteReplaceViaDev(hostIp string, ifName string, gateway string) error
-	RouteDel(hostIp string) error
+	RouteGet(hostAddr netip.Addr) (string, error)
+	RouteReplaceDev(hostAddr netip.Addr, ifName string) error
+	RouteReplaceViaDev(hostAddr netip.Addr, ifName string, gateway netip.Addr) error
+	RouteDel(hostAddr netip.Addr) error
 }
