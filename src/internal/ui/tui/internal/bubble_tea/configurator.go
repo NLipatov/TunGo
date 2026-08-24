@@ -267,7 +267,7 @@ func (m Configurator) Result() (config.Mode, error) {
 
 func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
-		m.logs.stopWait()
+		m.logs.stopUpdates()
 		return m, tea.Quit
 	}
 
@@ -285,9 +285,7 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.logs.tickSeq || m.tab != configuratorTabLogs {
 			return m, nil
 		}
-		feed := m.options.LogFeed
-		m.logs.refresh(feed, m.preferences)
-		return m, logViewportUpdateCmd(feed, m.logs.waitStop, m.logs.tickSeq)
+		return m, m.logs.refreshUpdates(m.options.LogFeed, m.preferences)
 	case pasteSettledMsg:
 		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.client.pasteSeq {
 			m.tryFormatJSON()
@@ -296,7 +294,7 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			m.logs.stopWait()
+			m.logs.stopUpdates()
 			m.resultErr = ErrConfiguratorUserExit
 			m.done = true
 			return m, tea.Quit
@@ -434,15 +432,11 @@ func (m Configurator) cycleTab() (tea.Model, tea.Cmd) {
 	}
 	m.preferences = m.settings.Current()
 	if m.tab == configuratorTabLogs {
-		m.logs.restartWait()
-		m.logs.tickSeq++
 		m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
-		feed := m.options.LogFeed
-		m.logs.refresh(feed, m.preferences)
-		return m, logViewportUpdateCmd(feed, m.logs.waitStop, m.logs.tickSeq)
+		return m, m.logs.startUpdates(m.options.LogFeed, m.preferences)
 	}
 	if previous == configuratorTabLogs {
-		m.logs.stopWait()
+		m.logs.stopUpdates()
 	}
 	return m, nil
 }
@@ -485,11 +479,11 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 func (m Configurator) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.logs.stopWait()
+		m.logs.stopUpdates()
 		m.tab = configuratorTabMain
 		return m, nil
 	}
-	return m, m.logs.updateKeys(msg)
+	return m, m.logs.update(msg, m.options.LogFeed, m.preferences)
 }
 
 func (m Configurator) settingsRows() []string {

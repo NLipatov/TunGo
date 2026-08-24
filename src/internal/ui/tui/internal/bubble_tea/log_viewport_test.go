@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -60,30 +61,34 @@ func TestLogViewportUpdateCmd_StopChannelClosed(t *testing.T) {
 		stop,
 		7,
 	)()
-	tick, ok := msg.(logViewportTickMsg)
-	if !ok {
-		t.Fatalf("expected logViewportTickMsg, got %T", msg)
-	}
-	if tick.seq != 0 {
-		t.Fatalf("expected seq=0 when stop closed, got %d", tick.seq)
+	if msg != nil {
+		t.Fatalf("expected no message when stopped, got %T", msg)
 	}
 }
 
 func TestLogViewportUpdateCmd_ChangesChannelFires(t *testing.T) {
-	changes := make(chan struct{}, 1)
+	changes := make(chan struct{}, 2)
+	changes <- struct{}{}
 	changes <- struct{}{}
 
+	started := time.Now()
 	msg := logViewportUpdateCmd(
 		&logViewportTestChangeFeed{changes: changes},
 		make(chan struct{}),
 		7,
 	)()
+	if elapsed := time.Since(started); elapsed < logViewportRefreshDelay {
+		t.Fatalf("log update returned after %v, want at least %v", elapsed, logViewportRefreshDelay)
+	}
 	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
 		t.Fatalf("expected logViewportTickMsg, got %T", msg)
 	}
 	if tick.seq != 7 {
 		t.Fatalf("expected seq=7 when changes fires, got %d", tick.seq)
+	}
+	if len(changes) != 0 {
+		t.Fatal("expected pending changes to be batched into the update")
 	}
 }
 
@@ -186,46 +191,25 @@ func TestLogViewportRefresh_PreservesOffset(t *testing.T) {
 	}
 }
 
-func TestLogViewportRestartWait(t *testing.T) {
+func TestLogViewportRefresh_DoesNotRestoreDisabledFollowAtBottom(t *testing.T) {
+	lines := make([]string, 100)
+	for i := range lines {
+		lines[i] = "line"
+	}
 	lv := newLogViewport()
-	if lv.waitStop != nil {
-		t.Error("expected nil waitStop initially")
-	}
+	lv.ensure(80, 10, UIPreferences{}, "", "")
+	lv.refresh(&logViewportTestFeed{lines: lines}, UIPreferences{})
+	lv.follow = false
+	offset := lv.viewport.YOffset()
 
-	lv.restartWait()
-	if lv.waitStop == nil {
-		t.Error("expected non-nil waitStop after restart")
-	}
+	lv.refresh(&logViewportTestFeed{lines: append(lines, "new")}, UIPreferences{})
 
-	ch := lv.waitStop
-	lv.restartWait()
-	select {
-	case <-ch:
-	default:
-		t.Error("expected old waitStop channel to be closed")
+	if lv.follow {
+		t.Fatal("expected follow to remain disabled")
 	}
-	if lv.waitStop == nil {
-		t.Error("expected new waitStop channel")
+	if lv.viewport.YOffset() != offset {
+		t.Fatalf("viewport offset = %d, want %d", lv.viewport.YOffset(), offset)
 	}
-}
-
-func TestLogViewportStopWait(t *testing.T) {
-	lv := newLogViewport()
-	lv.restartWait()
-	ch := lv.waitStop
-
-	lv.stopWait()
-	if lv.waitStop != nil {
-		t.Error("expected nil waitStop after stop")
-	}
-	select {
-	case <-ch:
-	default:
-		t.Error("expected channel to be closed")
-	}
-
-	// double stop should not panic
-	lv.stopWait()
 }
 
 func TestLogViewportUpdateKeys(t *testing.T) {
@@ -246,7 +230,7 @@ func TestLogViewportUpdateKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := tea.KeyPressMsg(tea.Key{Code: tt.code})
-			_ = lv.updateKeys(msg)
+			_ = lv.update(msg, nil, UIPreferences{})
 		})
 	}
 }
@@ -257,7 +241,7 @@ func TestLogViewportUpdateKeys_ScrollUp(t *testing.T) {
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'k'})
-	_ = lv.updateKeys(msg)
+	_ = lv.update(msg, nil, UIPreferences{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after scroll up")
@@ -270,21 +254,32 @@ func TestLogViewportUpdateKeys_ScrollDown(t *testing.T) {
 	lv.follow = false
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'j'})
-	_ = lv.updateKeys(msg)
+	_ = lv.update(msg, nil, UIPreferences{})
 }
 
 func TestLogViewportUpdateKeys_SpaceTogglesFollow(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = true
+	_ = lv.startUpdates(nil, UIPreferences{})
+	stopped := lv.waitStop
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeySpace})
-	_ = lv.updateKeys(msg)
+	if cmd := lv.update(msg, nil, UIPreferences{}); cmd != nil {
+		t.Fatal("expected no log update while follow is disabled")
+	}
 	if lv.follow {
 		t.Error("expected follow to be false after space toggle")
 	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("expected disabled follow to stop log updates")
+	}
 
-	_ = lv.updateKeys(msg)
+	if cmd := lv.update(msg, nil, UIPreferences{}); cmd == nil {
+		t.Fatal("expected log updates to resume with follow")
+	}
 	if !lv.follow {
 		t.Error("expected follow to be true after second space toggle")
 	}
@@ -312,7 +307,7 @@ func TestLogViewportPageUpSetsFollowFalse(t *testing.T) {
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp})
-	_ = lv.updateKeys(msg)
+	_ = lv.update(msg, nil, UIPreferences{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after PageUp")
@@ -325,7 +320,7 @@ func TestLogViewportHomeSetsFollowFalse(t *testing.T) {
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyHome})
-	_ = lv.updateKeys(msg)
+	_ = lv.update(msg, nil, UIPreferences{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after Home")
@@ -338,7 +333,7 @@ func TestLogViewportEndSetsFollowTrue(t *testing.T) {
 	lv.follow = false
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd})
-	_ = lv.updateKeys(msg)
+	_ = lv.update(msg, nil, UIPreferences{})
 
 	if !lv.follow {
 		t.Error("expected follow to be true after End")

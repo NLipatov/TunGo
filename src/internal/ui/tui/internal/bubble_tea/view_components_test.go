@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
@@ -18,6 +19,121 @@ func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
 	}
 	if lines[0] == "" || lines[1] == "" {
 		t.Fatalf("expected non-empty rendered lines, got %v", lines)
+	}
+}
+
+func TestRenderLogsViewportContent_GroupsAndWrapsStructuredLogs(t *testing.T) {
+	styles := resolveUIStyles(newDefaultPreferences().Current())
+	lines := []string{
+		`time=2026-08-21T23:59:59.123+04:00 level=WARN msg="transient write error, packet dropped" err=timeout`,
+		`time=2026-08-22T00:00:01.456+04:00 level=INFO msg=reconnected`,
+	}
+
+	rendered := strings.Join(renderLogsViewportLines(lines, 50, styles), "\n")
+	if got := strings.Count(rendered, ansiFgBrightYellow+"│"+ansiReset); got != 2 {
+		t.Fatalf("expected both WARN markers to be colored, got %d in %q", got, rendered)
+	}
+
+	got := strings.Split(stripANSI(rendered), "\n")
+	if len(got) != 6 {
+		t.Fatalf("expected two date dividers, three log rows, and a separator, got %q", got)
+	}
+	if !strings.Contains(got[0], "2026-08-21") || !strings.Contains(got[4], "2026-08-22") {
+		t.Fatalf("expected a divider for each date, got %q", got)
+	}
+	if got[1] != "23:59:59.123 WARN  │ transient write error, packet" {
+		t.Fatalf("unexpected first log row: %q", got[1])
+	}
+	if got[2] != "                   │ dropped err=timeout" {
+		t.Fatalf("unexpected continuation row: %q", got[2])
+	}
+	if got[3] != "" {
+		t.Fatalf("expected an empty line between log entries, got %q", got[3])
+	}
+	if got[5] != "00:00:01.456 INFO  │ reconnected" {
+		t.Fatalf("unexpected second log row: %q", got[5])
+	}
+	if strings.Contains(strings.Join(got, "\n"), "time=2026-") {
+		t.Fatalf("expected verbose timestamps to be removed, got %q", got)
+	}
+}
+
+func TestRenderLogsViewportContent_ColorsMarkersByLevel(t *testing.T) {
+	styles := resolveUIStyles(newDefaultPreferences().Current())
+	lines := []string{
+		`time=2026-08-21T10:00:00.000+04:00 level=INFO msg=connected`,
+		`time=2026-08-21T10:00:01.000+04:00 level=WARN msg=retrying`,
+		`time=2026-08-21T10:00:02.000+04:00 level=ERROR msg=failed`,
+	}
+
+	got := strings.Join(renderLogsViewportLines(lines, 80, styles), "\n")
+	for level, marker := range map[string]string{
+		"INFO":  ansiFgBrightGreen + "│" + ansiReset,
+		"WARN":  ansiFgBrightYellow + "│" + ansiReset,
+		"ERROR": ansiFgBrightRed + "│" + ansiReset,
+	} {
+		if !strings.Contains(got, marker) {
+			t.Errorf("expected %s marker color in %q", level, got)
+		}
+	}
+}
+
+func TestParseSlogTextLine_DecodesQuotedMessage(t *testing.T) {
+	line := `time=2026-08-21T10:00:00.000+04:00 level=ERROR msg="write \"failed\"\tpath=C:\\TunGo\nretry" err=timeout`
+
+	_, _, message, ok := parseSlogTextLine(line)
+	if !ok {
+		t.Fatal("expected structured slog line to be parsed")
+	}
+	if want := "write \"failed\"    path=C:\\TunGo\nretry err=timeout"; message != want {
+		t.Fatalf("message = %q, want %q", message, want)
+	}
+}
+
+func TestParseSlogTextLine_SanitizesTerminalControls(t *testing.T) {
+	line := `time=2026-08-21T10:00:00.000+04:00 level=ERROR msg="before\x1b[2J\r\b\aafter"`
+
+	_, _, message, ok := parseSlogTextLine(line)
+	if !ok {
+		t.Fatal("expected structured slog line to be parsed")
+	}
+	if want := `before\x1b[2J\r\b\aafter`; message != want {
+		t.Fatalf("message = %q, want %q", message, want)
+	}
+}
+
+func TestRenderLogEntry_NarrowViewportKeepsColoredMarkers(t *testing.T) {
+	timestamp, err := time.Parse(time.RFC3339Nano, "2026-08-21T10:00:00.000+04:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows := appendLogEntry(nil, timestamp, "WARN", "first message continues", 20)
+	marker := ansiFgBrightYellow + "│" + ansiReset
+	if len(rows) < 3 {
+		t.Fatalf("expected metadata and wrapped message rows, got %q", rows)
+	}
+	for _, row := range rows[1:] {
+		if !strings.HasPrefix(row, marker) {
+			t.Errorf("expected colored marker on message row %q", row)
+		}
+		if width := visibleWidthANSI(row); width > 20 {
+			t.Errorf("message row width = %d, want <= 20: %q", width, row)
+		}
+	}
+
+	for _, width := range []int{1, 2} {
+		rows := appendLogEntry(nil, timestamp, "WARN", "message", width)
+		hasMarker := false
+		for _, row := range rows {
+			hasMarker = hasMarker || strings.Contains(row, marker)
+			if rowWidth := visibleWidthANSI(row); rowWidth > width {
+				t.Errorf("width %d: row width = %d: %q", width, rowWidth, row)
+			}
+		}
+		if !hasMarker {
+			t.Errorf("width %d: expected a colored marker in %q", width, rows)
+		}
 	}
 }
 

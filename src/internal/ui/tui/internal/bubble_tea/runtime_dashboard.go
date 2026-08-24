@@ -143,10 +143,9 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.logs.tickSeq || m.screen != runtimeScreenLogs {
 			return m, nil
 		}
-		m.logs.refresh(m.logFeed, m.preferences)
-		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq)
+		return m, m.logs.refreshUpdates(m.logFeed, m.preferences)
 	case runtimeContextDoneMsg:
-		m.logs.stopWait()
+		m.logs.stopUpdates()
 		return m, tea.Quit
 	case tea.KeyPressMsg:
 		if m.confirmOpen {
@@ -154,20 +153,20 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "ctrl+c":
-			m.logs.stopWait()
+			m.logs.stopUpdates()
 			return m, tea.Quit
 		case "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
 				if m.mode == config.ModeClient && !m.connected {
-					m.logs.stopWait()
+					m.logs.stopUpdates()
 					m.reconfigureRequested = true
 					return m, tea.Quit
 				}
 				m.confirmOpen = true
 				m.confirmCursor = 0
 			case runtimeScreenLogs:
-				m.logs.stopWait()
+				m.logs.stopUpdates()
 				m.screen = runtimeScreenDataplane
 				m.tickSeq++
 				return m, runtimeTickCmd(m.tickSeq)
@@ -182,14 +181,11 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = m.nextScreen()
 			m.preferences = m.settings.Current()
 			if m.screen == runtimeScreenLogs {
-				m.logs.restartWait()
-				m.logs.tickSeq++
 				m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
-				m.logs.refresh(m.logFeed, m.preferences)
-				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq)
+				return m, m.logs.startUpdates(m.logFeed, m.preferences)
 			}
 			if previous == runtimeScreenLogs {
-				m.logs.stopWait()
+				m.logs.stopUpdates()
 			}
 			if m.screen == runtimeScreenDataplane && previous != runtimeScreenDataplane {
 				m.tickSeq++
@@ -213,7 +209,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		m.logs.stopWait()
+		m.logs.stopUpdates()
 		return m, tea.Quit
 	case "esc":
 		m.confirmOpen = false
@@ -229,7 +225,7 @@ func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		}
 	case "enter":
 		if m.confirmCursor == 1 {
-			m.logs.stopWait()
+			m.logs.stopUpdates()
 			m.reconfigureRequested = true
 			return m, tea.Quit
 		}
@@ -569,38 +565,13 @@ func (m RuntimeDashboard) logsHint() string {
 }
 
 func (m RuntimeDashboard) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	return m, m.logs.updateKeys(msg)
+	return m, m.logs.update(msg, m.logFeed, m.preferences)
 }
 
 func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return runtimeTickMsg{seq: seq}
 	})
-}
-
-func runtimeLogUpdateCmd(
-	ctx context.Context,
-	feed RuntimeLogFeed,
-	stop <-chan struct{},
-	logSeq uint64,
-) tea.Cmd {
-	changeFeed, ok := feed.(RuntimeLogChangeFeed)
-	if ok {
-		changes := changeFeed.Changes()
-		if changes != nil {
-			return func() tea.Msg {
-				select {
-				case <-ctx.Done():
-					return runtimeContextDoneMsg{}
-				case <-stop:
-					return logViewportTickMsg{}
-				case <-changes:
-					return logViewportTickMsg{seq: logSeq}
-				}
-			}
-		}
-	}
-	return logViewportTickCmd(logSeq)
 }
 
 func waitForRuntimeContextDone(ctx context.Context) tea.Cmd {
