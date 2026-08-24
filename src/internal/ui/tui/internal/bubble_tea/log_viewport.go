@@ -7,6 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+const logViewportRefreshDelay = 50 * time.Millisecond
+
 type logViewportTickMsg struct {
 	seq uint64
 }
@@ -41,54 +43,62 @@ func (v *logViewport) ensure(width, height int, prefs UIPreferences, subtitle, h
 
 func (v *logViewport) refresh(feed RuntimeLogFeed, prefs UIPreferences) {
 	lines := runtimeLogSnapshot(feed, &v.scratch)
-	wasAtBottom := v.viewport.AtBottom()
 	offset := v.viewport.YOffset()
-	content := renderLogsViewportContent(lines, v.viewport.Width(), resolveUIStyles(prefs))
-	v.viewport.SetContent(content)
-	if v.follow || wasAtBottom {
+	content := renderLogsViewportLines(lines, v.viewport.Width(), resolveUIStyles(prefs))
+	v.viewport.SetContentLines(content)
+	if v.follow {
 		v.viewport.GotoBottom()
-		v.follow = true
 		return
 	}
 	v.viewport.SetYOffset(offset)
 }
 
-func (v *logViewport) restartWait() {
-	v.stopWait()
+func (v *logViewport) startUpdates(feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+	v.stopUpdates()
+	v.tickSeq++
+	v.refresh(feed, prefs)
+	if !v.follow {
+		return nil
+	}
 	v.waitStop = make(chan struct{})
+	return logViewportUpdateCmd(feed, v.waitStop, v.tickSeq)
 }
 
-func (v *logViewport) stopWait() {
+func (v *logViewport) stopUpdates() {
 	if v.waitStop != nil {
 		close(v.waitStop)
 		v.waitStop = nil
 	}
 }
 
-func (v *logViewport) updateKeys(msg tea.KeyPressMsg) tea.Cmd {
+func (v *logViewport) refreshUpdates(feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+	if !v.follow {
+		return nil
+	}
+	v.refresh(feed, prefs)
+	return logViewportUpdateCmd(feed, v.waitStop, v.tickSeq)
+}
+
+func (v *logViewport) update(msg tea.KeyPressMsg, feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+	wasFollowing := v.follow
 	switch msg.String() {
 	case "pgup":
 		v.viewport.PageUp()
 		v.follow = false
-		return nil
 	case "pgdown":
 		v.viewport.PageDown()
 		v.follow = v.viewport.AtBottom()
-		return nil
 	case "home":
 		v.viewport.GotoTop()
 		v.follow = false
-		return nil
 	case "end":
 		v.viewport.GotoBottom()
 		v.follow = true
-		return nil
 	case "space":
 		v.follow = !v.follow
 		if v.follow {
 			v.viewport.GotoBottom()
 		}
-		return nil
 	case "up", "k":
 		v.viewport.ScrollUp(1)
 		v.follow = false
@@ -96,7 +106,14 @@ func (v *logViewport) updateKeys(msg tea.KeyPressMsg) tea.Cmd {
 		v.viewport.ScrollDown(1)
 		v.follow = v.viewport.AtBottom()
 	}
-	return nil
+	if v.follow == wasFollowing {
+		return nil
+	}
+	if !v.follow {
+		v.stopUpdates()
+		return nil
+	}
+	return v.startUpdates(feed, prefs)
 }
 
 func (v logViewport) view() string {
@@ -117,10 +134,25 @@ func logViewportUpdateCmd(feed RuntimeLogFeed, stop <-chan struct{}, seq uint64)
 			return func() tea.Msg {
 				select {
 				case <-stop:
-					return logViewportTickMsg{}
+					return nil
 				case <-changes:
-					return logViewportTickMsg{seq: seq}
 				}
+
+				timer := time.NewTimer(logViewportRefreshDelay)
+				defer timer.Stop()
+				select {
+				case <-stop:
+					return nil
+				case <-timer.C:
+				}
+
+				// Changes are edge notifications, not a count. Discard a pending
+				// edge because the next refresh reads the entire latest snapshot.
+				select {
+				case <-changes:
+				default:
+				}
+				return logViewportTickMsg{seq: seq}
 			}
 		}
 	}

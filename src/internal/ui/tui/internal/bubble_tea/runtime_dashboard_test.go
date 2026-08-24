@@ -1077,46 +1077,6 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 	}
 }
 
-func TestRuntimeLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
-	feed := testRuntimeLogFeed{lines: []string{"line"}}
-	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
-	if cmd == nil {
-		t.Fatal("expected non-nil command")
-	}
-	// The returned command should be a tick cmd (time-based), not a channel wait.
-	// We verify it returns a logViewportTickMsg eventually.
-	msg := cmd()
-	if _, ok := msg.(logViewportTickMsg); !ok {
-		t.Fatalf("expected logViewportTickMsg from plain feed fallback, got %T", msg)
-	}
-}
-
-type testRuntimeChangeFeed struct {
-	testRuntimeLogFeed
-	changes chan struct{}
-}
-
-func (f testRuntimeChangeFeed) Changes() <-chan struct{} {
-	return f.changes
-}
-
-func TestRuntimeLogUpdateCmd_ChangeFeedNilChanges_FallsBackToTick(t *testing.T) {
-	feed := testRuntimeChangeFeed{
-		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
-		changes:            nil,
-	}
-	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
-	if cmd == nil {
-		t.Fatal("expected non-nil command")
-	}
-	msg := cmd()
-	if _, ok := msg.(logViewportTickMsg); !ok {
-		t.Fatalf("expected logViewportTickMsg from nil Changes fallback, got %T", msg)
-	}
-}
-
 func TestZeroBrailleSparkline_WidthEdgeCases(t *testing.T) {
 	if got := zeroBrailleSparkline(0); got != "" {
 		t.Fatalf("expected empty string for width<=0, got %q", got)
@@ -1306,74 +1266,6 @@ func TestUpdateLogs_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.logs.follow {
 		t.Fatal("expected logFollow=true when Down key pressed and viewport is at bottom")
-	}
-}
-
-func TestRuntimeLogUpdateCmd_StopClosedReturnsLogTickMsg(t *testing.T) {
-	// Use a change feed with a valid channel so we enter the select branch.
-	changes := make(chan struct{}, 1)
-	feed := testRuntimeChangeFeed{
-		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
-		changes:            changes,
-	}
-	stop := make(chan struct{})
-	close(stop) // close immediately
-
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
-	if cmd == nil {
-		t.Fatal("expected non-nil command")
-	}
-	msg := cmd()
-	tick, ok := msg.(logViewportTickMsg)
-	if !ok {
-		t.Fatalf("expected logViewportTickMsg when stop is closed, got %T", msg)
-	}
-	// When stop fires, seq should be zero (not the passed-in seq).
-	if tick.seq != 0 {
-		t.Fatalf("expected seq=0 from stop branch, got %d", tick.seq)
-	}
-}
-
-func TestRuntimeLogUpdateCmd_ContextCanceled(t *testing.T) {
-	changes := make(chan struct{}, 1)
-	feed := testRuntimeChangeFeed{
-		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
-		changes:            changes,
-	}
-	stop := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42)
-	if cmd == nil {
-		t.Fatal("expected non-nil command")
-	}
-	msg := cmd()
-	if _, ok := msg.(runtimeContextDoneMsg); !ok {
-		t.Fatalf("expected runtimeContextDoneMsg when context is canceled, got %T", msg)
-	}
-}
-
-func TestRuntimeLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
-	changes := make(chan struct{}, 1)
-	changes <- struct{}{} // signal immediately
-	feed := testRuntimeChangeFeed{
-		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
-		changes:            changes,
-	}
-	stop := make(chan struct{})
-
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
-	if cmd == nil {
-		t.Fatal("expected non-nil command")
-	}
-	msg := cmd()
-	tick, ok := msg.(logViewportTickMsg)
-	if !ok {
-		t.Fatalf("expected logViewportTickMsg from changes signal, got %T", msg)
-	}
-	if tick.seq != 42 {
-		t.Fatalf("expected seq=42 from changes signal, got %d", tick.seq)
 	}
 }
 

@@ -133,13 +133,13 @@ func renderLogsBody(lines []string, width int, styles uiStyles) []string {
 	return body
 }
 
-func renderLogsViewportContent(lines []string, width int, styles uiStyles) string {
+func renderLogsViewportLines(lines []string, width int, styles uiStyles) []string {
 	if len(lines) == 0 {
-		return "No logs yet"
+		return []string{"No logs yet"}
 	}
 
-	rows := make([]string, 0, len(lines))
-	lastDate := ""
+	rows := make([]string, 0, len(lines)*2)
+	lastDate := -1
 	for i, line := range lines {
 		if i > 0 {
 			rows = append(rows, "")
@@ -151,14 +151,15 @@ func renderLogsViewportContent(lines []string, width int, styles uiStyles) strin
 			continue
 		}
 
-		date := timestamp.Format("2006-01-02")
+		date := timestamp.Year()*1000 + timestamp.YearDay()
 		if date != lastDate {
-			rows = append(rows, styles.meta.Render(renderLogDateDivider(date, width)))
+			formattedDate := timestamp.Format("2006-01-02")
+			rows = append(rows, styles.meta.Render(renderLogDateDivider(formattedDate, width)))
 			lastDate = date
 		}
-		rows = append(rows, renderLogEntry(timestamp, level, message, width)...)
+		rows = appendLogEntry(rows, timestamp, level, message, width)
 	}
-	return strings.Join(rows, "\n")
+	return rows
 }
 
 func parseSlogTextLine(line string) (time.Time, string, string, bool) {
@@ -186,25 +187,22 @@ func displaySlogMessage(valueAndAttrs string) string {
 		return valueAndAttrs
 	}
 
-	escaped := false
-	for i := 1; i < len(valueAndAttrs); i++ {
-		switch {
-		case escaped:
-			escaped = false
-		case valueAndAttrs[i] == '\\':
-			escaped = true
-		case valueAndAttrs[i] == '"':
-			message, err := strconv.Unquote(valueAndAttrs[:i+1])
-			if err != nil {
-				return valueAndAttrs
-			}
-			return sanitizeLogMessage(message) + valueAndAttrs[i+1:]
-		}
+	quoted, err := strconv.QuotedPrefix(valueAndAttrs)
+	if err != nil {
+		return valueAndAttrs
 	}
-	return valueAndAttrs
+	message, err := strconv.Unquote(quoted)
+	if err != nil {
+		return valueAndAttrs
+	}
+	return sanitizeLogMessage(message) + valueAndAttrs[len(quoted):]
 }
 
 func sanitizeLogMessage(message string) string {
+	if strings.IndexFunc(message, unicode.IsControl) < 0 {
+		return message
+	}
+
 	var sanitized strings.Builder
 	sanitized.Grow(len(message))
 	for _, r := range message {
@@ -233,16 +231,16 @@ func renderLogDateDivider(date string, width int) string {
 	return strings.Repeat("─", leftWidth) + " " + date + " " + strings.Repeat("─", ruleWidth-leftWidth)
 }
 
-func renderLogEntry(timestamp time.Time, level, message string, width int) []string {
+func appendLogEntry(rows []string, timestamp time.Time, level, message string, width int) []string {
 	marker := renderLogLevelMarker(level)
 	formattedTime := timestamp.Format("15:04:05.000")
 	prefix := formattedTime + " " + padRightVisible(level, 5) + " " + marker + " "
 	prefixWidth := visibleWidthANSI(prefix)
 	if width <= 0 {
-		return []string{stripANSI(prefix) + message}
+		return append(rows, stripANSI(prefix)+message)
 	}
 	if width <= prefixWidth {
-		rows := wrapText(formattedTime+" "+level, width)
+		rows = append(rows, wrapText(formattedTime+" "+level, width)...)
 		messagePrefix := marker + " "
 		messageWidth := width - 2
 		if messageWidth < 1 {
@@ -262,11 +260,13 @@ func renderLogEntry(timestamp time.Time, level, message string, width int) []str
 	}
 
 	messageLines := wrapText(message, width-prefixWidth)
-	rows := make([]string, len(messageLines))
-	rows[0] = prefix + messageLines[0]
+	rows = append(rows, prefix+messageLines[0])
+	if len(messageLines) == 1 {
+		return rows
+	}
 	continuationPrefix := strings.Repeat(" ", prefixWidth-2) + marker + " "
 	for i := 1; i < len(messageLines); i++ {
-		rows[i] = continuationPrefix + messageLines[i]
+		rows = append(rows, continuationPrefix+messageLines[i])
 	}
 	return rows
 }

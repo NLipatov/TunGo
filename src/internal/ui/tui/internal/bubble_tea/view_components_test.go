@@ -29,7 +29,7 @@ func TestRenderLogsViewportContent_GroupsAndWrapsStructuredLogs(t *testing.T) {
 		`time=2026-08-22T00:00:01.456+04:00 level=INFO msg=reconnected`,
 	}
 
-	rendered := renderLogsViewportContent(lines, 50, styles)
+	rendered := strings.Join(renderLogsViewportLines(lines, 50, styles), "\n")
 	if got := strings.Count(rendered, ansiFgBrightYellow+"│"+ansiReset); got != 2 {
 		t.Fatalf("expected both WARN markers to be colored, got %d in %q", got, rendered)
 	}
@@ -66,7 +66,7 @@ func TestRenderLogsViewportContent_ColorsMarkersByLevel(t *testing.T) {
 		`time=2026-08-21T10:00:02.000+04:00 level=ERROR msg=failed`,
 	}
 
-	got := renderLogsViewportContent(lines, 80, styles)
+	got := strings.Join(renderLogsViewportLines(lines, 80, styles), "\n")
 	for level, marker := range map[string]string{
 		"INFO":  ansiFgBrightGreen + "│" + ansiReset,
 		"WARN":  ansiFgBrightYellow + "│" + ansiReset,
@@ -108,7 +108,7 @@ func TestRenderLogEntry_NarrowViewportKeepsColoredMarkers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows := renderLogEntry(timestamp, "WARN", "first message continues", 20)
+	rows := appendLogEntry(nil, timestamp, "WARN", "first message continues", 20)
 	marker := ansiFgBrightYellow + "│" + ansiReset
 	if len(rows) < 3 {
 		t.Fatalf("expected metadata and wrapped message rows, got %q", rows)
@@ -123,7 +123,7 @@ func TestRenderLogEntry_NarrowViewportKeepsColoredMarkers(t *testing.T) {
 	}
 
 	for _, width := range []int{1, 2} {
-		rows := renderLogEntry(timestamp, "WARN", "message", width)
+		rows := appendLogEntry(nil, timestamp, "WARN", "message", width)
 		hasMarker := false
 		for _, row := range rows {
 			hasMarker = hasMarker || strings.Contains(row, marker)

@@ -92,10 +92,9 @@ func TestUpdate_WindowSizeMsg_LogsTab_RefreshesViewport(t *testing.T) {
 func TestUpdate_LogTickMsg_MatchingSeq(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.tab = configuratorTabLogs
-	m.logs.tickSeq = 5
-	m.logs.restartWait()
+	_ = m.logs.startUpdates(m.options.LogFeed, m.preferences)
 
-	result, cmd := m.Update(logViewportTickMsg{seq: 5})
+	result, cmd := m.Update(logViewportTickMsg{seq: m.logs.tickSeq})
 	updated := result.(Configurator)
 	_ = updated
 	if cmd == nil {
@@ -367,7 +366,7 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 		t.Fatal("expected non-nil cmd when entering Logs tab")
 	}
 
-	s.logs.stopWait()
+	s.logs.stopUpdates()
 	result, _ = s.cycleTab()
 	s = result.(Configurator)
 	if s.tab != configuratorTabMain {
@@ -378,7 +377,7 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 func TestCycleTab_LeavingLogsStopsLogWait(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.tab = configuratorTabLogs
-	m.logs.restartWait()
+	_ = m.logs.startUpdates(m.options.LogFeed, m.preferences)
 	ch := m.logs.waitStop
 
 	result, _ := m.cycleTab()
@@ -480,7 +479,7 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.tab = configuratorTabLogs
-	m.logs.restartWait()
+	_ = m.logs.startUpdates(m.options.LogFeed, m.preferences)
 	ch := m.logs.waitStop
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyEsc))
@@ -1306,30 +1305,6 @@ func TestReloadClientConfigs_ListError(t *testing.T) {
 }
 
 // --- 22. Log management (delegated to logViewport; see log_viewport_test.go for full coverage) ---
-
-func TestLogsIntegration_RestartAndStopWait(t *testing.T) {
-	m := newTestConfigurator(t)
-	if m.logs.waitStop != nil {
-		t.Fatal("expected nil waitStop initially")
-	}
-
-	m.logs.restartWait()
-	if m.logs.waitStop == nil {
-		t.Fatal("expected non-nil waitStop after restart")
-	}
-
-	ch := m.logs.waitStop
-	m.logs.stopWait()
-	if m.logs.waitStop != nil {
-		t.Fatal("expected nil waitStop after stop")
-	}
-	select {
-	case <-ch:
-		// closed
-	default:
-		t.Fatal("expected channel to be closed")
-	}
-}
 
 func TestLogsIntegration_RefreshDoesNotPanic(t *testing.T) {
 	m := newTestConfigurator(t)
