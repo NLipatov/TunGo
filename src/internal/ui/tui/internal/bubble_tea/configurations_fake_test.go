@@ -1,20 +1,23 @@
 package bubble_tea
 
-import "tungo/internal/config"
+import (
+	clientconfig "tungo/internal/config/client"
+	serverconfig "tungo/internal/config/server"
+)
 
 type testConfigurationControl struct {
 	clientConfigs        []string
 	listErr              error
-	selected             string
-	selectErr            error
-	runtimeInfoErr       error
-	createCalled         bool
-	createErr            error
+	activated            string
+	activateErr          error
+	activeErr            error
+	importCalled         bool
+	importErr            error
 	deleted              []string
 	deleteErr            error
 	generatePath         string
 	generateErr          error
-	peers                []config.ServerPeer
+	peers                []serverconfig.AllowedPeer
 	listPeersErr         error
 	listPeersErrOnRemove error
 	setEnabledErr        error
@@ -26,7 +29,7 @@ type testConfigurationControl struct {
 func newTestConfigurationControl() *testConfigurationControl {
 	return &testConfigurationControl{
 		generatePath: "/tmp/client_configuration.json.1",
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "test", ClientID: 1, Enabled: true},
 		},
 	}
@@ -41,19 +44,52 @@ func testConfiguratorOptions(
 		serverControl = server[0]
 	}
 	return ConfiguratorOptions{
-		ClientConfigurationControl: client,
-		ServerConfigurationControl: serverControl,
+		ClientConfigurations: testClientConfigurations{client},
+		ServerConfigurations: testServerConfigurations{serverControl},
 	}
 }
 
 func (o *ConfiguratorOptions) testControl() *testConfigurationControl {
-	control, ok := o.ClientConfigurationControl.(*testConfigurationControl)
+	adapter, ok := o.ClientConfigurations.(testClientConfigurations)
+	control := adapter.testConfigurationControl
 	if !ok || control == nil {
 		control = newTestConfigurationControl()
-		o.ClientConfigurationControl = control
-		o.ServerConfigurationControl = control
+		o.ClientConfigurations = testClientConfigurations{control}
+		o.ServerConfigurations = testServerConfigurations{control}
 	}
 	return control
+}
+
+type testClientConfigurations struct{ *testConfigurationControl }
+
+func (c testClientConfigurations) Active() (*clientconfig.Configuration, error) {
+	return &clientconfig.Configuration{}, c.activeErr
+}
+
+func (c testClientConfigurations) Import(string, string) error {
+	c.importCalled = true
+	return c.importErr
+}
+
+type testServerConfigurations struct{ *testConfigurationControl }
+
+func (c testServerConfigurations) GenerateClient() (serverconfig.GeneratedClient, error) {
+	if c.generateErr != nil {
+		return serverconfig.GeneratedClient{}, c.generateErr
+	}
+	return serverconfig.GeneratedClient{Path: c.generatePath}, nil
+}
+
+func (c testServerConfigurations) Peers() ([]serverconfig.AllowedPeer, error) {
+	if c.listPeersErr != nil {
+		return nil, c.listPeersErr
+	}
+	peers := make([]serverconfig.AllowedPeer, len(c.peers))
+	for i := range c.peers {
+		peers[i] = c.peers[i]
+		peers[i].PublicKey = append([]byte(nil), c.peers[i].PublicKey...)
+	}
+	return peers, nil
 }
 
 func (c *testConfigurationControl) List() ([]string, error) {
@@ -63,42 +99,14 @@ func (c *testConfigurationControl) List() ([]string, error) {
 	return append([]string(nil), c.clientConfigs...), nil
 }
 
-func (c *testConfigurationControl) Select(path string) error {
-	c.selected = path
-	return c.selectErr
+func (c *testConfigurationControl) Activate(name string) error {
+	c.activated = name
+	return c.activateErr
 }
 
-func (c *testConfigurationControl) RuntimeInfo() (config.RuntimeInfo, error) {
-	return config.RuntimeInfo{}, c.runtimeInfoErr
-}
-
-func (c *testConfigurationControl) CreateFromJSON(string, string) error {
-	c.createCalled = true
-	return c.createErr
-}
-
-func (c *testConfigurationControl) Delete(path string) error {
-	c.deleted = append(c.deleted, path)
+func (c *testConfigurationControl) Delete(name string) error {
+	c.deleted = append(c.deleted, name)
 	return c.deleteErr
-}
-
-func (c *testConfigurationControl) GenerateClientConfiguration() (config.GeneratedClientConfiguration, error) {
-	if c.generateErr != nil {
-		return config.GeneratedClientConfiguration{}, c.generateErr
-	}
-	return config.GeneratedClientConfiguration{Path: c.generatePath}, nil
-}
-
-func (c *testConfigurationControl) ListPeers() ([]config.ServerPeer, error) {
-	if c.listPeersErr != nil {
-		return nil, c.listPeersErr
-	}
-	peers := make([]config.ServerPeer, len(c.peers))
-	for i := range c.peers {
-		peers[i] = c.peers[i]
-		peers[i].PublicKey = append([]byte(nil), c.peers[i].PublicKey...)
-	}
-	return peers, nil
 }
 
 func (c *testConfigurationControl) SetPeerEnabled(clientID int, enabled bool) error {

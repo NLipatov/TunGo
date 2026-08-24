@@ -6,13 +6,13 @@ import (
 	"os"
 
 	"tungo/internal/commandline"
-	"tungo/internal/config"
+	"tungo/internal/mode"
 	"tungo/internal/platform/command"
 )
 
 // Control exposes systemd unit management operations.
 type Control interface {
-	Setup(config.Mode) (string, error)
+	Setup(mode.Mode) (string, error)
 	RemoveUnit() error
 	IsUnitActive() (bool, error)
 	StopUnit() error
@@ -42,11 +42,11 @@ func (i *UnitInstaller) Available() bool {
 }
 
 // Setup installs the selected runtime unit and preserves its running state.
-func (i *UnitInstaller) Setup(mode config.Mode) (string, error) {
-	switch mode {
-	case config.ModeClient, config.ModeServer:
+func (i *UnitInstaller) Setup(runtimeMode mode.Mode) (string, error) {
+	switch runtimeMode {
+	case mode.Client, mode.Server:
 	default:
-		return "", fmt.Errorf("invalid daemon mode: %v", mode)
+		return "", fmt.Errorf("invalid daemon mode: %v", runtimeMode)
 	}
 
 	wasActive, err := i.IsUnitActive()
@@ -59,7 +59,7 @@ func (i *UnitInstaller) Setup(mode config.Mode) (string, error) {
 		}
 	}
 
-	path, err := i.installRuntimeUnit(mode)
+	path, err := i.installRuntimeUnit(runtimeMode)
 	if err != nil {
 		if wasActive {
 			if startErr := i.StartUnit(); startErr != nil {
@@ -76,8 +76,8 @@ func (i *UnitInstaller) Setup(mode config.Mode) (string, error) {
 	return path, nil
 }
 
-func (i *UnitInstaller) installRuntimeUnit(mode config.Mode) (string, error) {
-	args, err := commandline.RuntimeModeArgs(mode)
+func (i *UnitInstaller) installRuntimeUnit(runtimeMode mode.Mode) (string, error) {
+	args, err := commandline.RuntimeModeArgs(runtimeMode)
 	if err != nil {
 		return "", err
 	}

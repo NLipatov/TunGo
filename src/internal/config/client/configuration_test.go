@@ -110,7 +110,7 @@ func TestConfiguration_ActiveSettingsReturnsAddressDerivationError(t *testing.T)
 	}
 }
 
-func TestConfiguration_ApplyClientDefaults(t *testing.T) {
+func TestConfiguration_ApplyDefaults(t *testing.T) {
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
@@ -211,7 +211,7 @@ func TestConfiguration_ApplyClientDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logs.Reset()
 			cfg := Configuration{Protocol: settings.UDP, UDPSettings: tt.s}
-			cfg.ApplyClientDefaults()
+			cfg.applyDefaults()
 			if cfg.UDPSettings.MTU != tt.want {
 				t.Fatalf("MTU = %d, want %d", cfg.UDPSettings.MTU, tt.want)
 			}

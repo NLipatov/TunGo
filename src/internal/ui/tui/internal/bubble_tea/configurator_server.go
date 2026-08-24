@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
+	"tungo/internal/mode"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -25,13 +26,13 @@ func (m Configurator) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 
 	switch m.server.menuOptions[m.cursor] {
 	case serverStartLabel:
-		m = m.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, false)
+		m = m.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
 		if m.done {
 			return m, tea.Quit
 		}
 		return m, nil
 	case serverAddLabel:
-		generated, err := m.options.ServerConfigurationControl.GenerateClientConfiguration()
+		generated, err := m.options.ServerConfigurations.GenerateClient()
 		if err != nil {
 			m.resultErr = err
 			m.done = true
@@ -40,7 +41,7 @@ func (m Configurator) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 		m.notice = fmt.Sprintf("Client configuration saved to %s", generated.Path)
 		return m, nil
 	case serverManageLabel:
-		peers, err := m.options.ServerConfigurationControl.ListPeers()
+		peers, err := m.options.ServerConfigurations.Peers()
 		if err != nil {
 			m.resultErr = err
 			m.done = true
@@ -85,14 +86,14 @@ func (m Configurator) updateServerManageScreen(msg tea.KeyPressMsg) (tea.Model, 
 
 	peer := m.server.managePeers[m.cursor]
 	nextEnabled := !peer.Enabled
-	if err := m.options.ServerConfigurationControl.SetPeerEnabled(peer.ClientID, nextEnabled); err != nil {
+	if err := m.options.ServerConfigurations.SetPeerEnabled(peer.ClientID, nextEnabled); err != nil {
 		m.notice = fmt.Sprintf("Failed to update client #%d: %v", peer.ClientID, err)
 		m.screen = configuratorScreenServerSelect
 		m.cursor = 0
 		return m, nil
 	}
 
-	peers, err := m.options.ServerConfigurationControl.ListPeers()
+	peers, err := m.options.ServerConfigurations.Peers()
 	if err != nil {
 		m.resultErr = err
 		m.done = true
@@ -142,14 +143,14 @@ func (m Configurator) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.
 		return m, nil
 	}
 
-	if err := m.options.ServerConfigurationControl.RemovePeer(m.server.deletePeer.ClientID); err != nil {
+	if err := m.options.ServerConfigurations.RemovePeer(m.server.deletePeer.ClientID); err != nil {
 		m.notice = fmt.Sprintf("Failed to remove client #%d: %v", m.server.deletePeer.ClientID, err)
 		m.screen = configuratorScreenServerManage
 		m.cursor = 0
 		return m, nil
 	}
 
-	peers, err := m.options.ServerConfigurationControl.ListPeers()
+	peers, err := m.options.ServerConfigurations.Peers()
 	if err != nil {
 		m.resultErr = err
 		m.done = true
@@ -174,7 +175,7 @@ func (m Configurator) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.
 	return m, nil
 }
 
-func buildServerManageLabels(peers []config.ServerPeer) []string {
+func buildServerManageLabels(peers []serverconfig.AllowedPeer) []string {
 	labels := make([]string, 0, len(peers))
 	for _, peer := range peers {
 		labels = append(labels, serverPeerOptionLabel(peer))
@@ -182,7 +183,7 @@ func buildServerManageLabels(peers []config.ServerPeer) []string {
 	return labels
 }
 
-func serverPeerDisplayName(peer config.ServerPeer) string {
+func serverPeerDisplayName(peer serverconfig.AllowedPeer) string {
 	name := strings.TrimSpace(peer.Name)
 	if name == "" {
 		return fmt.Sprintf("client-%d", peer.ClientID)
@@ -190,7 +191,7 @@ func serverPeerDisplayName(peer config.ServerPeer) string {
 	return name
 }
 
-func serverPeerOptionLabel(peer config.ServerPeer) string {
+func serverPeerOptionLabel(peer serverconfig.AllowedPeer) string {
 	status := "disabled"
 	if peer.Enabled {
 		status = "enabled"

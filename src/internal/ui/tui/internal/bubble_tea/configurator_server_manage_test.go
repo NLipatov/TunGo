@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -20,7 +20,7 @@ func newSessionModelForServerManageTests(
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]config.ServerPeer(nil), control.peers...)
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), control.peers...)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 	return model
@@ -36,7 +36,7 @@ func keyNamed(k rune) tea.KeyPressMsg {
 
 func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 			{Name: "beta", ClientID: 2, Enabled: false},
 		},
@@ -73,7 +73,7 @@ func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 
 func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 10, Enabled: true},
 		},
 	}
@@ -99,7 +99,7 @@ func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
 
 func TestServerManage_DeleteFlow_LastPeerReturnsToServerMenu(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "solo", ClientID: 99, Enabled: true},
 		},
 	}
@@ -120,7 +120,7 @@ func TestServerManage_DeleteFlow_LastPeerReturnsToServerMenu(t *testing.T) {
 
 func TestServerManage_ToggleEnabled_Error_ShowsNotice(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		setEnabledErr: errors.New("enable failed"),
@@ -140,7 +140,7 @@ func TestServerManage_ToggleEnabled_Error_ShowsNotice(t *testing.T) {
 
 func TestServerManage_ToggleEnabled_ListError_Exits(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
@@ -199,7 +199,7 @@ func TestServerDeleteConfirm_EscRestoresCursorNoPeers(t *testing.T) {
 
 func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		removeErr: errors.New("remove failed"),
@@ -221,7 +221,7 @@ func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 
 func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
@@ -247,7 +247,7 @@ func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 
 func TestServerDeleteConfirm_CancelWithPeers_RestoresCursor(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 			{Name: "beta", ClientID: 2, Enabled: false},
 		},

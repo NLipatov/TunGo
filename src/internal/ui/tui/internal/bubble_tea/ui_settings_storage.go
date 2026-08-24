@@ -5,7 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"tungo/internal/config"
+
+	"tungo/internal/product"
 )
 
 type prefsStorage interface {
@@ -18,9 +19,8 @@ type defaultPrefsStorage struct {
 }
 
 func newDefaultPrefsStorage() defaultPrefsStorage {
-	directory, _ := config.DefaultStorageDirectory()
 	return defaultPrefsStorage{
-		filePath: filepath.Join(directory, "tui.json"),
+		filePath: filepath.Join(product.ConfigurationDirectory(), "tui.json"),
 	}
 }
 

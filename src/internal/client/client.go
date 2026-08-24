@@ -13,7 +13,6 @@ import (
 	"tungo/internal/client/resume"
 	"tungo/internal/client/tcp"
 	"tungo/internal/client/udp"
-	"tungo/internal/config"
 	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/trafficstats"
@@ -53,12 +52,10 @@ type Client struct {
 	ready         atomic.Bool
 }
 
-func New() (*Client, error) {
+func New(configuration *clientconfig.Configuration) (*Client, error) {
 	slog.Info("starting client")
-	control := config.NewClientControl()
-	configuration, err := control.Configuration()
-	if err != nil {
-		return nil, fmt.Errorf("init error: failed to read client configuration: %w", err)
+	if configuration == nil {
+		return nil, fmt.Errorf("client configuration is nil")
 	}
 	tunManager, err := clienttun.New(configuration)
 	if err != nil {

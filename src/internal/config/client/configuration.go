@@ -25,10 +25,10 @@ type Configuration struct {
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
 }
 
-func (c *Configuration) ApplyClientDefaults() *Configuration {
-	active, err := c.activeSettings()
+func (c *Configuration) applyDefaults() {
+	active, err := c.selectedSettings()
 	if err != nil {
-		return c
+		return
 	}
 	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
 	if active.MTU != 0 && active.MTU != effectiveMTU {
@@ -39,7 +39,6 @@ func (c *Configuration) ApplyClientDefaults() *Configuration {
 		)
 	}
 	active.MTU = effectiveMTU
-	return c
 }
 
 func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
@@ -58,7 +57,7 @@ func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
-	configured, err := c.activeSettings()
+	configured, err := c.selectedSettings()
 	if err != nil {
 		return settings.Settings{}, err
 	}
@@ -71,7 +70,7 @@ func (c *Configuration) ActiveSettings() (settings.Settings, error) {
 	return active, nil
 }
 
-func (c *Configuration) activeSettings() (*settings.Settings, error) {
+func (c *Configuration) selectedSettings() (*settings.Settings, error) {
 	switch c.Protocol {
 	case settings.UDP:
 		return &c.UDPSettings, nil

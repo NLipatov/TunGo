@@ -8,7 +8,7 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func Validate(configuration Configuration) error {
+func validate(configuration Configuration) error {
 	if configuration.Host != "" && strings.TrimSpace(configuration.Host) == "" {
 		return fmt.Errorf("host is empty")
 	}

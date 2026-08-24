@@ -20,7 +20,7 @@ func TestValidate_AllowsIPv6OnlyActiveSettings(t *testing.T) {
 		MTU: settings.MinimumIPv6MTU,
 	}
 
-	if err := Validate(cfg); err != nil {
+	if err := validate(cfg); err != nil {
 		t.Fatalf("expected IPv6-only active settings to be valid, got %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestValidate_FailsWhenNoIPv4AndNoIPv6Subnet(t *testing.T) {
 		MTU: settings.DefaultMTU,
 	}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "both IPv4Subnet and IPv6Subnet are invalid") {
 		t.Fatalf("expected subnet validation error, got %v", err)
 	}
@@ -76,7 +76,7 @@ func TestValidate_FailsWhenActivePortIsInvalid(t *testing.T) {
 		MTU: settings.DefaultMTU,
 	}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "active settings: invalid Port 0") {
 		t.Fatalf("expected active port validation error, got %v", err)
 	}
@@ -95,7 +95,7 @@ func TestValidate_AllowsWSSZeroPort(t *testing.T) {
 		MTU: settings.DefaultMTU,
 	}
 
-	if err := Validate(cfg); err != nil {
+	if err := validate(cfg); err != nil {
 		t.Fatalf("expected WSS zero-port config to be valid, got %v", err)
 	}
 }
@@ -114,7 +114,7 @@ func TestValidate_IgnoresNestedProtocol(t *testing.T) {
 		Protocol: settings.UDP,
 	}
 
-	if err := Validate(cfg); err != nil {
+	if err := validate(cfg); err != nil {
 		t.Fatalf("expected nested protocol to be ignored, got %v", err)
 	}
 }
@@ -123,7 +123,7 @@ func TestValidate_FailsWhenTunNameIsEmpty(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.TunName = "   "
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "active settings: TunName is not configured") {
 		t.Fatalf("expected tun name validation error, got %v", err)
 	}
@@ -134,7 +134,7 @@ func TestValidate_FailsWhenTunNameContainsUnsupportedCharacters(t *testing.T) {
 		cfg := validClientConfiguration(t)
 		cfg.UDPSettings.TunName = name
 
-		err := Validate(cfg)
+		err := validate(cfg)
 		if err == nil || !strings.Contains(err.Error(), "TunName contains unsupported characters") {
 			t.Fatalf("TunName %q: expected unsupported character error, got %v", name, err)
 		}
@@ -145,7 +145,7 @@ func TestValidate_FailsWhenDNSv4ContainsIPv6(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv4 = []string{"2001:4860:4860::8888"}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "is IPv6, expected IPv4") {
 		t.Fatalf("expected DNSv4 family validation error, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestValidate_FailsWhenDNSv6ContainsIPv4(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv6 = []string{"1.1.1.1"}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "is IPv4, expected IPv6") {
 		t.Fatalf("expected DNSv6 family validation error, got %v", err)
 	}
@@ -166,7 +166,7 @@ func TestValidate_AllowsCustomDNS(t *testing.T) {
 	cfg.UDPSettings.DNSv4 = []string{"9.9.9.9", "1.0.0.1"}
 	cfg.UDPSettings.DNSv6 = []string{"2620:fe::9"}
 
-	if err := Validate(cfg); err != nil {
+	if err := validate(cfg); err != nil {
 		t.Fatalf("expected custom DNS config to be valid, got %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestValidate_RejectsInvalidServerHost(t *testing.T) {
 	for _, host := range tests {
 		cfg := validClientConfiguration(t)
 		cfg.UDPSettings.Server = host
-		if err := Validate(cfg); err == nil {
+		if err := validate(cfg); err == nil {
 			t.Errorf("expected validation error for server host %+v", host)
 		}
 	}
@@ -203,7 +203,7 @@ func TestValidate_FailsOnBadClientPublicKeyLength(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.ClientPublicKey = make([]byte, 16) // too short
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid ClientPublicKey length") {
 		t.Fatalf("expected ClientPublicKey length error, got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestValidate_FailsOnBadClientPrivateKeyLength(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.ClientPrivateKey = make([]byte, 64) // too long
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid ClientPrivateKey length") {
 		t.Fatalf("expected ClientPrivateKey length error, got %v", err)
 	}
@@ -223,7 +223,7 @@ func TestValidate_FailsOnBadX25519PublicKeyLength(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.X25519PublicKey = make([]byte, 0) // empty
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid X25519PublicKey") {
 		t.Fatalf("expected X25519PublicKey length error, got %v", err)
 	}
@@ -233,7 +233,7 @@ func TestValidate_FailsOnZeroServer(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.Server = settings.Host{} // zero value
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "Server is not configured") {
 		t.Fatalf("expected server validation error, got %v", err)
 	}
@@ -243,7 +243,7 @@ func TestValidate_FailsOnHighPort(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.Port = 70000
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid Port") {
 		t.Fatalf("expected port validation error, got %v", err)
 	}
@@ -253,7 +253,7 @@ func TestValidate_FailsOnZeroClientID(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.ClientID = 0
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid ClientID") {
 		t.Fatalf("expected ClientID validation error, got %v", err)
 	}
@@ -263,7 +263,7 @@ func TestValidate_FailsOnNegativeClientID(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.ClientID = -5
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid ClientID") {
 		t.Fatalf("expected ClientID validation error, got %v", err)
 	}
@@ -273,7 +273,7 @@ func TestValidate_FailsOnEmptyDNSString(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv4 = []string{""}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
 		t.Fatalf("expected empty DNS error, got %v", err)
 	}
@@ -283,7 +283,7 @@ func TestValidate_FailsOnWhitespaceDNSString(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv4 = []string{"   "}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
 		t.Fatalf("expected empty DNS error, got %v", err)
 	}
@@ -293,7 +293,7 @@ func TestValidate_FailsOnNonIPDNS(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv4 = []string{"not-an-ip"}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "is not an IP address") {
 		t.Fatalf("expected non-IP DNS error, got %v", err)
 	}
@@ -303,7 +303,7 @@ func TestValidate_FailsOnEmptyDNSv6String(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv6 = []string{""}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
 		t.Fatalf("expected empty DNSv6 error, got %v", err)
 	}
@@ -313,7 +313,7 @@ func TestValidate_FailsOnNonIPDNSv6(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv6 = []string{"example.com"}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "is not an IP address") {
 		t.Fatalf("expected non-IP DNSv6 error, got %v", err)
 	}
@@ -323,7 +323,7 @@ func TestValidate_FailsOnNegativePort(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.Port = -1
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid Port") {
 		t.Fatalf("expected port validation error, got %v", err)
 	}
@@ -343,7 +343,7 @@ func TestValidate_WSSZeroPortRejectsNonWSS(t *testing.T) {
 		MTU: settings.DefaultMTU,
 	}
 
-	err := Validate(cfg)
+	err := validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "invalid Port 0") {
 		t.Fatalf("expected port 0 to be rejected for WS protocol, got %v", err)
 	}
@@ -366,7 +366,7 @@ func TestValidate_RejectsMTUOutsideActiveFamilyRange(t *testing.T) {
 			cfg := validClientConfiguration(t)
 			cfg.UDPSettings.IPv6Subnet = tt.ipv6Subnet
 			cfg.UDPSettings.MTU = tt.mtu
-			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid MTU") {
+			if err := validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid MTU") {
 				t.Fatalf("expected MTU validation error, got %v", err)
 			}
 		})
@@ -396,7 +396,7 @@ func TestValidate_RejectsMismatchedSubnetFamilies(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validClientConfiguration(t)
 			tt.set(&cfg.UDPSettings)
-			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "Subnet is not an IPv") {
+			if err := validate(cfg); err == nil || !strings.Contains(err.Error(), "Subnet is not an IPv") {
 				t.Fatalf("expected subnet family validation error, got %v", err)
 			}
 		})

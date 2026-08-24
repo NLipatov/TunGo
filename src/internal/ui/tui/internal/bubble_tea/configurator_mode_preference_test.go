@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
+	"tungo/internal/mode"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -62,7 +62,7 @@ func TestNewConfiguratorSessionModel_AutoSelectModeNone_StaysAtModeScreen(t *tes
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClientSelect(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 
 	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
@@ -75,7 +75,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClie
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	s := settingsForMode(ModePreferenceServer)
 
 	model, err := NewConfigurator(opts, s)
@@ -93,7 +93,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient
 
 func TestUpdateClientSelectScreen_Esc_ServerNotSupported_Exits(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -131,7 +131,7 @@ func TestUpdateClientSelectScreen_Esc_ServerSupported_GoesBackToModeScreen(t *te
 
 func TestView_ClientSelectHint_ServerNotSupported_ShowsEscExit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -185,17 +185,42 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	if !model.done {
 		t.Fatal("expected done=true when AutoSelectClientConfig matches an available config")
 	}
-	if model.resultMode != config.ModeClient {
+	if model.resultMode != mode.Client {
 		t.Fatalf("expected resultMode=Client, got %v", model.resultMode)
 	}
-	if opts.testControl().selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
+	if opts.testControl().activated != "cfg.json" {
+		t.Fatalf("expected Activate to receive cfg.json, got %q", opts.testControl().activated)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
 	}
 	if !strings.Contains(model.notice, "Auto-selected config: cfg.json.") {
 		t.Fatalf("expected autoselect config notice, got %q", model.notice)
+	}
+}
+
+func TestNewConfiguratorSessionModel_MigratesSavedConfigurationPath(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Current()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "/etc/tungo/client_configuration.json.prod.office"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.testControl().clientConfigs = []string{"office", "prod.office"}
+
+	model, err := NewConfigurator(opts, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !model.done {
+		t.Fatal("expected the saved configuration to start")
+	}
+	if opts.testControl().activated != "prod.office" {
+		t.Fatalf("Activate received %q, want prod.office", opts.testControl().activated)
+	}
+	if got := s.Current().AutoSelectClientConfig; got != "prod.office" {
+		t.Fatalf("saved configuration = %q, want prod.office", got)
 	}
 }
 
@@ -221,14 +246,14 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if model.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected configuratorScreenDaemonActiveConfirm, got %v", model.screen)
 	}
-	if model.pendingStartMode != config.ModeClient {
+	if model.pendingStartMode != mode.Client {
 		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
 	}
 	if model.pendingClientConfig != "cfg.json" {
 		t.Fatalf("expected pendingClientConfig=cfg.json, got %q", model.pendingClientConfig)
 	}
-	if opts.testControl().selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
+	if opts.testControl().activated != "cfg.json" {
+		t.Fatalf("expected Activate to receive cfg.json, got %q", opts.testControl().activated)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
@@ -271,7 +296,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := NewConfigurator(opts, s)
@@ -295,7 +320,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().runtimeInfoErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().activateErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -321,7 +346,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().runtimeInfoErr = errors.New("permission denied")
+	opts.testControl().activateErr = errors.New("permission denied")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -406,11 +431,11 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testi
 	}
 }
 
-func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails(t *testing.T) {
+func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenActivateFails(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().selectErr = errors.New("select failed")
+	opts.testControl().activateErr = errors.New("activate failed")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -432,7 +457,7 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenConfigInval
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().runtimeInfoErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().activateErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {

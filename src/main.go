@@ -9,10 +9,13 @@ import (
 
 	"tungo/internal/client"
 	"tungo/internal/commandline"
-	"tungo/internal/config"
+	clientconfig "tungo/internal/config/client"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/elevation"
 	"tungo/internal/logging"
+	"tungo/internal/mode"
+	"tungo/internal/platform"
 	"tungo/internal/platform/command"
 	"tungo/internal/product"
 	"tungo/internal/server"
@@ -62,11 +65,10 @@ func runCLI(ctx context.Context) error {
 		fmt.Printf("%s %s\n", product.Name, product.Version)
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		serverControl := config.NewServerControl()
-		if serverControl == nil {
+		if !platform.ServerModeSupported() {
 			return fmt.Errorf("server configuration is not supported")
 		}
-		generated, err := serverControl.GenerateClientConfiguration()
+		generated, err := serverconfig.DefaultFile().GenerateClient()
 		if err != nil {
 			return fmt.Errorf("configuration generation failed: %w", err)
 		}
@@ -74,14 +76,18 @@ func runCLI(ctx context.Context) error {
 		return nil
 	case commandline.CommandRuntime:
 		switch command.RuntimeMode {
-		case config.ModeClient:
-			runningClient, err := client.New()
+		case mode.Client:
+			configuration, err := clientconfig.Files().Active()
+			if err != nil {
+				return fmt.Errorf("failed to load client configuration: %w", err)
+			}
+			runningClient, err := client.New(configuration)
 			if err != nil {
 				return err
 			}
 			return runningClient.Run(ctx)
-		case config.ModeServer:
-			runningServer, err := server.New()
+		case mode.Server:
+			runningServer, err := server.New(serverconfig.DefaultFile())
 			if err != nil {
 				return err
 			}
@@ -98,13 +104,17 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls := config.NewControls()
+	clientConfigurations := clientconfig.Files()
+	var serverFile *serverconfig.File
+	if platform.ServerModeSupported() {
+		serverFile = serverconfig.DefaultFile()
+	}
 	var daemonControl systemd.Control
 	systemdControl := systemd.NewUnitInstaller(command.New())
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}
-	tuiUI, err := tui.New(configurationControls, daemonControl)
+	tuiUI, err := tui.New(clientConfigurations, serverFile, daemonControl)
 	if err != nil {
 		return err
 	}

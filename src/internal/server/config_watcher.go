@@ -6,35 +6,27 @@ import (
 	"path/filepath"
 	"time"
 
+	serverconfig "tungo/internal/config/server"
+
 	"github.com/fsnotify/fsnotify"
 )
 
-// SessionRevoker revokes sessions by public key.
-// Implemented by the server tunnel runtime.
-type SessionRevoker interface {
+type peerRuntime interface {
 	RevokeByPubKey(pubKey []byte) int
+	Update(peers []serverconfig.AllowedPeer)
 }
 
-// AllowedPeersUpdater updates the runtime AllowedPeers map.
-// Implemented by noise.allowedPeersMap.
-type AllowedPeersUpdater interface {
-	Update(peers []AllowedPeer)
-}
+const defaultWatchInterval = 30 * time.Second
 
-// DefaultWatchInterval is the recommended polling interval for ConfigWatcher.
-const DefaultWatchInterval = 30 * time.Second
-
-// ConfigWatcher monitors AllowedPeers configuration changes and:
+// configWatcher monitors AllowedPeers configuration changes and:
 // 1. Revokes sessions for peers that are removed or disabled
 // 2. Updates the runtime AllowedPeers map for new peer lookups
 //
 // Uses fsnotify for instant updates, with polling as fallback.
-type ConfigWatcher struct {
-	configManager ConfigurationManager
-	revoker       SessionRevoker
-	peersUpdater  AllowedPeersUpdater
-	configPath    string
-	interval      time.Duration
+type configWatcher struct {
+	file     *serverconfig.File
+	runtime  peerRuntime
+	interval time.Duration
 }
 
 type peerAccessState struct {
@@ -42,30 +34,24 @@ type peerAccessState struct {
 	clientID int
 }
 
-// NewConfigWatcher creates a new configuration watcher.
-// configPath is the path to watch for changes (fsnotify).
+// newConfigWatcher creates a new configuration watcher.
 // interval is the fallback polling interval (recommend: 30s-60s).
-// peersUpdater can be nil if runtime peer updates are not needed.
-func NewConfigWatcher(
-	configManager ConfigurationManager,
-	revoker SessionRevoker,
-	peersUpdater AllowedPeersUpdater,
-	configPath string,
+func newConfigWatcher(
+	file *serverconfig.File,
+	runtime peerRuntime,
 	interval time.Duration,
-) *ConfigWatcher {
-	return &ConfigWatcher{
-		configManager: configManager,
-		revoker:       revoker,
-		peersUpdater:  peersUpdater,
-		configPath:    configPath,
-		interval:      interval,
+) *configWatcher {
+	return &configWatcher{
+		file:     file,
+		runtime:  runtime,
+		interval: interval,
 	}
 }
 
-// Watch starts the configuration watcher loop.
+// watch starts the configuration watcher loop.
 // Uses fsnotify for instant updates, with polling as fallback.
 // Blocks until context is cancelled.
-func (w *ConfigWatcher) Watch(ctx context.Context) {
+func (w *configWatcher) watch(ctx context.Context) {
 	prevPeers := w.loadCurrentState()
 
 	// Try to set up fsnotify - watch directory because atomic writes
@@ -74,11 +60,11 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 	var fsErrors <-chan error
 	var configFileName string
 	watcher, err := fsnotify.NewWatcher()
-	if err == nil && w.configPath != "" {
+	if err == nil && w.file.Path() != "" {
 		defer func(watcher *fsnotify.Watcher) {
 			_ = watcher.Close()
 		}(watcher)
-		dir, file := filepath.Split(w.configPath)
+		dir, file := filepath.Split(w.file.Path())
 		if dir == "" {
 			dir = "."
 		}
@@ -114,8 +100,6 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 			// Watch for Write, Create, and Rename (atomic writes use rename)
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
 				slog.Info("ConfigWatcher detected config change", "op", event.Op)
-				// Invalidate cache before reading fresh config
-				w.configManager.InvalidateCache()
 				prevPeers = w.checkAndRevoke(prevPeers)
 			}
 		case err, ok := <-fsErrors:
@@ -125,15 +109,14 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 			}
 			slog.Warn("ConfigWatcher fsnotify error", "err", err)
 		case <-ticker.C:
-			w.configManager.InvalidateCache()
 			prevPeers = w.checkAndRevoke(prevPeers)
 		}
 	}
 }
 
 // loadCurrentState returns the current peer access snapshot.
-func (w *ConfigWatcher) loadCurrentState() map[string]peerAccessState {
-	conf, err := w.configManager.Configuration()
+func (w *configWatcher) loadCurrentState() map[string]peerAccessState {
+	conf, err := w.file.Load()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load initial config", "err", err)
 		return nil
@@ -153,8 +136,8 @@ func (w *ConfigWatcher) loadCurrentState() map[string]peerAccessState {
 // checkAndRevoke compares current config with previous state and:
 // 1. Revokes sessions for peers that were removed or disabled
 // 2. Updates the runtime AllowedPeers map for new handshake lookups
-func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
-	conf, err := w.configManager.Configuration()
+func (w *configWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
+	conf, err := w.file.Load()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load config", "err", err)
 		return prevPeers
@@ -183,7 +166,7 @@ func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map
 
 		if shouldRevoke {
 			pubKey := []byte(pubKeyStr)
-			count := w.revoker.RevokeByPubKey(pubKey)
+			count := w.runtime.RevokeByPubKey(pubKey)
 			if count > 0 {
 				slog.Info("ConfigWatcher revoked sessions for peer", "count", count, "reason", "ACL changed/removed/disabled")
 			}
@@ -191,9 +174,7 @@ func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map
 	}
 
 	// Update runtime AllowedPeers map (enables new peers to connect without restart)
-	if w.peersUpdater != nil {
-		w.peersUpdater.Update(conf.AllowedPeers)
-	}
+	w.runtime.Update(conf.AllowedPeers)
 
 	if len(currentPeers) != len(prevPeers) {
 		slog.Info("ConfigWatcher AllowedPeers changed", "previous", len(prevPeers), "current", len(currentPeers))

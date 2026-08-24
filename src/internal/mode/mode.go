@@ -1,9 +1,9 @@
-package config
+package mode
 
 // Mode identifies which side of the tunnel the process runs.
 type Mode uint8
 
 const (
-	ModeClient Mode = iota + 1
-	ModeServer
+	Client Mode = iota + 1
+	Server
 )

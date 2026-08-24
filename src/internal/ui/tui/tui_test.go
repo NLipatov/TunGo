@@ -2,202 +2,136 @@ package tui
 
 import (
 	"context"
-	"errors"
+	"net/netip"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
 	clientconfig "tungo/internal/config/client"
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
+	"tungo/internal/mode"
 	bubbleTea "tungo/internal/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 func TestNewTUI(t *testing.T) {
-	ui, err := New(configurationControlsMock(true), nil)
+	directory := t.TempDir()
+	ui, err := New(
+		clientconfig.Files(),
+		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
+		nil,
+	)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if ui == nil {
-		t.Fatal("expected non-nil TUI")
-	}
-	if ui.configuratorOptions.ClientConfigurationControl == nil {
-		t.Fatal("expected client configuration control to be registered")
-	}
-	if ui.configuratorOptions.ServerConfigurationControl == nil {
-		t.Fatal("expected server configuration control to be registered")
+	if ui.clientConfigurations == nil || ui.serverFile == nil {
+		t.Fatal("configuration files were not registered")
 	}
 }
 
-func TestNewTUIRejectsMissingClientControl(t *testing.T) {
-	ui, err := New(config.Controls{}, nil)
+func TestNewTUIRejectsMissingClientConfigurations(t *testing.T) {
+	ui, err := New(nil, nil, nil)
 	if err == nil || ui != nil {
 		t.Fatalf("New() = %v, %v; want nil and error", ui, err)
 	}
 }
 
-type runtimeInfoErrorControl struct {
-	configurationControlMock
-	err error
-}
-
-func (c runtimeInfoErrorControl) RuntimeInfo() (config.RuntimeInfo, error) {
-	return config.RuntimeInfo{}, c.err
-}
-
-func TestTUI_Run_CanceledContext_ReturnsNil(t *testing.T) {
+func TestTUIRunCanceledContextReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ui := newTestTUI(t)
-
-	err := ui.Run(ctx)
-	if err != nil {
-		t.Fatalf("expected canceled context to stop run loop cleanly, got %v", err)
+	if err := newTestTUI(t).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 }
 
-func TestTUI_Configure_ReturnsConfiguratorInitializationError(t *testing.T) {
-	ui := newTestTUI(t)
-	ui.configuratorOptions.ClientConfigurationControl = nil
-
-	_, err := ui.configure(context.Background(), bubbleTea.NewRuntimeLogBuffer(8))
-	if err == nil || err.Error() != "configurator dependencies are not initialized" {
-		t.Fatalf("configure() error = %v, want dependency initialization error", err)
-	}
-}
-
-func TestTUI_Configure_PropagatesProgramRunErrorWithoutTTY(t *testing.T) {
+func TestTUIConfigurePropagatesProgramRunErrorWithoutTTY(t *testing.T) {
 	requireNoTTY(t)
-	ui := newTestTUI(t)
-
-	_, err := ui.configure(context.Background(), bubbleTea.NewRuntimeLogBuffer(8))
+	_, err := newTestTUI(t).configure(context.Background(), bubbleTea.NewRuntimeLogBuffer(8))
 	if err == nil || !strings.Contains(err.Error(), "opening TTY") {
-		t.Fatalf("configure() error = %v, want TTY initialization error", err)
+		t.Fatalf("configure() error = %v", err)
 	}
 }
 
-func TestTUI_Run_WrapsConfiguratorInitializationError(t *testing.T) {
-	ui := newTestTUI(t)
-	ui.configuratorOptions.ClientConfigurationControl = nil
-
-	err := ui.Run(context.Background())
-	if err == nil || err.Error() != "configuration error: configurator dependencies are not initialized" {
-		t.Fatalf("Run() error = %q, want wrapped configuration error", err)
+func TestTUIRunRuntimeRejectsInvalidMode(t *testing.T) {
+	err := newTestTUI(t).runRuntime(context.Background(), 0, bubbleTea.NewRuntimeLogBuffer(8))
+	if err == nil || err.Error() != "invalid runtime mode: 0" {
+		t.Fatalf("runRuntime() error = %v", err)
 	}
 }
 
-func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
-	want := errors.New("runtime info failed")
-	ui := newTestTUI(t)
-	ui.configuratorOptions.ClientConfigurationControl = runtimeInfoErrorControl{err: want}
-
-	err := ui.runRuntime(
-		context.Background(),
-		config.ModeClient,
-		bubbleTea.NewRuntimeLogBuffer(8),
-	)
-	if err == nil || err.Error() != "runtime info error: runtime info failed" {
-		t.Fatalf("expected runtime info error, got %v", err)
-	}
-}
-
-func TestTUI_RunRuntime_PropagatesRuntimeConstructionError(t *testing.T) {
-	if _, err := config.NewClientControl().Configuration(); err == nil {
-		t.Skip("default client runtime configuration is available")
-	}
-	ui := newTestTUI(t)
-
-	err := ui.runRuntime(
-		context.Background(),
-		config.ModeClient,
-		bubbleTea.NewRuntimeLogBuffer(8),
-	)
-	if err == nil {
-		t.Fatal("runRuntime() error = nil, want runtime construction error")
-	}
-}
-
-func TestTUI_RunRuntimePhase_PropagatesProgramRunErrorWithoutTTY(t *testing.T) {
+func TestTUIRunRuntimePhasePropagatesProgramRunErrorWithoutTTY(t *testing.T) {
 	requireNoTTY(t)
-	ui := newTestTUI(t)
-
-	reconfigure, err := ui.runRuntimePhase(context.Background(), bubbleTea.RuntimeDashboardOptions{
-		Mode: config.ModeClient,
-	})
-	if err == nil || !strings.Contains(err.Error(), "opening TTY") {
-		t.Fatalf("runRuntimePhase() error = %v, want TTY initialization error", err)
-	}
-	if reconfigure {
-		t.Fatal("runRuntimePhase() reconfigure = true, want false")
+	reconfigure, err := newTestTUI(t).runRuntimePhase(context.Background(), bubbleTea.RuntimeDashboardOptions{Mode: mode.Client})
+	if err == nil || !strings.Contains(err.Error(), "opening TTY") || reconfigure {
+		t.Fatalf("runRuntimePhase() = %v, %v", reconfigure, err)
 	}
 }
 
-func TestShowFatalError_ReturnsWhenProgramCannotOpenTTY(t *testing.T) {
+func TestShowFatalErrorReturnsWhenProgramCannotOpenTTY(t *testing.T) {
 	requireNoTTY(t)
-
 	ShowFatalError("fatal")
 }
 
-func TestTUI_RuntimeInfo_Client(t *testing.T) {
-	ui := newTestTUI(t)
-
-	got, err := ui.runtimeInfo(config.ModeClient)
+func TestClientRuntimeInfo(t *testing.T) {
+	configuration := validClientConfiguration()
+	info, err := clientRuntimeInfo(configuration)
 	if err != nil {
-		t.Fatalf("runtimeInfo() error = %v", err)
+		t.Fatal(err)
 	}
-	if got.Protocol != settings.TCP {
-		t.Fatalf("expected client protocol TCP, got %v", got.Protocol)
-	}
-}
-
-func TestTUI_RuntimeInfo_Server(t *testing.T) {
-	ui := newTestTUI(t)
-
-	got, err := ui.runtimeInfo(config.ModeServer)
-	if err != nil {
-		t.Fatalf("runtimeInfo() error = %v", err)
-	}
-	if got.Protocol != settings.TCP {
-		t.Fatalf("expected server protocol TCP, got %v", got.Protocol)
+	if info.Protocol != settings.TCP || len(info.Endpoints) != 1 || info.Endpoints[0].Port != 8080 {
+		t.Fatalf("runtime info = %+v", info)
 	}
 }
 
-func TestTUI_RuntimeInfo_MissingClientControl(t *testing.T) {
-	ui := newTestTUI(t)
-	ui.configuratorOptions.ClientConfigurationControl = nil
-
-	_, err := ui.runtimeInfo(config.ModeClient)
-	if err == nil || err.Error() != "client configuration control is nil" {
-		t.Fatalf("expected missing client control error, got %v", err)
+func TestServerRuntimeInfo(t *testing.T) {
+	configuration := &serverconfig.Configuration{
+		EnableTCP: true,
+		TCPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				Server: settings.Host{IPv4: "192.0.2.1"},
+				Port:   8080,
+			},
+			Protocol: settings.TCP,
+		},
+	}
+	info := serverRuntimeInfo(configuration)
+	if len(info.Endpoints) != 1 || info.Endpoints[0].Protocol != settings.TCP {
+		t.Fatalf("runtime info = %+v", info)
 	}
 }
 
-func TestTUI_RuntimeInfo_MissingServerControl(t *testing.T) {
-	ui := newTestTUI(t)
-	ui.configuratorOptions.ServerConfigurationControl = nil
-
-	_, err := ui.runtimeInfo(config.ModeServer)
-	if err == nil || err.Error() != "server configuration control is nil" {
-		t.Fatalf("expected missing server control error, got %v", err)
-	}
-}
-
-func TestTUI_RuntimeInfo_InvalidMode(t *testing.T) {
-	ui := newTestTUI(t)
-
-	_, err := ui.runtimeInfo(0)
-	if err == nil || err.Error() != "invalid runtime mode: 0" {
-		t.Fatalf("expected invalid runtime mode error, got %v", err)
+func validClientConfiguration() *clientconfig.Configuration {
+	return &clientconfig.Configuration{
+		ClientID: 1,
+		Protocol: settings.TCP,
+		TCPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				TunName:    "tun0",
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+				Server:     settings.Host{IPv4: "192.0.2.1"},
+				Port:       8080,
+			},
+			MTU:      1500,
+			Protocol: settings.TCP,
+		},
+		X25519PublicKey:  make([]byte, 32),
+		ClientPublicKey:  make([]byte, 32),
+		ClientPrivateKey: make([]byte, 32),
 	}
 }
 
 func newTestTUI(t *testing.T) *TUI {
 	t.Helper()
-	ui, err := New(configurationControlsMock(true), nil)
+	directory := t.TempDir()
+	ui, err := New(
+		clientconfig.Files(),
+		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
+		nil,
+	)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatal(err)
 	}
 	return ui
 }
@@ -211,65 +145,4 @@ func requireNoTTY(t *testing.T) {
 	_ = in.Close()
 	_ = out.Close()
 	t.Skip("test requires a headless process without a controlling TTY")
-}
-
-type configurationControlMock struct{}
-
-func configurationControlsMock(serverSupported bool) config.Controls {
-	controls := config.Controls{Client: configurationControlMock{}}
-	if serverSupported {
-		controls.Server = configurationControlMock{}
-	}
-	return controls
-}
-
-func (configurationControlMock) List() ([]string, error) {
-	return nil, nil
-}
-
-func (configurationControlMock) Select(string) error {
-	return nil
-}
-
-func (configurationControlMock) RuntimeInfo() (config.RuntimeInfo, error) {
-	return config.RuntimeInfo{Protocol: settings.TCP}, nil
-}
-
-func (configurationControlMock) CreateFromJSON(string, string) error {
-	return nil
-}
-
-func (configurationControlMock) Delete(string) error {
-	return nil
-}
-
-func (configurationControlMock) Configuration() (*clientconfig.Configuration, error) {
-	return &clientconfig.Configuration{}, nil
-}
-
-func (configurationControlMock) GenerateClientConfiguration() (config.GeneratedClientConfiguration, error) {
-	return config.GeneratedClientConfiguration{}, nil
-}
-
-func (configurationControlMock) ListPeers() ([]config.ServerPeer, error) {
-	return nil, nil
-}
-
-func (configurationControlMock) SetPeerEnabled(int, bool) error {
-	return nil
-}
-
-func (configurationControlMock) RemovePeer(int) error {
-	return nil
-}
-
-func (configurationControlMock) ServerConfiguration() (*serverconfig.Configuration, error) {
-	return &serverconfig.Configuration{}, nil
-}
-
-func (configurationControlMock) WatchServerConfiguration(
-	context.Context,
-	config.ServerSessionRevoker,
-	config.ServerAllowedPeersUpdater,
-) {
 }

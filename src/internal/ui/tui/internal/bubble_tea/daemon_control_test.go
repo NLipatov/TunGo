@@ -3,8 +3,8 @@ package bubble_tea
 import (
 	"errors"
 
-	"tungo/internal/config"
 	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 )
 
 type daemonControlStub struct {
@@ -30,13 +30,13 @@ func (s *daemonControlStub) Status() (systemd.UnitStatus, error) {
 	return s.status()
 }
 
-func (s *daemonControlStub) Setup(mode config.Mode) (string, error) {
-	switch mode {
-	case config.ModeClient:
+func (s *daemonControlStub) Setup(runtimeMode mode.Mode) (string, error) {
+	switch runtimeMode {
+	case mode.Client:
 		if s.setupClient != nil {
 			return s.setupClient()
 		}
-	case config.ModeServer:
+	case mode.Server:
 		if s.setupServer != nil {
 			return s.setupServer()
 		}

@@ -2,7 +2,14 @@ package server
 
 import (
 	"net/netip"
+
 	"tungo/internal/config/settings"
+)
+
+const (
+	udpTunName = "s_udptun0"
+	tcpTunName = "s_tcptun0"
+	wsTunName  = "s_wstun0"
 )
 
 type Configuration struct {
@@ -44,7 +51,7 @@ type AllowedPeer struct {
 	ClientID int `json:"ClientID"`
 }
 
-func New() *Configuration {
+func newConfiguration() *Configuration {
 	configuration := &Configuration{
 		X25519PublicKey:  nil,
 		X25519PrivateKey: nil,
@@ -53,10 +60,11 @@ func New() *Configuration {
 		EnableUDP:        true,
 		EnableWS:         false,
 	}
-	return configuration.ApplyServerDefaults()
+	configuration.applyDefaults()
+	return configuration
 }
 
-func (c *Configuration) ApplyServerDefaults() *Configuration {
+func (c *Configuration) applyDefaults() {
 	type proto struct {
 		protocol settings.Protocol
 		tunName  string
@@ -68,14 +76,13 @@ func (c *Configuration) ApplyServerDefaults() *Configuration {
 		{settings.UDP, udpTunName, "10.0.1.0/24", 9090},
 		{settings.WS, wsTunName, "10.0.2.0/24", 1010},
 	}
-	for i, s := range c.AllSettingsPtrs() {
+	for i, s := range c.settings() {
 		d := defaults[i]
-		c.applyDefaults(s, c.defaultSettings(d.protocol, d.tunName, d.cidr, d.port))
+		c.fillDefaults(s, c.defaultSettings(d.protocol, d.tunName, d.cidr, d.port))
 	}
-	return c
 }
 
-func (c *Configuration) applyDefaults(
+func (c *Configuration) fillDefaults(
 	to *settings.Settings,
 	from settings.Settings,
 ) {
@@ -136,7 +143,6 @@ func (c Configuration) Profiles() [3]settings.Profile {
 	}
 }
 
-// AllSettingsPtrs returns pointers to all protocol settings for in-place mutation.
-func (c *Configuration) AllSettingsPtrs() []*settings.Settings {
+func (c *Configuration) settings() []*settings.Settings {
 	return []*settings.Settings{&c.TCPSettings, &c.UDPSettings, &c.WSSettings}
 }

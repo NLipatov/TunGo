@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -30,10 +31,10 @@ const (
 )
 
 type ConfiguratorOptions struct {
-	ClientConfigurationControl config.ClientConfigurationControl
-	ServerConfigurationControl config.ServerConfigurationControl
-	Daemon                     systemd.Control
-	LogFeed                    RuntimeLogFeed
+	ClientConfigurations ClientConfigurations
+	ServerConfigurations ServerConfigurations
+	Daemon               systemd.Control
+	LogFeed              RuntimeLogFeed
 }
 
 type configuratorScreen int
@@ -90,7 +91,7 @@ const (
 type clientState struct {
 	configs            []string
 	menuOptions        []string
-	removePaths        []string
+	removeNames        []string
 	addNameInput       textinput.Model
 	addJSONInput       textarea.Model
 	addName            string
@@ -103,9 +104,9 @@ type clientState struct {
 
 type serverState struct {
 	menuOptions  []string
-	managePeers  []config.ServerPeer
+	managePeers  []serverconfig.AllowedPeer
 	manageLabels []string
-	deletePeer   config.ServerPeer
+	deletePeer   serverconfig.AllowedPeer
 	deleteCursor int
 }
 
@@ -140,18 +141,18 @@ type Configurator struct {
 
 	logs logViewport
 
-	pendingStartMode    config.Mode
+	pendingStartMode    mode.Mode
 	pendingStartScreen  configuratorScreen
 	pendingClientConfig string
-	pendingDaemonMode   config.Mode
+	pendingDaemonMode   mode.Mode
 
-	resultMode config.Mode
+	resultMode mode.Mode
 	resultErr  error
 	done       bool
 }
 
 func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
-	serverSupported := options.ServerConfigurationControl != nil
+	serverSupported := options.ServerConfigurations != nil
 	modeOptions := []string{modeClientLabel}
 	if serverSupported {
 		modeOptions = append(modeOptions, modeServerLabel)
@@ -188,7 +189,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 		logs:        newLogViewport(),
 	}
 
-	if options.ClientConfigurationControl == nil {
+	if options.ClientConfigurations == nil {
 		return Configurator{}, errors.New("configurator dependencies are not initialized")
 	}
 	model.initNameInput()
@@ -214,26 +215,27 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 		if settings.Current().AutoConnect {
 			if autoConfig := settings.Current().AutoSelectClientConfig; autoConfig != "" {
-				if slices.Contains(model.client.configs, autoConfig) {
-					if err := model.options.ClientConfigurationControl.Select(autoConfig); err == nil {
-						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", autoConfig))
-						_, cfgErr := model.options.ClientConfigurationControl.RuntimeInfo()
-						if isInvalidClientConfigurationError(cfgErr) {
-							model.client.invalidErr = cfgErr
-							model.client.invalidConfig = autoConfig
-							model.client.invalidAllowDelete = true
-							model.cursor = 0
-							model.screen = configuratorScreenClientInvalid
-						} else if cfgErr != nil {
-							model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
-						} else {
-							model = model.startModeWithDaemonGuard(config.ModeClient, configuratorScreenClientSelect, true)
-							if !model.done && isDaemonStartConfirmationScreen(model.screen) {
-								model.pendingClientConfig = autoConfig
-							}
+				if selected, ok := savedConfigurationName(autoConfig, model.client.configs); ok {
+					if err := model.options.ClientConfigurations.Activate(selected); err == nil {
+						if selected != autoConfig {
+							p := settings.Current()
+							p.AutoSelectClientConfig = selected
+							settings.update(p)
+							_ = savePreferencesToDisk(p)
 						}
+						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", selected))
+						model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
+						if !model.done && isDaemonStartConfirmationScreen(model.screen) {
+							model.pendingClientConfig = selected
+						}
+					} else if isInvalidClientConfigurationError(err) {
+						model.client.invalidErr = err
+						model.client.invalidConfig = selected
+						model.client.invalidAllowDelete = true
+						model.cursor = 0
+						model.screen = configuratorScreenClientInvalid
 					} else {
-						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
+						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", selected, err)
 					}
 				} else {
 					p := settings.Current()
@@ -251,6 +253,21 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	return model, nil
 }
 
+func savedConfigurationName(saved string, available []string) (string, bool) {
+	if slices.Contains(available, saved) {
+		return saved, true
+	}
+
+	// Older versions stored the full alternative path in this preference.
+	matched := ""
+	for _, name := range available {
+		if strings.HasSuffix(saved, "."+name) && len(name) > len(matched) {
+			matched = name
+		}
+	}
+	return matched, matched != ""
+}
+
 func (m Configurator) Init() tea.Cmd {
 	if m.done {
 		return tea.Quit
@@ -258,7 +275,7 @@ func (m Configurator) Init() tea.Cmd {
 	return nil
 }
 
-func (m Configurator) Result() (config.Mode, error) {
+func (m Configurator) Result() (mode.Mode, error) {
 	if !m.done {
 		return 0, ErrConfiguratorUserExit
 	}

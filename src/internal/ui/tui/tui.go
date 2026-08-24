@@ -3,29 +3,31 @@ package tui
 import (
 	"fmt"
 
-	"tungo/internal/config"
+	clientconfig "tungo/internal/config/client"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
 	bubbleTea "tungo/internal/ui/tui/internal/bubble_tea"
 )
 
 type TUI struct {
-	configuratorOptions bubbleTea.ConfiguratorOptions
-	preferences         *bubbleTea.Preferences
+	clientConfigurations *clientconfig.Configurations
+	serverFile           *serverconfig.File
+	daemonControl        systemd.Control
+	preferences          *bubbleTea.Preferences
 }
 
 func New(
-	configurationControls config.Controls,
+	clientConfigurations *clientconfig.Configurations,
+	serverFile *serverconfig.File,
 	daemonControl systemd.Control,
 ) (*TUI, error) {
-	if configurationControls.Client == nil {
-		return nil, fmt.Errorf("client configuration control is nil")
+	if clientConfigurations == nil {
+		return nil, fmt.Errorf("client configuration files are nil")
 	}
 	return &TUI{
-		configuratorOptions: bubbleTea.ConfiguratorOptions{
-			ClientConfigurationControl: configurationControls.Client,
-			ServerConfigurationControl: configurationControls.Server,
-			Daemon:                     daemonControl,
-		},
-		preferences: bubbleTea.LoadPreferences(),
+		clientConfigurations: clientConfigurations,
+		serverFile:           serverFile,
+		daemonControl:        daemonControl,
+		preferences:          bubbleTea.LoadPreferences(),
 	}, nil
 }

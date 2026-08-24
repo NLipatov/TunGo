@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tungo/internal/config"
+	"tungo/internal/mode"
 )
 
 func (m Configurator) mainTabView() string {
@@ -34,7 +34,7 @@ func (m Configurator) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Choose a configuration to remove:",
 			"",
-			m.client.removePaths,
+			m.client.removeNames,
 			m.cursor,
 			"up/k down/j move | Enter remove | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -126,9 +126,9 @@ func (m Configurator) mainTabView() string {
 	case configuratorScreenDaemonReconfigureConfirm:
 		roleLabel := "selected role"
 		switch m.pendingDaemonMode {
-		case config.ModeClient:
+		case mode.Client:
 			roleLabel = "client"
-		case config.ModeServer:
+		case mode.Server:
 			roleLabel = "server"
 		}
 		return m.renderSelectionScreen(
@@ -141,9 +141,9 @@ func (m Configurator) mainTabView() string {
 	case configuratorScreenDaemonActiveConfirm:
 		modeLabel := "selected mode"
 		switch m.pendingStartMode {
-		case config.ModeClient:
+		case mode.Client:
 			modeLabel = "client"
-		case config.ModeServer:
+		case mode.Server:
 			modeLabel = "server"
 		}
 		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)

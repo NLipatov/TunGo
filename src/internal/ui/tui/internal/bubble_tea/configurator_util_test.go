@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
 	clientconfig "tungo/internal/config/client"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
 )
 
@@ -167,7 +167,7 @@ func TestIsInvalidClientConfigurationError_UnrelatedError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServerPeerDisplayName_WithName(t *testing.T) {
-	peer := config.ServerPeer{Name: "alpha", ClientID: 1}
+	peer := serverconfig.AllowedPeer{Name: "alpha", ClientID: 1}
 	result := serverPeerDisplayName(peer)
 	if result != "alpha" {
 		t.Fatalf("expected %q, got %q", "alpha", result)
@@ -175,7 +175,7 @@ func TestServerPeerDisplayName_WithName(t *testing.T) {
 }
 
 func TestServerPeerDisplayName_EmptyName(t *testing.T) {
-	peer := config.ServerPeer{Name: "", ClientID: 42}
+	peer := serverconfig.AllowedPeer{Name: "", ClientID: 42}
 	result := serverPeerDisplayName(peer)
 	if result != "client-42" {
 		t.Fatalf("expected %q, got %q", "client-42", result)
@@ -183,7 +183,7 @@ func TestServerPeerDisplayName_EmptyName(t *testing.T) {
 }
 
 func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
-	peer := config.ServerPeer{Name: "   \t  ", ClientID: 7}
+	peer := serverconfig.AllowedPeer{Name: "   \t  ", ClientID: 7}
 	result := serverPeerDisplayName(peer)
 	if result != "client-7" {
 		t.Fatalf("expected %q, got %q", "client-7", result)
@@ -205,7 +205,7 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 	}
 }
 
-func TestNewConfiguratorSessionModel_MissingClientConfigurationControl(t *testing.T) {
+func TestNewConfiguratorSessionModel_MissingClientConfigurations(t *testing.T) {
 	opts := ConfiguratorOptions{}
 	_, err := NewConfigurator(opts, testSettings())
 	if err == nil {

@@ -9,7 +9,7 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func Validate(configuration Configuration) error {
+func validate(configuration Configuration) error {
 	if configuration.ClientID <= 0 {
 		return fmt.Errorf("invalid ClientID %d: must be > 0", configuration.ClientID)
 	}
