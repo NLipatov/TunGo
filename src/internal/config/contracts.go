@@ -19,7 +19,6 @@ func (c Controls) ServerSupported() bool {
 type ClientConfigurationControl interface {
 	List() ([]string, error)
 	Select(path string) error
-	ValidateActive() error
 	RuntimeInfo() (RuntimeInfo, error)
 	CreateFromJSON(name, rawJSON string) error
 	Delete(path string) error

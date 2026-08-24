@@ -165,7 +165,7 @@ func (m Configurator) applyDaemonSetup(targetMode config.Mode, restartRunning bo
 		return m, errors.New("daemon setup is unavailable")
 	}
 	if targetMode == config.ModeClient {
-		if err := m.options.ClientConfigurationControl.ValidateActive(); err != nil {
+		if _, err := m.options.ClientConfigurationControl.RuntimeInfo(); err != nil {
 			return m, fmt.Errorf("cannot setup client daemon: %v", err)
 		}
 	}

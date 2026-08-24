@@ -231,10 +231,6 @@ func (configurationControlMock) Select(string) error {
 	return nil
 }
 
-func (configurationControlMock) ValidateActive() error {
-	return nil
-}
-
 func (configurationControlMock) RuntimeInfo() (config.RuntimeInfo, error) {
 	return config.RuntimeInfo{Protocol: settings.TCP}, nil
 }

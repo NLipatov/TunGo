@@ -46,11 +46,6 @@ func (c *clientControl) Select(path string) error {
 	return c.selector.Select(path)
 }
 
-func (c *clientControl) ValidateActive() error {
-	_, err := c.manager.Configuration()
-	return err
-}
-
 func (c *clientControl) RuntimeInfo() (RuntimeInfo, error) {
 	conf, err := c.manager.Configuration()
 	if err != nil {

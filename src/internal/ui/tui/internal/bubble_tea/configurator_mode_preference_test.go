@@ -295,7 +295,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().runtimeInfoErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -321,7 +321,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("permission denied")
+	opts.testControl().runtimeInfoErr = errors.New("permission denied")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -432,7 +432,7 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenConfigInval
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().runtimeInfoErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {

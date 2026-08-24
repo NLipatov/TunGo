@@ -58,7 +58,7 @@ func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 			return m, tea.Quit
 		}
 
-		cfgErr := m.options.ClientConfigurationControl.ValidateActive()
+		_, cfgErr := m.options.ClientConfigurationControl.RuntimeInfo()
 		if isInvalidClientConfigurationError(cfgErr) {
 			m.client.invalidErr = cfgErr
 			m.client.invalidConfig = selected

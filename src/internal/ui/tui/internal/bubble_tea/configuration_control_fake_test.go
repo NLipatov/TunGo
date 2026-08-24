@@ -7,7 +7,7 @@ type testConfigurationControl struct {
 	listErr              error
 	selected             string
 	selectErr            error
-	validateActiveErr    error
+	runtimeInfoErr       error
 	createCalled         bool
 	createErr            error
 	deleted              []string
@@ -68,12 +68,8 @@ func (c *testConfigurationControl) Select(path string) error {
 	return c.selectErr
 }
 
-func (c *testConfigurationControl) ValidateActive() error {
-	return c.validateActiveErr
-}
-
 func (c *testConfigurationControl) RuntimeInfo() (config.RuntimeInfo, error) {
-	return config.RuntimeInfo{}, nil
+	return config.RuntimeInfo{}, c.runtimeInfoErr
 }
 
 func (c *testConfigurationControl) CreateFromJSON(string, string) error {

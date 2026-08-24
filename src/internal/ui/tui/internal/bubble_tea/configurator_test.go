@@ -739,8 +739,8 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: errors.New("invalid client configuration (test): bad key"),
+		clientConfigs:  []string{"my-config"},
+		runtimeInfoErr: errors.New("invalid client configuration (test): bad key"),
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -1816,8 +1816,8 @@ func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: nonInvalidErr,
+		clientConfigs:  []string{"my-config"},
+		runtimeInfoErr: nonInvalidErr,
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -2423,8 +2423,8 @@ func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *te
 		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: errors.New("connection refused"),
+		clientConfigs:  []string{"my-config"},
+		runtimeInfoErr: errors.New("connection refused"),
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)

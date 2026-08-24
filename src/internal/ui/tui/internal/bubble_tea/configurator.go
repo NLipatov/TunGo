@@ -217,7 +217,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 				if slices.Contains(model.client.configs, autoConfig) {
 					if err := model.options.ClientConfigurationControl.Select(autoConfig); err == nil {
 						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", autoConfig))
-						cfgErr := model.options.ClientConfigurationControl.ValidateActive()
+						_, cfgErr := model.options.ClientConfigurationControl.RuntimeInfo()
 						if isInvalidClientConfigurationError(cfgErr) {
 							model.client.invalidErr = cfgErr
 							model.client.invalidConfig = autoConfig

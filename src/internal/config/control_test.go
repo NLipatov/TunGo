@@ -215,12 +215,3 @@ func TestClientControlCreateFromJSON_InvalidInput(t *testing.T) {
 		t.Fatal("expected creator not to be called for invalid JSON")
 	}
 }
-
-func TestClientControlValidateActive(t *testing.T) {
-	wantErr := errors.New("read failed")
-	control := clientControl{manager: runtimeInfoClientManager{err: wantErr}}
-
-	if err := control.ValidateActive(); !errors.Is(err, wantErr) {
-		t.Fatalf("ValidateActive() error = %v, want %v", err, wantErr)
-	}
-}

@@ -1545,7 +1545,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	t.Run("invalid client configuration prevents setup", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon()
-		opts.testControl().validateActiveErr = errors.New("invalid client config")
+		opts.testControl().runtimeInfoErr = errors.New("invalid client config")
 		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
