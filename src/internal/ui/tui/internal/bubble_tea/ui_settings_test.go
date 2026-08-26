@@ -44,6 +44,35 @@ func TestPreferences_DisableAutoConnect_NoOpWhenAlreadyDisabled(t *testing.T) {
 	}
 }
 
+func TestPreferences_DisableAutoConnectSavesChange(t *testing.T) {
+	preferences := testPreferences(tuiconfig.Configuration{AutoConnect: true})
+	var saved tuiconfig.Configuration
+	preferences.save = func(configuration tuiconfig.Configuration) error {
+		saved = configuration
+		return nil
+	}
+
+	if err := preferences.DisableAutoConnect(); err != nil {
+		t.Fatal(err)
+	}
+	if saved.AutoConnect || preferences.Current().AutoConnect {
+		t.Fatal("AutoConnect was not disabled in persisted and current preferences")
+	}
+}
+
+func TestPreferences_DisableAutoConnectKeepsSessionChangeOnSaveFailure(t *testing.T) {
+	preferences := testPreferences(tuiconfig.Configuration{AutoConnect: true})
+	wantErr := errors.New("save failed")
+	preferences.save = func(tuiconfig.Configuration) error { return wantErr }
+
+	if err := preferences.DisableAutoConnect(); !errors.Is(err, wantErr) {
+		t.Fatalf("DisableAutoConnect() error = %v, want %v", err, wantErr)
+	}
+	if preferences.Current().AutoConnect {
+		t.Fatal("AutoConnect remained enabled in the current session")
+	}
+}
+
 func TestPreferences_UpdateSavesBeforeChangingCurrentValue(t *testing.T) {
 	initial := tuiconfig.Configuration{Theme: tuiconfig.ThemeLight}
 	updated := tuiconfig.Configuration{Theme: tuiconfig.ThemeDark}

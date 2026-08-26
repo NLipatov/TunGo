@@ -100,6 +100,33 @@ func TestFileLoadPreservesCompatibilityAndEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestFileMutationPersistsEnvironmentOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	configuration := newConfiguration()
+	configuration.Host = "configured.example"
+	configuration.AllowedPeers = []AllowedPeer{{
+		Name: "one", PublicKey: make([]byte, 32), Enabled: true, ClientID: 1,
+	}}
+	writeServerConfiguration(t, path, *configuration)
+	t.Setenv("Host", "environment.example")
+	t.Setenv("EnableTCP", "true")
+
+	if err := NewFile(path).SetPeerEnabled(1, false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted Configuration
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Host != "environment.example" || !persisted.EnableTCP {
+		t.Fatalf("persisted configuration does not contain environment overrides: %+v", persisted)
+	}
+}
+
 func TestFileLoadErrors(t *testing.T) {
 	t.Run("invalid JSON", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
@@ -229,6 +256,15 @@ func TestFilePeerMutationsAndCopies(t *testing.T) {
 	}
 	if again[0].PublicKey[0] != 0 {
 		t.Fatal("Peers returned an aliased public key")
+	}
+	if err := file.SetPeerEnabled(2, false); err == nil {
+		t.Fatal("missing peer was enabled")
+	}
+	if err := file.RemovePeer(0); err == nil {
+		t.Fatal("invalid client ID was removed")
+	}
+	if err := file.RemovePeer(2); err == nil {
+		t.Fatal("missing peer was removed")
 	}
 
 	if err := file.SetPeerEnabled(1, false); err != nil {

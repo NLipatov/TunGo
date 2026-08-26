@@ -102,6 +102,30 @@ func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 	}
 }
 
+func TestResolveServerHostConfigured(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		want       settings.Host
+	}{
+		{name: "domain", configured: " vpn.example ", want: settings.Host{Domain: "vpn.example"}},
+		{name: "IPv4", configured: "192.0.2.1", want: settings.Host{IPv4: "192.0.2.1"}},
+		{name: "mapped IPv4", configured: "::ffff:192.0.2.1", want: settings.Host{IPv4: "192.0.2.1"}},
+		{name: "bracketed IPv6", configured: "[2001:db8::1]", want: settings.Host{IPv6: "2001:db8::1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := resolveServerHost(test.configured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("resolveServerHost(%q) = %+v, want %+v", test.configured, got, test.want)
+			}
+		})
+	}
+}
+
 func TestDeriveClientSettings(t *testing.T) {
 	serverSettings := settings.Settings{
 		Network: settings.Network{
