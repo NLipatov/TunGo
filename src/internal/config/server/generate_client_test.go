@@ -57,6 +57,30 @@ func TestFileGenerateClient(t *testing.T) {
 	}
 }
 
+func TestFileGenerateClientDoesNotRegisterPeerWhenClientFileWriteFails(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "server_configuration.json")
+	serverConfiguration := newConfiguration()
+	serverConfiguration.Host = "192.0.2.1"
+	serverConfiguration.X25519PublicKey, serverConfiguration.X25519PrivateKey = testX25519KeyPair(t, 1)
+	writeServerConfiguration(t, path, *serverConfiguration)
+	if err := os.Mkdir(filepath.Join(directory, "client_configuration.json.1"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	file := NewFile(path)
+	if _, err := file.GenerateClient(); err == nil {
+		t.Fatal("GenerateClient() succeeded when the client file could not be written")
+	}
+	updated, err := file.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ClientCounter != 0 || len(updated.AllowedPeers) != 0 {
+		t.Fatalf("failed generation persisted registration: %+v", updated)
+	}
+}
+
 func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server_configuration.json")
 	serverConfiguration := newConfiguration()

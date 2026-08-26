@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -72,18 +73,6 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		ClientPublicKey:  append([]byte(nil), publicKey...),
 		ClientPrivateKey: append([]byte(nil), privateKey[:]...),
 	}
-
-	serverConfiguration.ClientCounter = clientID
-	serverConfiguration.AllowedPeers = append(serverConfiguration.AllowedPeers, AllowedPeer{
-		Name:      fmt.Sprintf("client-%d", clientID),
-		PublicKey: append([]byte(nil), publicKey...),
-		Enabled:   true,
-		ClientID:  clientID,
-	})
-	if err := f.write(*serverConfiguration); err != nil {
-		return GeneratedClient{}, err
-	}
-
 	data, err := json.MarshalIndent(configuration, "", "  ")
 	if err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to marshal client configuration: %w", err)
@@ -94,6 +83,24 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	}
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to save client configuration: %w", err)
+	}
+
+	serverConfiguration.ClientCounter = clientID
+	serverConfiguration.AllowedPeers = append(serverConfiguration.AllowedPeers, AllowedPeer{
+		Name:      fmt.Sprintf("client-%d", clientID),
+		PublicKey: append([]byte(nil), publicKey...),
+		Enabled:   true,
+		ClientID:  clientID,
+	})
+	if err := f.write(*serverConfiguration); err != nil {
+		registrationErr := fmt.Errorf("failed to register client: %w", err)
+		if removeErr := os.Remove(path); removeErr != nil {
+			return GeneratedClient{}, errors.Join(
+				registrationErr,
+				fmt.Errorf("failed to remove unregistered client configuration %q: %w", path, removeErr),
+			)
+		}
+		return GeneratedClient{}, registrationErr
 	}
 	return GeneratedClient{JSON: string(data), Path: path}, nil
 }
