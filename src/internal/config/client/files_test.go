@@ -86,6 +86,12 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 			t.Fatalf("error = %v", err)
 		}
 	})
+	t.Run("unreadable", func(t *testing.T) {
+		_, err := (&Configurations{activePath: t.TempDir()}).Active()
+		if err == nil || !strings.Contains(err.Error(), "failed to read client configuration") {
+			t.Fatalf("error = %v", err)
+		}
+	})
 }
 
 func TestConfigurationsListActivateAndDelete(t *testing.T) {
@@ -154,6 +160,17 @@ func TestConfigurationsListMissingDirectory(t *testing.T) {
 	}
 }
 
+func TestConfigurationsListReturnsReadError(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	configurations := &Configurations{activePath: filepath.Join(parent, "client_configuration.json")}
+	if _, err := configurations.List(); err == nil {
+		t.Fatal("List() succeeded when the configuration directory was unreadable")
+	}
+}
+
 func TestConfigurationsImportNormalizesAndRejectsInvalidInput(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "nested", "client_configuration.json")
 	configurations := &Configurations{activePath: activePath}
@@ -179,6 +196,34 @@ func TestConfigurationsImportNormalizesAndRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestConfigurationsImportReturnsStorageErrors(t *testing.T) {
+	data, err := json.Marshal(validTestConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("create directory", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		configurations := &Configurations{activePath: filepath.Join(parent, "client_configuration.json")}
+		if err := configurations.Import("office", string(data)); err == nil {
+			t.Fatal("Import() succeeded when its directory could not be created")
+		}
+	})
+
+	t.Run("write alternative", func(t *testing.T) {
+		activePath := filepath.Join(t.TempDir(), "client_configuration.json")
+		if err := os.Mkdir(activePath+".office", 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := (&Configurations{activePath: activePath}).Import("office", string(data)); err == nil {
+			t.Fatal("Import() succeeded when the alternative path was a directory")
+		}
+	})
+}
+
 func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "client_configuration.json")
 	configurations := &Configurations{activePath: activePath}
@@ -201,6 +246,40 @@ func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	}
 	if !slices.Equal(before, after) {
 		t.Fatal("invalid alternative replaced the active configuration")
+	}
+}
+
+func TestConfigurationsActivateReturnsStorageErrors(t *testing.T) {
+	t.Run("invalid name", func(t *testing.T) {
+		configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
+		if err := configurations.Activate("../office"); err == nil {
+			t.Fatal("Activate() accepted an invalid name")
+		}
+	})
+
+	t.Run("missing alternative", func(t *testing.T) {
+		configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
+		if err := configurations.Activate("missing"); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Activate() error = %v, want os.ErrNotExist", err)
+		}
+	})
+
+	t.Run("write active", func(t *testing.T) {
+		activePath := filepath.Join(t.TempDir(), "client_configuration.json")
+		if err := os.Mkdir(activePath, 0700); err != nil {
+			t.Fatal(err)
+		}
+		writeConfiguration(t, activePath+".office", validTestConfiguration())
+		if err := (&Configurations{activePath: activePath}).Activate("office"); err == nil {
+			t.Fatal("Activate() succeeded when the active path was a directory")
+		}
+	})
+}
+
+func TestConfigurationsDeleteRejectsInvalidName(t *testing.T) {
+	configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
+	if err := configurations.Delete("../office"); err == nil {
+		t.Fatal("Delete() accepted an invalid name")
 	}
 }
 

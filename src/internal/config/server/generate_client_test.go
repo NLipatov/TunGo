@@ -102,6 +102,55 @@ func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 	}
 }
 
+func TestFileGenerateClientUsesEnabledProtocol(t *testing.T) {
+	tests := []struct {
+		name      string
+		enableTCP bool
+		enableWS  bool
+		want      settings.Protocol
+	}{
+		{name: "TCP", enableTCP: true, want: settings.TCP},
+		{name: "WS", enableWS: true, want: settings.WS},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "server_configuration.json")
+			configuration := newConfiguration()
+			configuration.Host = "192.0.2.1"
+			configuration.EnableUDP = false
+			configuration.EnableTCP = test.enableTCP
+			configuration.EnableWS = test.enableWS
+			configuration.X25519PublicKey, configuration.X25519PrivateKey = testX25519KeyPair(t, 1)
+			writeServerConfiguration(t, path, *configuration)
+
+			generated, err := NewFile(path).GenerateClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var clientConfiguration clientconfig.Configuration
+			if err := json.Unmarshal([]byte(generated.JSON), &clientConfiguration); err != nil {
+				t.Fatal(err)
+			}
+			if clientConfiguration.Protocol != test.want {
+				t.Fatalf("Protocol = %s, want %s", clientConfiguration.Protocol, test.want)
+			}
+		})
+	}
+}
+
+func TestFileGenerateClientRejectsMismatchedServerKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	configuration := newConfiguration()
+	configuration.Host = "192.0.2.1"
+	configuration.X25519PublicKey, _ = testX25519KeyPair(t, 1)
+	_, configuration.X25519PrivateKey = testX25519KeyPair(t, 2)
+	writeServerConfiguration(t, path, *configuration)
+
+	if _, err := NewFile(path).GenerateClient(); err == nil {
+		t.Fatal("GenerateClient() accepted mismatched server keys")
+	}
+}
+
 func TestResolveServerHostConfigured(t *testing.T) {
 	tests := []struct {
 		name       string

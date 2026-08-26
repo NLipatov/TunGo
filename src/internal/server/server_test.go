@@ -6,12 +6,14 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
 
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
+	"tungo/internal/platform"
 	"tungo/internal/protocol/noise"
 )
 
@@ -55,6 +57,27 @@ func newTestRuntime(t *testing.T) (*Server, error) {
 }
 
 // ------------------- tests -------------------
+
+func TestNewServer(t *testing.T) {
+	if !platform.ServerModeSupported() {
+		if server, err := New(nil); err == nil || server != nil {
+			t.Fatalf("New(nil) = %v, %v; want unsupported-platform error", server, err)
+		}
+		return
+	}
+
+	if server, err := New(nil); err == nil || server != nil {
+		t.Fatalf("New(nil) = %v, %v; want nil-configuration error", server, err)
+	}
+	file := serverconfig.NewFile(filepath.Join(t.TempDir(), "server_configuration.json"))
+	server, err := New(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.configFile != file || server.configuration == nil || server.tunManager == nil {
+		t.Fatalf("incomplete server: %+v", server)
+	}
+}
 
 func Test_addrPortToListen_ErrorsAndDualStackDefault(t *testing.T) {
 	f := &Server{}

@@ -142,6 +142,39 @@ func TestFileLoadErrors(t *testing.T) {
 			t.Fatalf("error = %v", err)
 		}
 	})
+	t.Run("invalid configuration", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "server_configuration.json")
+		if err := os.WriteFile(path, []byte(`{"Host":" "}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewFile(path).Load(); err == nil || !strings.Contains(err.Error(), "host is empty") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("cannot write default", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "server_configuration.json") + string(os.PathSeparator)
+		if _, err := NewFile(path).Load(); err == nil || !strings.Contains(err.Error(), "could not write default configuration") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+func TestFileOperationsPropagateLoadErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := NewFile(path)
+
+	if err := file.EnsureKeys(); err == nil {
+		t.Fatal("EnsureKeys() ignored a load error")
+	}
+	if _, err := file.Peers(); err == nil {
+		t.Fatal("Peers() ignored a load error")
+	}
+	if err := file.SetPeerEnabled(1, false); err == nil {
+		t.Fatal("SetPeerEnabled() ignored a load error")
+	}
 }
 
 func TestFileEnsureKeys(t *testing.T) {
@@ -234,6 +267,13 @@ func TestFileEnsureKeys(t *testing.T) {
 			t.Fatalf("EnsureKeys() error = %v", err)
 		}
 	})
+}
+
+func TestValidateX25519KeyPairRejectsInvalidPrivateKey(t *testing.T) {
+	err := validateX25519KeyPair(make([]byte, 32), []byte{1})
+	if err == nil || !strings.Contains(err.Error(), "invalid X25519 private key") {
+		t.Fatalf("validateX25519KeyPair() error = %v", err)
+	}
 }
 
 func TestFilePeerMutationsAndCopies(t *testing.T) {
