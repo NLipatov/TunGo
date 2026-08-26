@@ -169,7 +169,7 @@ func TestConfigurationsImportNormalizesAndRejectsInvalidInput(t *testing.T) {
 		t.Fatalf("decode imported configuration: %v", err)
 	}
 
-	for _, name := range []string{"", "../escape", `..\escape`, ".", "..", "bad\x00name"} {
+	for _, name := range []string{"", "../escape", `..\escape`, ".", "..", "bad\x00name", "office:backup"} {
 		if err := configurations.Import(name, string(data)); err == nil {
 			t.Fatalf("Import(%q) succeeded", name)
 		}
