@@ -13,10 +13,10 @@ import (
 	"strings"
 	"sync"
 
+	"tungo/internal/config/internal/configpath"
+
 	"golang.org/x/crypto/curve25519"
 )
-
-const defaultPath = "/etc/tungo/server_configuration.json"
 
 const (
 	publicKeyEnvVar  = "X25519_PUBLIC_KEY"
@@ -30,7 +30,7 @@ type File struct {
 }
 
 func DefaultFile() *File {
-	return NewFile(defaultPath)
+	return NewFile(filepath.Join(configpath.Directory(), "server_configuration.json"))
 }
 
 func NewFile(path string) *File {

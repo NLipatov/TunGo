@@ -28,7 +28,7 @@ func validClientConfiguration() clientconfig.Configuration {
 		ClientID: 1,
 		Protocol: settings.TCP,
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tcptun0",
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 				Server:     mustIPHost("10.0.0.1"),

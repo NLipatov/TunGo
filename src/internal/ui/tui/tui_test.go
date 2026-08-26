@@ -89,7 +89,7 @@ func TestServerRuntimeInfo(t *testing.T) {
 	configuration := &serverconfig.Configuration{
 		EnableTCP: true,
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				Server: settings.Host{IPv4: "192.0.2.1"},
 				Port:   8080,
 			},
@@ -107,7 +107,7 @@ func validClientConfiguration() *clientconfig.Configuration {
 		ClientID: 1,
 		Protocol: settings.TCP,
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tun0",
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 				Server:     settings.Host{IPv4: "192.0.2.1"},

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"tungo/internal/config/settings"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/mode"
 	"tungo/internal/trafficstats"
 
@@ -56,7 +57,7 @@ type RuntimeDashboard struct {
 	height               int
 	screen               runtimeDashboardScreen
 	settingsCursor       int
-	preferences          UIPreferences
+	preferences          tuiconfig.Configuration
 	logFeed              RuntimeLogFeed
 	logs                 logViewport
 	rxSamples            [runtimeSparklinePoints]uint64

@@ -57,17 +57,16 @@ func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
-	configured, err := c.selectedSettings()
+	selected, err := c.selectedSettings()
 	if err != nil {
 		return settings.Settings{}, err
 	}
-
-	active := *configured
-	active.Protocol = c.Protocol
-	if err := active.DeriveIP(c.ClientID); err != nil {
+	selectedCopy := *selected
+	selectedCopy.Protocol = c.Protocol
+	if err := selectedCopy.Network.DeriveIP(c.ClientID); err != nil { //nolint:staticcheck // Keep the mutation owner explicit.
 		return settings.Settings{}, err
 	}
-	return active, nil
+	return selectedCopy, nil
 }
 
 func (c *Configuration) selectedSettings() (*settings.Settings, error) {

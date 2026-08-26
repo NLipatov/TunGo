@@ -184,7 +184,7 @@ func newMgr(
 ) *Manager {
 	profiles := map[settings.Protocol]settings.Settings{
 		settings.UDP: {
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tun0",
 				IPv4Subnet: mustPrefix("10.0.0.0/30"),
 				IPv4:       mustAddr("10.0.0.2"),
@@ -194,7 +194,7 @@ func newMgr(
 			Protocol: settings.UDP,
 		},
 		settings.TCP: {
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tun1",
 				IPv4Subnet: mustPrefix("10.0.0.4/30"),
 				IPv4:       mustAddr("10.0.0.6"),
@@ -204,7 +204,7 @@ func newMgr(
 			Protocol: settings.TCP,
 		},
 		settings.WS: {
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tun2",
 				IPv4Subnet: mustPrefix("10.0.0.8/30"),
 				IPv4:       mustAddr("10.0.0.10"),

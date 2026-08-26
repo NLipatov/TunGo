@@ -144,7 +144,7 @@ func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 
 func TestDeriveClientSettings(t *testing.T) {
 	serverSettings := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			Port:       8080,

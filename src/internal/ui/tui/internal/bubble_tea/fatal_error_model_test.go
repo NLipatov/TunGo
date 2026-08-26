@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"strings"
 	"testing"
+	tuiconfig "tungo/internal/config/tui"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -105,7 +106,7 @@ func TestFatalErrorModel_Update_WindowSizeUpdates(t *testing.T) {
 
 func TestFatalErrorModel_View_RespectsTheme(t *testing.T) {
 
-	themes := []ThemeOption{ThemeLight, ThemeDark, ThemeDarkHighContrast, ThemeDarkMatrix}
+	themes := []tuiconfig.Theme{tuiconfig.ThemeLight, tuiconfig.ThemeDark, tuiconfig.ThemeDarkHighContrast, tuiconfig.ThemeDarkMatrix}
 	views := make([]string, len(themes))
 
 	s := testSettings()

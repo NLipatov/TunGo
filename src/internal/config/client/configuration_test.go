@@ -29,7 +29,7 @@ func TestConfiguration_ActiveSettings(t *testing.T) {
 				UDPSettings: udp,
 				Protocol:    settings.UDP,
 			},
-			want: settings.Settings{Addressing: udp.Addressing, MTU: udp.MTU, Protocol: settings.UDP},
+			want: settings.Settings{Network: udp.Network, MTU: udp.MTU, Protocol: settings.UDP},
 		},
 		{
 			name: "TCP",
@@ -37,7 +37,7 @@ func TestConfiguration_ActiveSettings(t *testing.T) {
 				TCPSettings: tcp,
 				Protocol:    settings.TCP,
 			},
-			want: settings.Settings{Addressing: tcp.Addressing, MTU: tcp.MTU, Protocol: settings.TCP},
+			want: settings.Settings{Network: tcp.Network, MTU: tcp.MTU, Protocol: settings.TCP},
 		},
 		{
 			name: "WS",
@@ -45,7 +45,7 @@ func TestConfiguration_ActiveSettings(t *testing.T) {
 				WSSettings: ws,
 				Protocol:   settings.WS,
 			},
-			want: settings.Settings{Addressing: ws.Addressing, MTU: ws.MTU, Protocol: settings.WS},
+			want: settings.Settings{Network: ws.Network, MTU: ws.MTU, Protocol: settings.WS},
 		},
 		{
 			name: "Unsupported protocol",
@@ -82,7 +82,7 @@ func TestConfiguration_ActiveSettingsDerivesLegacyClientAddress(t *testing.T) {
 	cfg := Configuration{
 		ClientID: 3,
 		Protocol: settings.UDP,
-		UDPSettings: settings.Settings{Addressing: settings.Addressing{
+		UDPSettings: settings.Settings{Network: settings.Network{
 			IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
 		}},
 	}
@@ -100,7 +100,7 @@ func TestConfiguration_ActiveSettingsReturnsAddressDerivationError(t *testing.T)
 	cfg := Configuration{
 		ClientID: 2,
 		Protocol: settings.UDP,
-		UDPSettings: settings.Settings{Addressing: settings.Addressing{
+		UDPSettings: settings.Settings{Network: settings.Network{
 			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		}},
 	}
@@ -124,14 +124,14 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 	}{
 		{
 			name: "IPv4",
-			s: settings.Settings{Addressing: settings.Addressing{
+			s: settings.Settings{Network: settings.Network{
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 			}},
 			want: settings.DefaultMTU,
 		},
 		{
 			name: "dual stack",
-			s: settings.Settings{Addressing: settings.Addressing{
+			s: settings.Settings{Network: settings.Network{
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			}},
@@ -140,8 +140,8 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		{
 			name: "IPv4 MTU below minimum",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        settings.MinimumIPv4MTU - 1,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     settings.MinimumIPv4MTU - 1,
 			},
 			want:        settings.DefaultMTU,
 			wantWarning: true,
@@ -149,8 +149,8 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		{
 			name: "IPv6 MTU below minimum",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
-				MTU:        settings.DefaultMTU - 1,
+				Network: settings.Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
+				MTU:     settings.DefaultMTU - 1,
 			},
 			want:        settings.DefaultMTU,
 			wantWarning: true,
@@ -158,8 +158,8 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		{
 			name: "negative IPv6 MTU",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
-				MTU:        -1,
+				Network: settings.Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
+				MTU:     -1,
 			},
 			want:        settings.DefaultMTU,
 			wantWarning: true,
@@ -167,8 +167,8 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		{
 			name: "MTU above maximum",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        settings.MaximumMTU + 1,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     settings.MaximumMTU + 1,
 			},
 			want:        settings.DefaultMTU,
 			wantWarning: true,
@@ -176,32 +176,32 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		{
 			name: "IPv4 MTU below default",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        settings.DefaultMTU - 1,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     settings.DefaultMTU - 1,
 			},
 			want: settings.DefaultMTU - 1,
 		},
 		{
 			name: "minimum IPv4 MTU",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        settings.MinimumIPv4MTU,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     settings.MinimumIPv4MTU,
 			},
 			want: settings.MinimumIPv4MTU,
 		},
 		{
 			name: "maximum MTU",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        settings.MaximumMTU,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     settings.MaximumMTU,
 			},
 			want: settings.MaximumMTU,
 		},
 		{
 			name: "explicit MTU",
 			s: settings.Settings{
-				Addressing: settings.Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-				MTU:        1400,
+				Network: settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+				MTU:     1400,
 			},
 			want: 1400,
 		},

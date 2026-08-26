@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"testing"
 	"time"
+	tuiconfig "tungo/internal/config/tui"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -110,7 +111,7 @@ func TestNewLogViewport(t *testing.T) {
 
 func TestLogViewportEnsure(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(120, 40, UIPreferences{ShowFooter: true}, "", "hint")
+	lv.ensure(120, 40, tuiconfig.Configuration{ShowFooter: true}, "", "hint")
 
 	w := lv.viewport.Width()
 	h := lv.viewport.Height()
@@ -125,7 +126,7 @@ func TestLogViewportEnsure(t *testing.T) {
 func TestLogViewportEnsure_NotReady(t *testing.T) {
 	lv := newLogViewport()
 	lv.ready = false
-	lv.ensure(120, 40, UIPreferences{ShowFooter: true}, "", "hint")
+	lv.ensure(120, 40, tuiconfig.Configuration{ShowFooter: true}, "", "hint")
 
 	if !lv.ready {
 		t.Error("expected ready to be true after ensure")
@@ -134,8 +135,8 @@ func TestLogViewportEnsure_NotReady(t *testing.T) {
 
 func TestLogViewportRefresh_NilFeed(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
-	lv.refresh(nil, UIPreferences{})
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
+	lv.refresh(nil, tuiconfig.Configuration{})
 
 	content := lv.viewport.View()
 	if content == "" {
@@ -146,8 +147,8 @@ func TestLogViewportRefresh_NilFeed(t *testing.T) {
 func TestLogViewportRefresh_WithFeed(t *testing.T) {
 	feed := &logViewportTestFeed{lines: []string{"line1", "line2", "line3"}}
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
-	lv.refresh(feed, UIPreferences{})
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
+	lv.refresh(feed, tuiconfig.Configuration{})
 
 	content := lv.viewport.View()
 	if content == "" {
@@ -158,9 +159,9 @@ func TestLogViewportRefresh_WithFeed(t *testing.T) {
 func TestLogViewportRefresh_FollowMode(t *testing.T) {
 	feed := &logViewportTestFeed{lines: []string{"a", "b", "c"}}
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = true
-	lv.refresh(feed, UIPreferences{})
+	lv.refresh(feed, tuiconfig.Configuration{})
 
 	if !lv.follow {
 		t.Error("expected follow to remain true after refresh")
@@ -174,17 +175,17 @@ func TestLogViewportRefresh_PreservesOffset(t *testing.T) {
 	}
 	feed := &logViewportTestFeed{lines: lines}
 	lv := newLogViewport()
-	lv.ensure(80, 10, UIPreferences{}, "", "")
+	lv.ensure(80, 10, tuiconfig.Configuration{}, "", "")
 
 	// First refresh to populate content
-	lv.refresh(feed, UIPreferences{})
+	lv.refresh(feed, tuiconfig.Configuration{})
 
 	// Scroll up and disable follow
 	lv.viewport.SetYOffset(3)
 	lv.follow = false
 
 	// Second refresh should preserve offset
-	lv.refresh(feed, UIPreferences{})
+	lv.refresh(feed, tuiconfig.Configuration{})
 
 	if lv.follow {
 		t.Error("expected follow to remain false when not at bottom")
@@ -197,12 +198,12 @@ func TestLogViewportRefresh_DoesNotRestoreDisabledFollowAtBottom(t *testing.T) {
 		lines[i] = "line"
 	}
 	lv := newLogViewport()
-	lv.ensure(80, 10, UIPreferences{}, "", "")
-	lv.refresh(&logViewportTestFeed{lines: lines}, UIPreferences{})
+	lv.ensure(80, 10, tuiconfig.Configuration{}, "", "")
+	lv.refresh(&logViewportTestFeed{lines: lines}, tuiconfig.Configuration{})
 	lv.follow = false
 	offset := lv.viewport.YOffset()
 
-	lv.refresh(&logViewportTestFeed{lines: append(lines, "new")}, UIPreferences{})
+	lv.refresh(&logViewportTestFeed{lines: append(lines, "new")}, tuiconfig.Configuration{})
 
 	if lv.follow {
 		t.Fatal("expected follow to remain disabled")
@@ -214,7 +215,7 @@ func TestLogViewportRefresh_DoesNotRestoreDisabledFollowAtBottom(t *testing.T) {
 
 func TestLogViewportUpdateKeys(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 
 	tests := []struct {
 		name string
@@ -230,18 +231,18 @@ func TestLogViewportUpdateKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := tea.KeyPressMsg(tea.Key{Code: tt.code})
-			_ = lv.update(msg, nil, UIPreferences{})
+			_ = lv.update(msg, nil, tuiconfig.Configuration{})
 		})
 	}
 }
 
 func TestLogViewportUpdateKeys_ScrollUp(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'k'})
-	_ = lv.update(msg, nil, UIPreferences{})
+	_ = lv.update(msg, nil, tuiconfig.Configuration{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after scroll up")
@@ -250,22 +251,22 @@ func TestLogViewportUpdateKeys_ScrollUp(t *testing.T) {
 
 func TestLogViewportUpdateKeys_ScrollDown(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = false
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'j'})
-	_ = lv.update(msg, nil, UIPreferences{})
+	_ = lv.update(msg, nil, tuiconfig.Configuration{})
 }
 
 func TestLogViewportUpdateKeys_SpaceTogglesFollow(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = true
-	_ = lv.startUpdates(nil, UIPreferences{})
+	_ = lv.startUpdates(nil, tuiconfig.Configuration{})
 	stopped := lv.waitStop
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeySpace})
-	if cmd := lv.update(msg, nil, UIPreferences{}); cmd != nil {
+	if cmd := lv.update(msg, nil, tuiconfig.Configuration{}); cmd != nil {
 		t.Fatal("expected no log update while follow is disabled")
 	}
 	if lv.follow {
@@ -277,7 +278,7 @@ func TestLogViewportUpdateKeys_SpaceTogglesFollow(t *testing.T) {
 		t.Fatal("expected disabled follow to stop log updates")
 	}
 
-	if cmd := lv.update(msg, nil, UIPreferences{}); cmd == nil {
+	if cmd := lv.update(msg, nil, tuiconfig.Configuration{}); cmd == nil {
 		t.Fatal("expected log updates to resume with follow")
 	}
 	if !lv.follow {
@@ -287,7 +288,7 @@ func TestLogViewportUpdateKeys_SpaceTogglesFollow(t *testing.T) {
 
 func TestLogViewportView(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	result := lv.view()
 	if result == "" {
 		t.Error("expected non-empty view")
@@ -303,11 +304,11 @@ func TestLogViewportTickMsg(t *testing.T) {
 
 func TestLogViewportPageUpSetsFollowFalse(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp})
-	_ = lv.update(msg, nil, UIPreferences{})
+	_ = lv.update(msg, nil, tuiconfig.Configuration{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after PageUp")
@@ -316,11 +317,11 @@ func TestLogViewportPageUpSetsFollowFalse(t *testing.T) {
 
 func TestLogViewportHomeSetsFollowFalse(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = true
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyHome})
-	_ = lv.update(msg, nil, UIPreferences{})
+	_ = lv.update(msg, nil, tuiconfig.Configuration{})
 
 	if lv.follow {
 		t.Error("expected follow to be false after Home")
@@ -329,11 +330,11 @@ func TestLogViewportHomeSetsFollowFalse(t *testing.T) {
 
 func TestLogViewportEndSetsFollowTrue(t *testing.T) {
 	lv := newLogViewport()
-	lv.ensure(80, 24, UIPreferences{}, "", "")
+	lv.ensure(80, 24, tuiconfig.Configuration{}, "", "")
 	lv.follow = false
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd})
-	_ = lv.update(msg, nil, UIPreferences{})
+	_ = lv.update(msg, nil, tuiconfig.Configuration{})
 
 	if !lv.follow {
 		t.Error("expected follow to be true after End")

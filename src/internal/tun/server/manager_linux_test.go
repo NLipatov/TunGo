@@ -429,7 +429,7 @@ func pickLoopbackName() string {
 }
 
 var baseCfg = settings.Settings{
-	Addressing: settings.Addressing{
+	Network: settings.Network{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		IPv4:       netip.MustParseAddr("10.0.0.1"),
@@ -438,7 +438,7 @@ var baseCfg = settings.Settings{
 }
 
 var baseCfgIPv6 = settings.Settings{
-	Addressing: settings.Addressing{
+	Network: settings.Network{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
@@ -449,7 +449,7 @@ var baseCfgIPv6 = settings.Settings{
 }
 
 var baseCfgIPv6Only = settings.Settings{
-	Addressing: settings.Addressing{
+	Network: settings.Network{
 		TunName:    "tun0",
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 		IPv6:       netip.MustParseAddr("fd00::1"),
@@ -657,7 +657,7 @@ func TestCreateTunDevice_InvalidCIDR_ErrorsFromAllocator(t *testing.T) {
 
 func TestOpenTunnel_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
 	cfg := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "tun0",
 			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
 		},
@@ -679,7 +679,7 @@ func TestOpenTunnel_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
 
 func TestMasqueradeCIDR6_RequiresIPv6SubnetField(t *testing.T) {
 	legacy := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
 		},
 	}

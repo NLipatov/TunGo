@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"time"
+	tuiconfig "tungo/internal/config/tui"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -30,7 +31,7 @@ func newLogViewport() logViewport {
 	}
 }
 
-func (v *logViewport) ensure(width, height int, prefs UIPreferences, subtitle, hint string) {
+func (v *logViewport) ensure(width, height int, prefs tuiconfig.Configuration, subtitle, hint string) {
 	contentWidth, viewportHeight := computeLogsViewportSize(width, height, prefs, subtitle, hint)
 	if !v.ready {
 		v.viewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
@@ -41,7 +42,7 @@ func (v *logViewport) ensure(width, height int, prefs UIPreferences, subtitle, h
 	v.viewport.SetHeight(viewportHeight)
 }
 
-func (v *logViewport) refresh(feed RuntimeLogFeed, prefs UIPreferences) {
+func (v *logViewport) refresh(feed RuntimeLogFeed, prefs tuiconfig.Configuration) {
 	lines := runtimeLogSnapshot(feed, &v.scratch)
 	offset := v.viewport.YOffset()
 	content := renderLogsViewportLines(lines, v.viewport.Width(), resolveUIStyles(prefs))
@@ -53,7 +54,7 @@ func (v *logViewport) refresh(feed RuntimeLogFeed, prefs UIPreferences) {
 	v.viewport.SetYOffset(offset)
 }
 
-func (v *logViewport) startUpdates(feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+func (v *logViewport) startUpdates(feed RuntimeLogFeed, prefs tuiconfig.Configuration) tea.Cmd {
 	v.stopUpdates()
 	v.tickSeq++
 	v.refresh(feed, prefs)
@@ -71,7 +72,7 @@ func (v *logViewport) stopUpdates() {
 	}
 }
 
-func (v *logViewport) refreshUpdates(feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+func (v *logViewport) refreshUpdates(feed RuntimeLogFeed, prefs tuiconfig.Configuration) tea.Cmd {
 	if !v.follow {
 		return nil
 	}
@@ -79,7 +80,7 @@ func (v *logViewport) refreshUpdates(feed RuntimeLogFeed, prefs UIPreferences) t
 	return logViewportUpdateCmd(feed, v.waitStop, v.tickSeq)
 }
 
-func (v *logViewport) update(msg tea.KeyPressMsg, feed RuntimeLogFeed, prefs UIPreferences) tea.Cmd {
+func (v *logViewport) update(msg tea.KeyPressMsg, feed RuntimeLogFeed, prefs tuiconfig.Configuration) tea.Cmd {
 	wasFollowing := v.follow
 	switch msg.String() {
 	case "pgup":

@@ -122,7 +122,7 @@ func TestNewTunnel_TCP_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.TCP,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -158,7 +158,7 @@ func TestNewTunnel_UDP_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.UDP,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -190,7 +190,7 @@ func TestNewTunnel_WS_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.WS,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -220,7 +220,7 @@ func TestNewTunnel_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.WS,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -279,7 +279,7 @@ func TestNewTunnel_TCP_UDP_WS_Success(t *testing.T) {
 
 		ws := settings.Settings{
 			Protocol: proto,
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				Server: mustHost("127.0.0.1"),
 				Port:   portNum,
 			},

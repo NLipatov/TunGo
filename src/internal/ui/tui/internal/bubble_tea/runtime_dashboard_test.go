@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 	"tungo/internal/config/settings"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/mode"
 	"tungo/internal/trafficstats"
 	"unicode/utf8"
@@ -75,9 +76,9 @@ func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeDark
+	p.Theme = tuiconfig.ThemeDark
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
@@ -103,9 +104,9 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeDark
+	p.Theme = tuiconfig.ThemeDark
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
@@ -117,10 +118,10 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
-	if s.Current().StatsUnits != StatsUnitsBytes {
+	if s.Current().StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected global StatsUnits to be toggled to bytes")
 	}
-	if toggled.preferences.StatsUnits != StatsUnitsBytes {
+	if toggled.preferences.StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected model StatsUnits to be toggled to bytes")
 	}
 }
@@ -350,9 +351,9 @@ func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeLight
+	p.Theme = tuiconfig.ThemeLight
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
@@ -394,12 +395,12 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.preferences = s.Current()
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().Theme != ThemeDark {
+	if s.Current().Theme != tuiconfig.ThemeDark {
 		t.Fatalf("expected theme dark after right, got %q", s.Current().Theme)
 	}
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().Theme != ThemeLight {
+	if s.Current().Theme != tuiconfig.ThemeLight {
 		t.Fatalf("expected theme light after left, got %q", s.Current().Theme)
 	}
 
@@ -407,10 +408,10 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsStatsUnitsRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().StatsUnits != StatsUnitsBytes {
+	if s.Current().StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected stats units bytes, got %q", s.Current().StatsUnits)
 	}
-	if m.preferences.StatsUnits != StatsUnitsBytes {
+	if m.preferences.StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected model stats units bytes, got %q", m.preferences.StatsUnits)
 	}
 
@@ -689,8 +690,8 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeLight
-	p.StatsUnits = StatsUnitsBytes
+	p.Theme = tuiconfig.ThemeLight
+	p.StatsUnits = tuiconfig.StatsUnitsBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
@@ -705,7 +706,7 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when runtime theme changes")
 	}
-	if updated.preferences.Theme != ThemeDark {
+	if updated.preferences.Theme != tuiconfig.ThemeDark {
 		t.Fatalf("expected theme to change to dark, got %q", updated.preferences.Theme)
 	}
 }

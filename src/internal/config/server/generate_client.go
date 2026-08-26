@@ -167,7 +167,7 @@ func deriveClientSettings(
 		return settings.Settings{}, err
 	}
 	clientSettings := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    tunName,
 			IPv4Subnet: serverSettings.IPv4Subnet,
 			Server:     serverHost,

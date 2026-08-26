@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"strings"
+	tuiconfig "tungo/internal/config/tui"
 	"unicode/utf8"
 )
 
@@ -285,7 +286,7 @@ func stripANSI(s string) string {
 	return out.String()
 }
 
-func enforceBaseThemeFill(s string, prefs UIPreferences) string {
+func enforceBaseThemeFill(s string, prefs tuiconfig.Configuration) string {
 	bg, fg := baseANSIForTheme(prefs)
 	base := bg + fg
 	lineCount := 1 + strings.Count(s, "\n")
@@ -354,11 +355,7 @@ func shouldReapplyBaseAfterSGR(params string) bool {
 	return false
 }
 
-func baseANSIForTheme(prefs UIPreferences) (bg string, fg string) {
-	theme := prefs.Theme
-	if !isValidTheme(theme) {
-		theme = ThemeLight
-	}
-	p := paletteForTheme(theme)
+func baseANSIForTheme(prefs tuiconfig.Configuration) (bg string, fg string) {
+	p := paletteForTheme(prefs.Theme)
 	return p.background, p.text
 }

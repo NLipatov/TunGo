@@ -64,7 +64,7 @@ func mustHost(raw string) settings.Host {
 // mkTCPSettings returns minimal TCP settings for a given port.
 func mkTCPSettings(port int) settings.Settings {
 	return settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   port,
 		},
@@ -76,7 +76,7 @@ func mkTCPSettings(port int) settings.Settings {
 // mkUDPSettings returns minimal UDP settings for a given port.
 func mkUDPSettings(port int) settings.Settings {
 	return settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   port,
 		},
@@ -88,7 +88,7 @@ func mkUDPSettings(port int) settings.Settings {
 // mkWSSettings returns minimal WS/WSS settings.
 func mkWSSettings(host string, port int, proto settings.Protocol) settings.Settings {
 	return settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost(host),
 			Port:   port,
 		},
@@ -768,7 +768,7 @@ func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	s := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("localhost"),
 			Port:   port,
 		},
@@ -808,7 +808,7 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 	defer func() { _ = srv.Shutdown(context.Background()); _ = ln.Close() }()
 
 	s := settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
 			Port:   portInt,
 		},

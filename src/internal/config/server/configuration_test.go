@@ -78,7 +78,7 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 	c := &Configuration{
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 				// IPv6 not set — should be derived as fd00::1
 			},
@@ -97,7 +97,7 @@ func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T) {
 	c := &Configuration{
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "custom0",
 				IPv4Subnet: netip.MustParsePrefix("10.9.0.0/24"),
 				IPv4:       netip.MustParseAddr("10.9.0.1"),

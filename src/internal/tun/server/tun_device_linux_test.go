@@ -13,7 +13,7 @@ import (
 // cfgNoIPv4Addr has a valid IPv4Subnet but no IPv4 address set,
 // so IPv4CIDR() will return an error.
 var cfgNoIPv4Addr = settings.Settings{
-	Addressing: settings.Addressing{
+	Network: settings.Network{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 	},

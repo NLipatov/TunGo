@@ -7,7 +7,7 @@ import (
 )
 
 func TestDeriveIP_Server(t *testing.T) {
-	a := Addressing{
+	a := Network{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 	}
@@ -23,7 +23,7 @@ func TestDeriveIP_Server(t *testing.T) {
 }
 
 func TestDeriveIP_Client(t *testing.T) {
-	a := Addressing{
+	a := Network{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 	}
@@ -39,7 +39,7 @@ func TestDeriveIP_Client(t *testing.T) {
 }
 
 func TestDeriveIP_IPv4Only(t *testing.T) {
-	a := Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
+	a := Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
 	if err := a.DeriveIP(1); err != nil {
 		t.Fatalf("DeriveIP(1): %v", err)
 	}
@@ -52,17 +52,17 @@ func TestDeriveIP_IPv4Only(t *testing.T) {
 }
 
 func TestDeriveIP_NoSubnets(t *testing.T) {
-	a := Addressing{}
+	a := Network{}
 	if err := a.DeriveIP(0); err != nil {
 		t.Fatalf("DeriveIP on empty: %v", err)
 	}
 	if a.HasIPv4() || a.HasIPv6() {
-		t.Fatal("expected no IPs on empty Addressing")
+		t.Fatal("expected no IPs on empty Network")
 	}
 }
 
 func TestDeriveIP_InvalidSubnet(t *testing.T) {
-	a := Addressing{IPv4Subnet: netip.Prefix{}}
+	a := Network{IPv4Subnet: netip.Prefix{}}
 	if err := a.DeriveIP(0); err != nil {
 		t.Fatal("invalid prefix should be skipped, not error")
 	}
@@ -70,14 +70,14 @@ func TestDeriveIP_InvalidSubnet(t *testing.T) {
 
 func TestDeriveIP_AllocationErrors(t *testing.T) {
 	t.Run("IPv4", func(t *testing.T) {
-		a := Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
+		a := Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
 		if err := a.DeriveIP(-1); err == nil {
 			t.Fatal("expected IPv4 allocation error")
 		}
 	})
 
 	t.Run("IPv6", func(t *testing.T) {
-		a := Addressing{IPv6Subnet: netip.MustParsePrefix("fd00::/64")}
+		a := Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")}
 		if err := a.DeriveIP(-1); err == nil {
 			t.Fatal("expected IPv6 allocation error")
 		}
@@ -91,7 +91,7 @@ func TestAllocateIP_InvalidSubnet(t *testing.T) {
 }
 
 func TestIPv4CIDR(t *testing.T) {
-	a := Addressing{
+	a := Network{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 		IPv4:       netip.MustParseAddr("10.0.0.2"),
 	}
@@ -105,7 +105,7 @@ func TestIPv4CIDR(t *testing.T) {
 }
 
 func TestIPv6CIDR(t *testing.T) {
-	a := Addressing{
+	a := Network{
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 		IPv6:       netip.MustParseAddr("fd00::2"),
 	}
@@ -119,14 +119,14 @@ func TestIPv6CIDR(t *testing.T) {
 }
 
 func TestIPv4CIDR_NoAddr(t *testing.T) {
-	a := Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
+	a := Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
 	if _, err := a.IPv4CIDR(); err == nil {
 		t.Fatal("expected error for missing IPv4")
 	}
 }
 
 func TestIPv6CIDR_NoAddr(t *testing.T) {
-	a := Addressing{IPv6Subnet: netip.MustParsePrefix("fd00::/64")}
+	a := Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")}
 	if _, err := a.IPv6CIDR(); err == nil {
 		t.Fatal("expected error for missing IPv6")
 	}
@@ -134,14 +134,14 @@ func TestIPv6CIDR_NoAddr(t *testing.T) {
 
 func TestCIDR_NoSubnet(t *testing.T) {
 	t.Run("IPv4", func(t *testing.T) {
-		a := Addressing{IPv4: netip.MustParseAddr("10.0.0.2")}
+		a := Network{IPv4: netip.MustParseAddr("10.0.0.2")}
 		if _, err := a.IPv4CIDR(); err == nil {
 			t.Fatal("expected error for missing IPv4 subnet")
 		}
 	})
 
 	t.Run("IPv6", func(t *testing.T) {
-		a := Addressing{IPv6: netip.MustParseAddr("fd00::2")}
+		a := Network{IPv6: netip.MustParseAddr("fd00::2")}
 		if _, err := a.IPv6CIDR(); err == nil {
 			t.Fatal("expected error for missing IPv6 subnet")
 		}
@@ -149,17 +149,17 @@ func TestCIDR_NoSubnet(t *testing.T) {
 }
 
 func TestIsZero(t *testing.T) {
-	if !(Addressing{}).IsZero() {
-		t.Fatal("expected zero Addressing to be IsZero")
+	if !(Network{}).IsZero() {
+		t.Fatal("expected zero Network to be IsZero")
 	}
-	a := Addressing{TunName: "tun0"}
+	a := Network{TunName: "tun0"}
 	if a.IsZero() {
-		t.Fatal("non-zero Addressing should not be IsZero")
+		t.Fatal("non-zero Network should not be IsZero")
 	}
 }
 
 func TestWithIPv6Subnet(t *testing.T) {
-	a := Addressing{TunName: "tun0"}
+	a := Network{TunName: "tun0"}
 	subnet := netip.MustParsePrefix("fd00::/64")
 	b := a.WithIPv6Subnet(subnet)
 	if b.IPv6Subnet != subnet {
@@ -171,7 +171,7 @@ func TestWithIPv6Subnet(t *testing.T) {
 }
 
 func TestDNSResolvers_Defaults(t *testing.T) {
-	a := Addressing{}
+	a := Network{}
 
 	if !reflect.DeepEqual(a.DNSv4Resolvers(), DefaultClientDNSv4Resolvers) {
 		t.Fatalf("unexpected default DNSv4 resolvers: got %v want %v", a.DNSv4Resolvers(), DefaultClientDNSv4Resolvers)
@@ -182,7 +182,7 @@ func TestDNSResolvers_Defaults(t *testing.T) {
 }
 
 func TestDNSResolvers_CustomAndCopied(t *testing.T) {
-	a := Addressing{
+	a := Network{
 		DNSv4: []string{"9.9.9.9"},
 		DNSv6: []string{"2620:fe::9"},
 	}

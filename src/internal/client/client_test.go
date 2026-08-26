@@ -117,7 +117,7 @@ func TestAllowedSources(t *testing.T) {
 		{name: "empty"},
 		{
 			name: "dual stack with mapped IPv4",
-			s: settings.Settings{Addressing: settings.Addressing{
+			s: settings.Settings{Network: settings.Network{
 				IPv4: netip.MustParseAddr("::ffff:192.0.2.1"),
 				IPv6: netip.MustParseAddr("2001:db8::1"),
 			}},

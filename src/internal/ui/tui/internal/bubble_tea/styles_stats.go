@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/trafficstats"
 )
 
 const statsValueWidth = 12
 
-func formatStatsLines(prefs UIPreferences, snapshot trafficstats.Snapshot) []string {
+func formatStatsLines(prefs tuiconfig.Configuration, snapshot trafficstats.Snapshot) []string {
 	units := unitSystemForPrefs(prefs)
 	rxRate := trafficstats.FormatRateWithSystem(snapshot.RXRate, units)
 	txRate := trafficstats.FormatRateWithSystem(snapshot.TXRate, units)
@@ -49,8 +50,8 @@ func writeLeftPadded(b *strings.Builder, s string, width int) {
 	b.WriteString(s)
 }
 
-func unitSystemForPrefs(prefs UIPreferences) trafficstats.UnitSystem {
-	if prefs.StatsUnits == StatsUnitsBytes {
+func unitSystemForPrefs(prefs tuiconfig.Configuration) trafficstats.UnitSystem {
+	if prefs.StatsUnits == tuiconfig.StatsUnitsBytes {
 		return trafficstats.UnitSystemBytes
 	}
 	return trafficstats.UnitSystemBinary

@@ -453,7 +453,7 @@ func TestMasqueradeCIDR4(t *testing.T) {
 		{
 			name: "ipv6_in_ipv4_field",
 			cfg: settings.Settings{
-				Addressing: settings.Addressing{
+				Network: settings.Network{
 					IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
 				},
 			},

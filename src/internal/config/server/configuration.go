@@ -92,13 +92,14 @@ func (c *Configuration) fillDefaults(
 	if !to.IPv4Subnet.IsValid() {
 		to.IPv4Subnet = from.IPv4Subnet
 	}
+	network := &to.Network
 	// Derive server IPv4 from subnet if not already set.
-	if to.IPv4Subnet.IsValid() && !to.IPv4.IsValid() {
-		_ = to.DeriveIP(0)
+	if network.IPv4Subnet.IsValid() && !network.IPv4.IsValid() {
+		_ = network.DeriveIP(0)
 	}
 	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
-	if to.IPv6Subnet.IsValid() && !to.IPv6.IsValid() {
-		_ = to.DeriveIP(0)
+	if network.IPv6Subnet.IsValid() && !network.IPv6.IsValid() {
+		_ = network.DeriveIP(0)
 	}
 	if to.Port == 0 {
 		to.Port = from.Port
@@ -119,20 +120,20 @@ func (c *Configuration) defaultSettings(
 	tunName, ipv4CIDR string,
 	port int,
 ) settings.Settings {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    tunName,
-			IPv4Subnet: netip.MustParsePrefix(ipv4CIDR),
-			Port:       port,
-		},
+	network := settings.Network{
+		TunName:    tunName,
+		IPv4Subnet: netip.MustParsePrefix(ipv4CIDR),
+		Port:       port,
+	}
+	// Derive server IP from subnet.
+	_ = network.DeriveIP(0)
+	return settings.Settings{
+		Network:       network,
 		MTU:           settings.DefaultEthernetMTU,
 		Protocol:      protocol,
 		Encryption:    settings.ChaCha20Poly1305,
 		DialTimeoutMs: 5000,
 	}
-	// Derive server IP from subnet.
-	_ = s.DeriveIP(0)
-	return s
 }
 
 func (c Configuration) Profiles() [3]settings.Profile {

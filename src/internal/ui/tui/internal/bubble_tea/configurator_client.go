@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/mode"
 
 	"charm.land/bubbles/v2/textarea"
@@ -246,7 +247,7 @@ func (m Configurator) persistAutoSelectClientConfig(selected string) Configurato
 	p := m.settings.Current()
 	p.AutoSelectClientConfig = selected
 	m.settings.update(p)
-	_ = savePreferencesToDisk(p)
+	_ = tuiconfig.Save(p)
 	return m
 }
 

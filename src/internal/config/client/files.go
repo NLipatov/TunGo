@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"tungo/internal/config/internal/configpath"
 )
 
 // Configurations owns the active client configuration and its named alternatives.
@@ -17,11 +19,9 @@ type Configurations struct {
 
 // Files returns the client configurations stored at the platform-specific system path.
 func Files() *Configurations {
-	return newConfigurations(defaultPath())
-}
-
-func newConfigurations(activePath string) *Configurations {
-	return &Configurations{activePath: activePath}
+	return &Configurations{
+		activePath: filepath.Join(configpath.Directory(), "client_configuration.json"),
+	}
 }
 
 // Active reads, defaults, and validates the active client configuration.
@@ -33,7 +33,6 @@ func (c *Configurations) Active() (*Configuration, error) {
 		}
 		return nil, fmt.Errorf("failed to read client configuration %q: %w", c.activePath, err)
 	}
-
 	configuration, err := decode(data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", c.activePath, err)
@@ -50,7 +49,6 @@ func (c *Configurations) List() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	prefix := filepath.Base(c.activePath) + "."
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -71,7 +69,6 @@ func (c *Configurations) Import(name, rawJSON string) error {
 	if err != nil {
 		return err
 	}
-
 	configuration, err := decode([]byte(strings.TrimFunc(rawJSON, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Cf)
 	})))
@@ -82,7 +79,6 @@ func (c *Configurations) Import(name, rawJSON string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal client configuration: %w", err)
 	}
-
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("failed to create client configuration directory: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	serverconfig "tungo/internal/config/server"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/mode"
 
@@ -2775,7 +2776,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 		opts.testDaemon().status = func() (systemd.UnitStatus, error) {
 			return systemd.UnitStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
 		}
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -2790,7 +2791,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("daemon reconfigure confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -2805,7 +2806,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("systemd active confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -2821,7 +2822,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("systemd check error confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -2846,7 +2847,7 @@ func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts.testDaemon().enable = func() error { return nil }
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2890,14 +2891,14 @@ func TestUpdateClientAddJSONScreen_NonEnter_ExecutesTickClosure(t *testing.T) {
 func TestNewConfiguratorSessionModel_AutoSelectClientMode_ListError(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.testControl().listErr = errors.New("observe failed")
-	_, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	_, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err == nil || !strings.Contains(err.Error(), "observe failed") {
 		t.Fatalf("expected observer error, got %v", err)
 	}
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectConfig_ActivateFails_ShowsNotice(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
@@ -2917,7 +2918,7 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_ActivateFails_ShowsNotice(
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemonGuard(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"

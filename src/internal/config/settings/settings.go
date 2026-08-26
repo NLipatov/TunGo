@@ -1,7 +1,7 @@
 package settings
 
 type Settings struct {
-	Addressing
+	Network
 	MTU           int           `json:"MTU"`
 	Protocol      Protocol      `json:"Protocol"`
 	Encryption    Encryption    `json:"Encryption"`

@@ -11,7 +11,7 @@ func TestValidate_AllowsIPv6OnlyActiveSettings(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.TCP
 	cfg.TCPSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "tcp0",
 			Server:     mustHostForValidate(t, "2001:db8::1"),
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
@@ -29,7 +29,7 @@ func TestValidate_FailsWhenNoIPv4AndNoIPv6Subnet(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.UDP
 	cfg.UDPSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName: "udp0",
 			Server:  mustHostForValidate(t, "198.51.100.10"),
 			Port:    9090,
@@ -52,7 +52,7 @@ func validClientConfiguration(t *testing.T) Configuration {
 		X25519PublicKey:  make([]byte, 32),
 		Protocol:         settings.UDP,
 		UDPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "udp0",
 				Server:     mustHostForValidate(t, "198.51.100.10"),
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
@@ -67,7 +67,7 @@ func TestValidate_FailsWhenActivePortIsInvalid(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.TCP
 	cfg.TCPSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "tcp0",
 			Server:     mustHostForValidate(t, "198.51.100.10"),
 			IPv4Subnet: netip.MustParsePrefix("10.1.0.0/24"),
@@ -86,7 +86,7 @@ func TestValidate_AllowsWSSZeroPort(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.WSS
 	cfg.WSSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "ws0",
 			Server:     mustHostForValidate(t, "vpn.example.com"),
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),
@@ -104,7 +104,7 @@ func TestValidate_IgnoresNestedProtocol(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.WSS
 	cfg.WSSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "ws0",
 			Server:     mustHostForValidate(t, "vpn.example.com"),
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),
@@ -334,7 +334,7 @@ func TestValidate_WSSZeroPortRejectsNonWSS(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.WS
 	cfg.WSSettings = settings.Settings{
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			TunName:    "ws0",
 			Server:     mustHostForValidate(t, "198.51.100.10"),
 			IPv4Subnet: netip.MustParsePrefix("10.2.0.0/24"),

@@ -120,8 +120,8 @@ func (m *windowsNetConfigMock) BestRoute(netip.Addr) (netip.Addr, string, int, i
 
 func windowsSettings(v4, v6 bool) settings.Settings {
 	active := settings.Settings{
-		Addressing: settings.Addressing{TunName: "tun0"},
-		MTU:        settings.DefaultMTU,
+		Network: settings.Network{TunName: "tun0"},
+		MTU:     settings.DefaultMTU,
 	}
 	if v4 {
 		active.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")

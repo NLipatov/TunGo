@@ -8,6 +8,7 @@ import (
 	"time"
 
 	serverconfig "tungo/internal/config/server"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/mode"
 
@@ -137,7 +138,7 @@ type Configurator struct {
 
 	tab            int
 	settingsCursor int
-	preferences    UIPreferences
+	preferences    tuiconfig.Configuration
 
 	logs logViewport
 
@@ -164,10 +165,10 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	// If server is not supported but the saved preference is server, reset to client.
 	if !serverSupported {
 		p := settings.Current()
-		if p.AutoSelectMode == ModePreferenceServer {
-			p.AutoSelectMode = ModePreferenceClient
+		if p.AutoSelectMode == tuiconfig.ModePreferenceServer {
+			p.AutoSelectMode = tuiconfig.ModePreferenceClient
 			settings.update(p)
-			_ = savePreferencesToDisk(p)
+			_ = tuiconfig.Save(p)
 		}
 	}
 
@@ -199,15 +200,15 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	}
 	modeAutoselectNotice := ""
 	switch settings.Current().AutoSelectMode {
-	case ModePreferenceClient:
+	case tuiconfig.ModePreferenceClient:
 		modeAutoselectNotice = "Auto-selected mode: client."
-	case ModePreferenceServer:
+	case tuiconfig.ModePreferenceServer:
 		modeAutoselectNotice = "Auto-selected mode: server."
 	}
 
 	// Skip mode screen only when client is the only available option,
 	// or when client is explicitly preferred.
-	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == ModePreferenceClient {
+	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == tuiconfig.ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
 			return Configurator{}, err
 		}
@@ -221,7 +222,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 							p := settings.Current()
 							p.AutoSelectClientConfig = selected
 							settings.update(p)
-							_ = savePreferencesToDisk(p)
+							_ = tuiconfig.Save(p)
 						}
 						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", selected))
 						model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
@@ -241,11 +242,11 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 					p := settings.Current()
 					p.AutoSelectClientConfig = ""
 					settings.update(p)
-					_ = savePreferencesToDisk(p)
+					_ = tuiconfig.Save(p)
 				}
 			}
 		}
-	} else if settings.Current().AutoSelectMode == ModePreferenceServer {
+	} else if settings.Current().AutoSelectMode == tuiconfig.ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 	}

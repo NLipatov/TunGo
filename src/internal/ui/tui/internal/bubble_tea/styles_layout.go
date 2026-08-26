@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"strings"
+	tuiconfig "tungo/internal/config/tui"
 	"unicode/utf8"
 )
 
@@ -21,11 +22,11 @@ const (
 	frameVertSize   = frameBorderY + framePadY*2 // 4
 )
 
-func renderScreen(width, height int, title, subtitle string, body []string, hint string, prefs UIPreferences, styles uiStyles) string {
+func renderScreen(width, height int, title, subtitle string, body []string, hint string, prefs tuiconfig.Configuration, styles uiStyles) string {
 	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, true, prefs, styles)
 }
 
-func renderScreenRaw(width, height int, title, subtitle string, body []string, hint string, prefs UIPreferences, styles uiStyles) string {
+func renderScreenRaw(width, height int, title, subtitle string, body []string, hint string, prefs tuiconfig.Configuration, styles uiStyles) string {
 	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, false, prefs, styles)
 }
 
@@ -35,7 +36,7 @@ func renderScreenWithBodyMode(
 	body []string,
 	hint string,
 	wrapBodyLines bool,
-	prefs UIPreferences,
+	prefs tuiconfig.Configuration,
 	styles uiStyles,
 ) string {
 	targetWidth := 0
@@ -106,7 +107,7 @@ func renderScreenWithBodyMode(
 	return enforceBaseThemeFill(card, prefs) + "\n"
 }
 
-func buildFooterBlock(styles uiStyles, prefs UIPreferences, contentWidth int, hint string) []string {
+func buildFooterBlock(styles uiStyles, prefs tuiconfig.Configuration, contentWidth int, hint string) []string {
 	_ = prefs
 	var hintLines []string
 	if strings.TrimSpace(hint) != "" {

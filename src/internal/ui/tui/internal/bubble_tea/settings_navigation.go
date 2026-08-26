@@ -1,5 +1,7 @@
 package bubble_tea
 
+import tuiconfig "tungo/internal/config/tui"
+
 const (
 	settingsThemeRow = iota
 	settingsStatsUnitsRow
@@ -11,22 +13,34 @@ const (
 	settingsRowsCount
 )
 
-var orderedModePreferences = [...]ModePreference{
-	ModePreferenceNone,
-	ModePreferenceClient,
-	ModePreferenceServer,
+var orderedModePreferences = [...]tuiconfig.ModePreference{
+	tuiconfig.ModePreferenceNone,
+	tuiconfig.ModePreferenceClient,
+	tuiconfig.ModePreferenceServer,
 }
 
-func nextTheme(current ThemeOption, step int) ThemeOption {
+var orderedThemeOptions = [...]tuiconfig.Theme{
+	tuiconfig.ThemeLight,
+	tuiconfig.ThemeDark,
+	tuiconfig.ThemeDarkHighContrast,
+	tuiconfig.ThemeDarkMatrix,
+	tuiconfig.ThemeDarkOcean,
+	tuiconfig.ThemeDarkNord,
+	tuiconfig.ThemeDarkMono,
+}
+
+func nextTheme(current tuiconfig.Theme, step int) tuiconfig.Theme {
 	order := orderedThemeOptions[:]
 	index := 0
+	found := false
 	for i, item := range order {
 		if item == current {
 			index = i
+			found = true
 			break
 		}
 	}
-	if !isValidTheme(current) {
+	if !found {
 		index = 0
 	}
 	if step > 0 {
@@ -37,8 +51,8 @@ func nextTheme(current ThemeOption, step int) ThemeOption {
 	return order[index]
 }
 
-func nextStatsUnits(current StatsUnitsOption, step int) StatsUnitsOption {
-	order := []StatsUnitsOption{StatsUnitsBytes, StatsUnitsBiBytes}
+func nextStatsUnits(current tuiconfig.StatsUnits, step int) tuiconfig.StatsUnits {
+	order := []tuiconfig.StatsUnits{tuiconfig.StatsUnitsBytes, tuiconfig.StatsUnitsBiBytes}
 	index := 0
 	for i, item := range order {
 		if item == current {
@@ -54,7 +68,7 @@ func nextStatsUnits(current StatsUnitsOption, step int) StatsUnitsOption {
 	return order[index]
 }
 
-func nextModePreference(current ModePreference, step int) ModePreference {
+func nextModePreference(current tuiconfig.ModePreference, step int) tuiconfig.ModePreference {
 	n := len(orderedModePreferences)
 	idx := 0
 	for i, m := range orderedModePreferences {
@@ -81,11 +95,11 @@ func visibleCursorToSettingsRow(cursor int, serverSupported bool) int {
 	return cursor + 1 // skip hidden Mode row
 }
 
-func settingsVisibleRowCount(prefs UIPreferences, serverSupported bool) int {
+func settingsVisibleRowCount(prefs tuiconfig.Configuration, serverSupported bool) int {
 	if !serverSupported {
 		return settingsRowsCount - 1 // Mode row hidden, AutoConnect always visible
 	}
-	if prefs.AutoSelectMode == ModePreferenceClient {
+	if prefs.AutoSelectMode == tuiconfig.ModePreferenceClient {
 		return settingsRowsCount
 	}
 	return settingsRowsCount - 1 // auto-connect row hidden
@@ -98,7 +112,7 @@ func settingsCursorDown(cursor, rowCount int) int {
 	return rowCount - 1
 }
 
-func applySettingsChange(provider *Preferences, settingsCursor int, step int, serverSupported bool) UIPreferences {
+func applySettingsChange(provider *Preferences, settingsCursor int, step int, serverSupported bool) tuiconfig.Configuration {
 	p := provider.Current()
 	switch visibleCursorToSettingsRow(settingsCursor, serverSupported) {
 	case settingsThemeRow:
@@ -117,6 +131,6 @@ func applySettingsChange(provider *Preferences, settingsCursor int, step int, se
 		p.AutoConnect = !p.AutoConnect
 	}
 	provider.update(p)
-	_ = savePreferencesToDisk(p)
+	_ = tuiconfig.Save(p)
 	return p
 }

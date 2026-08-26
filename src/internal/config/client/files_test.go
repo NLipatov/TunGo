@@ -17,7 +17,7 @@ func validTestConfiguration() Configuration {
 	return Configuration{
 		ClientID: 1,
 		UDPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "tun0",
 				Server:     settings.Host{IPv4: "127.0.0.1"},
 				Port:       9090,
@@ -47,7 +47,7 @@ func TestConfigurationsActiveAppliesDefaultsAndValidates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "client_configuration.json")
 	writeConfiguration(t, path, validTestConfiguration())
 
-	configuration, err := newConfigurations(path).Active()
+	configuration, err := (&Configurations{activePath: path}).Active()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestConfigurationsActiveAppliesDefaultsAndValidates(t *testing.T) {
 
 func TestConfigurationsActiveErrors(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
-		_, err := newConfigurations(filepath.Join(t.TempDir(), "missing.json")).Active()
+		_, err := (&Configurations{activePath: filepath.Join(t.TempDir(), "missing.json")}).Active()
 		if !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("error = %v, want os.ErrNotExist", err)
 		}
@@ -75,14 +75,14 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 		if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := newConfigurations(path).Active(); err == nil {
+		if _, err := (&Configurations{activePath: path}).Active(); err == nil {
 			t.Fatal("expected decode error")
 		}
 	})
 	t.Run("invalid configuration", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "client_configuration.json")
 		writeConfiguration(t, path, Configuration{})
-		if _, err := newConfigurations(path).Active(); err == nil || !strings.Contains(err.Error(), "invalid client configuration") {
+		if _, err := (&Configurations{activePath: path}).Active(); err == nil || !strings.Contains(err.Error(), "invalid client configuration") {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -91,7 +91,7 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 func TestConfigurationsListActivateAndDelete(t *testing.T) {
 	directory := t.TempDir()
 	activePath := filepath.Join(directory, "client_configuration.json")
-	configurations := newConfigurations(activePath)
+	configurations := &Configurations{activePath: activePath}
 	writeConfiguration(t, activePath, validTestConfiguration())
 	writeConfiguration(t, activePath+".first", validTestConfiguration())
 
@@ -144,7 +144,7 @@ func TestConfigurationsListActivateAndDelete(t *testing.T) {
 }
 
 func TestConfigurationsListMissingDirectory(t *testing.T) {
-	configurations := newConfigurations(filepath.Join(t.TempDir(), "missing", "client_configuration.json"))
+	configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "missing", "client_configuration.json")}
 	listed, err := configurations.List()
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestConfigurationsListMissingDirectory(t *testing.T) {
 
 func TestConfigurationsImportNormalizesAndRejectsInvalidInput(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "nested", "client_configuration.json")
-	configurations := newConfigurations(activePath)
+	configurations := &Configurations{activePath: activePath}
 	data, err := json.Marshal(validTestConfiguration())
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestConfigurationsImportNormalizesAndRejectsInvalidInput(t *testing.T) {
 
 func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "client_configuration.json")
-	configurations := newConfigurations(activePath)
+	configurations := &Configurations{activePath: activePath}
 	writeConfiguration(t, activePath, validTestConfiguration())
 	before, err := os.ReadFile(activePath)
 	if err != nil {
