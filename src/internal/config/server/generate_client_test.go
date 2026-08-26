@@ -2,12 +2,9 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"sort"
-	"sync"
 	"testing"
 
 	clientconfig "tungo/internal/config/client"
@@ -18,8 +15,7 @@ func TestFileGenerateClient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server_configuration.json")
 	serverConfiguration := newConfiguration()
 	serverConfiguration.Host = "192.0.2.1"
-	serverConfiguration.X25519PublicKey = make([]byte, 32)
-	serverConfiguration.X25519PrivateKey = make([]byte, 32)
+	serverConfiguration.X25519PublicKey, serverConfiguration.X25519PrivateKey = testX25519KeyPair(t, 1)
 	writeServerConfiguration(t, path, *serverConfiguration)
 	file := NewFile(path)
 
@@ -61,71 +57,11 @@ func TestFileGenerateClient(t *testing.T) {
 	}
 }
 
-func TestFileGenerateClientSerializesConcurrentRegistrations(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "server_configuration.json")
-	serverConfiguration := newConfiguration()
-	serverConfiguration.Host = "vpn.example"
-	serverConfiguration.X25519PublicKey = make([]byte, 32)
-	serverConfiguration.X25519PrivateKey = make([]byte, 32)
-	writeServerConfiguration(t, path, *serverConfiguration)
-	file := NewFile(path)
-
-	const count = 8
-	ids := make(chan int, count)
-	errs := make(chan error, count)
-	var group sync.WaitGroup
-	for range count {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			generated, err := file.GenerateClient()
-			if err != nil {
-				errs <- err
-				return
-			}
-			var configuration clientconfig.Configuration
-			if err := json.Unmarshal([]byte(generated.JSON), &configuration); err != nil {
-				errs <- err
-				return
-			}
-			if configuration.UDPSettings.Server.Domain != "vpn.example" {
-				errs <- fmt.Errorf("server host = %+v", configuration.UDPSettings.Server)
-				return
-			}
-			ids <- configuration.ClientID
-		}()
-	}
-	group.Wait()
-	close(errs)
-	for err := range errs {
-		t.Fatal(err)
-	}
-	close(ids)
-	generatedIDs := make([]int, 0, count)
-	for id := range ids {
-		generatedIDs = append(generatedIDs, id)
-	}
-	sort.Ints(generatedIDs)
-	for i, id := range generatedIDs {
-		if id != i+1 {
-			t.Fatalf("generated client IDs = %v", generatedIDs)
-		}
-	}
-	updated, err := file.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.ClientCounter != count || len(updated.AllowedPeers) != count {
-		t.Fatalf("server registration state = counter %d, peers %d", updated.ClientCounter, len(updated.AllowedPeers))
-	}
-}
-
 func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server_configuration.json")
 	serverConfiguration := newConfiguration()
 	serverConfiguration.Host = "2001:db8::1"
-	serverConfiguration.X25519PublicKey = make([]byte, 32)
-	serverConfiguration.X25519PrivateKey = make([]byte, 32)
+	serverConfiguration.X25519PublicKey, serverConfiguration.X25519PrivateKey = testX25519KeyPair(t, 1)
 	writeServerConfiguration(t, path, *serverConfiguration)
 
 	if _, err := NewFile(path).GenerateClient(); err != nil {

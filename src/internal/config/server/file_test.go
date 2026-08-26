@@ -1,12 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 func writeServerConfiguration(t *testing.T, path string, configuration Configuration) {
@@ -18,6 +22,17 @@ func writeServerConfiguration(t *testing.T, path string, configuration Configura
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testX25519KeyPair(t *testing.T, seed byte) ([]byte, []byte) {
+	t.Helper()
+	private := make([]byte, 32)
+	private[0] = seed * 8
+	public, err := curve25519.X25519(private, curve25519.Basepoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return public, private
 }
 
 func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
@@ -106,9 +121,7 @@ func TestFileEnsureKeys(t *testing.T) {
 	t.Run("uses environment", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
 		writeServerConfiguration(t, path, *newConfiguration())
-		public := make([]byte, 32)
-		private := make([]byte, 32)
-		public[0], private[0] = 1, 2
+		public, private := testX25519KeyPair(t, 1)
 		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(public))
 		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(private))
 		file := NewFile(path)
@@ -119,7 +132,8 @@ func TestFileEnsureKeys(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if configuration.X25519PublicKey[0] != 1 || configuration.X25519PrivateKey[0] != 2 {
+		if !bytes.Equal(configuration.X25519PublicKey, public) ||
+			!bytes.Equal(configuration.X25519PrivateKey, private) {
 			t.Fatal("environment keys were not persisted")
 		}
 	})
@@ -145,11 +159,13 @@ func TestFileEnsureKeys(t *testing.T) {
 	t.Run("preserves existing keys", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
 		configuration := newConfiguration()
-		configuration.X25519PublicKey = append([]byte{3}, make([]byte, 31)...)
-		configuration.X25519PrivateKey = append([]byte{4}, make([]byte, 31)...)
+		public, private := testX25519KeyPair(t, 1)
+		configuration.X25519PublicKey = public
+		configuration.X25519PrivateKey = private
 		writeServerConfiguration(t, path, *configuration)
-		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
-		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
+		environmentPublic, environmentPrivate := testX25519KeyPair(t, 2)
+		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(environmentPublic))
+		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(environmentPrivate))
 
 		file := NewFile(path)
 		if err := file.EnsureKeys(); err != nil {
@@ -159,8 +175,36 @@ func TestFileEnsureKeys(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.X25519PublicKey[0] != 3 || loaded.X25519PrivateKey[0] != 4 {
+		if !bytes.Equal(loaded.X25519PublicKey, public) ||
+			!bytes.Equal(loaded.X25519PrivateKey, private) {
 			t.Fatal("existing keys were replaced")
+		}
+	})
+
+	t.Run("rejects mismatched existing keys", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "server_configuration.json")
+		configuration := newConfiguration()
+		configuration.X25519PublicKey, _ = testX25519KeyPair(t, 1)
+		_, configuration.X25519PrivateKey = testX25519KeyPair(t, 2)
+		writeServerConfiguration(t, path, *configuration)
+
+		err := NewFile(path).EnsureKeys()
+		if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
+			t.Fatalf("EnsureKeys() error = %v", err)
+		}
+	})
+
+	t.Run("rejects mismatched environment keys", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "server_configuration.json")
+		writeServerConfiguration(t, path, *newConfiguration())
+		public, _ := testX25519KeyPair(t, 1)
+		_, private := testX25519KeyPair(t, 2)
+		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(public))
+		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(private))
+
+		err := NewFile(path).EnsureKeys()
+		if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
+			t.Fatalf("EnsureKeys() error = %v", err)
 		}
 	})
 }

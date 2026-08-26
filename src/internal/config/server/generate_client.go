@@ -31,9 +31,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		return GeneratedClient{}, fmt.Errorf("could not prepare server keys: %w", err)
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	serverConfiguration, err := f.loadLocked()
+	serverConfiguration, err := f.load()
 	if err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to read server configuration: %w", err)
 	}
@@ -82,7 +80,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		Enabled:   true,
 		ClientID:  clientID,
 	})
-	if err := f.writeLocked(*serverConfiguration); err != nil {
+	if err := f.write(*serverConfiguration); err != nil {
 		return GeneratedClient{}, err
 	}
 

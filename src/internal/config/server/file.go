@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -11,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"tungo/internal/config/internal/configpath"
 
@@ -25,7 +25,6 @@ const (
 
 // File owns the persisted server configuration and its mutations.
 type File struct {
-	mu   sync.Mutex
 	path string
 }
 
@@ -42,13 +41,11 @@ func (f *File) Path() string {
 }
 
 func (f *File) Load() (*Configuration, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.loadLocked()
+	return f.load()
 }
 
-func (f *File) loadLocked() (*Configuration, error) {
-	configuration, err := f.readLocked()
+func (f *File) load() (*Configuration, error) {
+	configuration, err := f.read()
 	if err == nil {
 		return configuration, nil
 	}
@@ -57,13 +54,13 @@ func (f *File) loadLocked() (*Configuration, error) {
 	}
 
 	configuration = newConfiguration()
-	if err := f.writeLocked(*configuration); err != nil {
+	if err := f.write(*configuration); err != nil {
 		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}
-	return f.readLocked()
+	return f.read()
 }
 
-func (f *File) readLocked() (*Configuration, error) {
+func (f *File) read() (*Configuration, error) {
 	data, err := os.ReadFile(f.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -116,7 +113,7 @@ func applyBoolEnvironment(name string, destination *bool) {
 	}
 }
 
-func (f *File) writeLocked(configuration Configuration) error {
+func (f *File) write(configuration Configuration) error {
 	data, err := json.MarshalIndent(configuration, "", "\t")
 	if err != nil {
 		return err
@@ -128,27 +125,23 @@ func (f *File) writeLocked(configuration Configuration) error {
 }
 
 func (f *File) update(update func(*Configuration) error) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	configuration, err := f.loadLocked()
+	configuration, err := f.load()
 	if err != nil {
 		return err
 	}
 	if err := update(configuration); err != nil {
 		return err
 	}
-	return f.writeLocked(*configuration)
+	return f.write(*configuration)
 }
 
 func (f *File) EnsureKeys() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	configuration, err := f.loadLocked()
+	configuration, err := f.load()
 	if err != nil {
 		return err
 	}
 	if len(configuration.X25519PublicKey) == 32 && len(configuration.X25519PrivateKey) == 32 {
-		return nil
+		return validateX25519KeyPair(configuration.X25519PublicKey, configuration.X25519PrivateKey)
 	}
 
 	public, private, err := configuredOrGeneratedKeys()
@@ -157,9 +150,12 @@ func (f *File) EnsureKeys() error {
 	}
 	defer clear(public)
 	defer clear(private)
+	if err := validateX25519KeyPair(public, private); err != nil {
+		return err
+	}
 	configuration.X25519PublicKey = append([]byte(nil), public...)
 	configuration.X25519PrivateKey = append([]byte(nil), private...)
-	return f.writeLocked(*configuration)
+	return f.write(*configuration)
 }
 
 func configuredOrGeneratedKeys() ([]byte, []byte, error) {
@@ -186,6 +182,17 @@ func configuredOrGeneratedKeys() ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("failed to derive X25519 public key: %w", err)
 	}
 	return public, private, nil
+}
+
+func validateX25519KeyPair(public, private []byte) error {
+	derivedPublic, err := curve25519.X25519(private, curve25519.Basepoint)
+	if err != nil {
+		return fmt.Errorf("invalid X25519 private key: %w", err)
+	}
+	if !bytes.Equal(public, derivedPublic) {
+		return fmt.Errorf("X25519 public key does not match private key")
+	}
+	return nil
 }
 
 func (f *File) Peers() ([]AllowedPeer, error) {
