@@ -49,10 +49,51 @@ func main() {
 	}
 }
 
+func isTUI() bool {
+	return len(os.Args) < 2
+}
+
+func runTUI(ctx context.Context) error {
+	if err := requireElevation(); err != nil {
+		return err
+	}
+	clientConfigurations := clientconfig.Files()
+	var serverFile *serverconfig.File
+	if platform.ServerModeSupported() {
+		serverFile = serverconfig.DefaultFile()
+	}
+	var daemonControl systemd.Control
+	systemdControl := systemd.NewUnitInstaller(command.New())
+	if systemdControl.Available() {
+		daemonControl = systemdControl
+	}
+	tuiUI, err := tui.New(clientConfigurations, serverFile, daemonControl)
+	if err != nil {
+		return err
+	}
+	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
+	trafficstats.SetGlobal(trafficCollector)
+	go trafficCollector.Start(ctx)
+
+	defer trafficstats.SetGlobal(nil)
+
+	return tuiUI.Run(ctx)
+}
+
+func requireElevation() error {
+	if elevation.IsElevated() {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s must be run with admin privileges.\n%s",
+		product.Name, elevation.Hint(),
+	)
+}
+
 func runCLI(ctx context.Context) error {
 	command, err := commandline.ParseCommand(os.Args[1:])
 	if err != nil {
-		fmt.Print(commandline.CommandUsage(product.Name))
+		fmt.Print(commandline.Usage(product.Name))
 		return fmt.Errorf("configuration error: %w", err)
 	}
 	if command.RequiresElevation {
@@ -98,45 +139,4 @@ func runCLI(ctx context.Context) error {
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}
-}
-
-func runTUI(ctx context.Context) error {
-	if err := requireElevation(); err != nil {
-		return err
-	}
-	clientConfigurations := clientconfig.Files()
-	var serverFile *serverconfig.File
-	if platform.ServerModeSupported() {
-		serverFile = serverconfig.DefaultFile()
-	}
-	var daemonControl systemd.Control
-	systemdControl := systemd.NewUnitInstaller(command.New())
-	if systemdControl.Available() {
-		daemonControl = systemdControl
-	}
-	tuiUI, err := tui.New(clientConfigurations, serverFile, daemonControl)
-	if err != nil {
-		return err
-	}
-	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
-	trafficstats.SetGlobal(trafficCollector)
-	go trafficCollector.Start(ctx)
-
-	defer trafficstats.SetGlobal(nil)
-
-	return tuiUI.Run(ctx)
-}
-
-func requireElevation() error {
-	if elevation.IsElevated() {
-		return nil
-	}
-	return fmt.Errorf(
-		"%s must be run with admin privileges.\n%s",
-		product.Name, elevation.Hint(),
-	)
-}
-
-func isTUI() bool {
-	return len(os.Args) < 2
 }

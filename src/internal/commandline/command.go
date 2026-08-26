@@ -7,6 +7,12 @@ import (
 	"tungo/internal/mode"
 )
 
+type Command struct {
+	Kind              CommandKind
+	RuntimeMode       mode.Mode
+	RequiresElevation bool
+}
+
 type CommandKind uint8
 
 const (
@@ -15,12 +21,6 @@ const (
 	CommandVersion
 	CommandServerConfigGenerate
 )
-
-type Command struct {
-	Kind              CommandKind
-	RuntimeMode       mode.Mode
-	RequiresElevation bool
-}
 
 type commandSpec struct {
 	args        []string
@@ -60,15 +60,6 @@ func ParseCommand(args []string) (Command, error) {
 	return Command{}, errors.New("invalid arguments")
 }
 
-func RuntimeModeArgs(runtimeMode mode.Mode) ([]string, error) {
-	for _, spec := range commands {
-		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == runtimeMode {
-			return append([]string(nil), spec.args...), nil
-		}
-	}
-	return nil, fmt.Errorf("unsupported runtime mode: %v", runtimeMode)
-}
-
 func matches(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -81,7 +72,16 @@ func matches(got, want []string) bool {
 	return true
 }
 
-func CommandUsage(commandName string) string {
+func RuntimeModeArgs(runtimeMode mode.Mode) ([]string, error) {
+	for _, spec := range commands {
+		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == runtimeMode {
+			return append([]string(nil), spec.args...), nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported runtime mode: %v", runtimeMode)
+}
+
+func Usage(commandName string) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "Usage: %s <command>\nCommands:\n", commandName)
 	for _, spec := range commands {

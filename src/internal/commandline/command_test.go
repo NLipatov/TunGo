@@ -69,8 +69,8 @@ func TestRuntimeModeArgs(t *testing.T) {
 	}
 }
 
-func TestCommandUsage(t *testing.T) {
-	got := CommandUsage("tungo")
+func TestUsage(t *testing.T) {
+	got := Usage("tungo")
 	if !strings.Contains(got, "Usage: tungo <command>") ||
 		!strings.Contains(got, "s  - Start server runtime") ||
 		!strings.Contains(got, "c  - Start client runtime") ||
