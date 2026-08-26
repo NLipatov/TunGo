@@ -123,7 +123,7 @@ func (c *Configurations) Delete(name string) error {
 
 func (c *Configurations) alternativePath(name string) (string, error) {
 	if name == "" || strings.ContainsAny(name, `/\`) ||
-		name == "." || name == ".." || strings.ContainsRune(name, '\x00') {
+		name == "." || name == ".." || strings.ContainsRune(name, '\x00') || strings.ContainsRune(name, ':') {
 		return "", fmt.Errorf("invalid configuration name %q", name)
 	}
 	return c.activePath + "." + name, nil
