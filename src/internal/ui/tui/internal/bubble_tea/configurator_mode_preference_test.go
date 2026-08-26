@@ -18,7 +18,7 @@ func defaultConfiguratorOpts() ConfiguratorOptions {
 func settingsForMode(m tuiconfig.ModePreference) *Preferences {
 	p := tuiconfig.Default()
 	p.AutoSelectMode = m
-	return newPreferences(p)
+	return testPreferences(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -205,7 +205,7 @@ func TestNewConfiguratorSessionModel_MigratesSavedConfigurationPath(t *testing.T
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "/etc/tungo/client_configuration.json.prod.office"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"office", "prod.office"}
@@ -230,7 +230,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -272,7 +272,7 @@ func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Se
 	p := s.Current()
 	p.AutoConnect = false
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -294,7 +294,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 	p := s.Current()
 	p.AutoConnect = false
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.ServerConfigurations = nil
@@ -317,7 +317,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -343,7 +343,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -369,7 +369,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsS
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "missing.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"other.json"}

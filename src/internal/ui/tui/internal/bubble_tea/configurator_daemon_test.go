@@ -787,7 +787,7 @@ func TestUpdateDaemonActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testi
 	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	model, err := NewConfigurator(opts, s)
@@ -952,7 +952,7 @@ func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *test
 	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testDaemon().stop = func() error { return errors.New("stop failed") }
@@ -1348,7 +1348,7 @@ func TestPersistAutoSelectClientConfig_EmptyValueIgnored(t *testing.T) {
 	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	model, err := NewConfigurator(defaultConfiguratorOpts(), s)
 	if err != nil {

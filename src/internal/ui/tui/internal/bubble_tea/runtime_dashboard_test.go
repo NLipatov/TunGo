@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -82,7 +83,7 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
@@ -110,7 +111,7 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
@@ -263,7 +264,7 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
 	p.AutoConnect = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -291,7 +292,7 @@ func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *
 	s := testSettings()
 	p := s.Current()
 	p.AutoConnect = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -357,7 +358,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
@@ -463,7 +464,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = false
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: mode.Server,
@@ -614,7 +615,7 @@ func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 	p.ShowDataplaneStats = false
 	p.ShowDataplaneGraph = false
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.width = 120
@@ -695,7 +696,7 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
@@ -708,6 +709,23 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	}
 	if updated.preferences.Theme != tuiconfig.ThemeDark {
 		t.Fatalf("expected theme to change to dark, got %q", updated.preferences.Theme)
+	}
+}
+
+func TestRuntimeDashboard_SettingsSaveFailureIsVisible(t *testing.T) {
+	settings := testSettings()
+	settings.save = func(tuiconfig.Configuration) error { return errors.New("disk full") }
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, settings)
+	m.screen = runtimeScreenSettings
+	m.settingsCursor = settingsThemeRow
+
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	updated := updatedModel.(RuntimeDashboard)
+	if !strings.Contains(updated.settingsNotice, "could not be saved: disk full") {
+		t.Fatalf("settings notice = %q", updated.settingsNotice)
+	}
+	if !strings.Contains(updated.settingsView(), updated.settingsNotice) {
+		t.Fatal("settings view does not show the save error")
 	}
 }
 

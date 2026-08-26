@@ -137,32 +137,44 @@ func TestSettingsVisibleRowCount_NoServer_AlwaysOneLessThanTotal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
-	p := newPreferences(tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceNone})
-	got := applySettingsChange(p, settingsModeRow, 1, true)
+	p := testPreferences(tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceNone})
+	got, err := applySettingsChange(p, settingsModeRow, 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.AutoSelectMode != tuiconfig.ModePreferenceClient {
 		t.Errorf("got %q, want ModePreferenceClient", got.AutoSelectMode)
 	}
 }
 
 func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
-	p := newPreferences(tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceClient})
-	got := applySettingsChange(p, settingsModeRow, -1, true)
+	p := testPreferences(tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceClient})
+	got, err := applySettingsChange(p, settingsModeRow, -1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.AutoSelectMode != tuiconfig.ModePreferenceNone {
 		t.Errorf("got %q, want ModePreferenceNone", got.AutoSelectMode)
 	}
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOn(t *testing.T) {
-	p := newPreferences(tuiconfig.Configuration{AutoConnect: false})
-	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
+	p := testPreferences(tuiconfig.Configuration{AutoConnect: false})
+	got, err := applySettingsChange(p, settingsAutoConnectRow, 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect toggled on")
 	}
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
-	p := newPreferences(tuiconfig.Configuration{AutoConnect: true})
-	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
+	p := testPreferences(tuiconfig.Configuration{AutoConnect: true})
+	got, err := applySettingsChange(p, settingsAutoConnectRow, 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.AutoConnect {
 		t.Error("expected AutoConnect toggled off")
 	}
@@ -170,8 +182,11 @@ func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
 
 func TestApplySettingsChange_NoServer_VisibleModePosition_MapsToAutoConnect(t *testing.T) {
 	// When !serverSupported, cursor=settingsModeRow → visibleCursorToSettingsRow → settingsAutoConnectRow.
-	p := newPreferences(tuiconfig.Configuration{AutoConnect: false})
-	got := applySettingsChange(p, settingsModeRow, 1, false)
+	p := testPreferences(tuiconfig.Configuration{AutoConnect: false})
+	got, err := applySettingsChange(p, settingsModeRow, 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect to toggle when cursor is at Mode position with !serverSupported")
 	}

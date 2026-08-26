@@ -112,7 +112,7 @@ func settingsCursorDown(cursor, rowCount int) int {
 	return rowCount - 1
 }
 
-func applySettingsChange(provider *Preferences, settingsCursor int, step int, serverSupported bool) tuiconfig.Configuration {
+func applySettingsChange(provider *Preferences, settingsCursor int, step int, serverSupported bool) (tuiconfig.Configuration, error) {
 	p := provider.Current()
 	switch visibleCursorToSettingsRow(settingsCursor, serverSupported) {
 	case settingsThemeRow:
@@ -130,7 +130,5 @@ func applySettingsChange(provider *Preferences, settingsCursor int, step int, se
 	case settingsAutoConnectRow:
 		p.AutoConnect = !p.AutoConnect
 	}
-	provider.update(p)
-	_ = tuiconfig.Save(p)
-	return p
+	return p, provider.update(p)
 }

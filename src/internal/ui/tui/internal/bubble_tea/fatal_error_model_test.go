@@ -9,7 +9,13 @@ import (
 )
 
 func testSettings() *Preferences {
-	return newDefaultPreferences()
+	return testPreferences(tuiconfig.Default())
+}
+
+func testPreferences(configuration tuiconfig.Configuration) *Preferences {
+	preferences := newPreferences(configuration)
+	preferences.save = func(tuiconfig.Configuration) error { return nil }
+	return preferences
 }
 
 func TestFatalErrorModel_View_ContainsMessage(t *testing.T) {
@@ -113,7 +119,7 @@ func TestFatalErrorModel_View_RespectsTheme(t *testing.T) {
 	for i, theme := range themes {
 		p := s.Current()
 		p.Theme = theme
-		s.update(p)
+		_ = s.update(p)
 		m := newFatalErrorModel("details", s)
 		views[i] = m.View().Content
 	}

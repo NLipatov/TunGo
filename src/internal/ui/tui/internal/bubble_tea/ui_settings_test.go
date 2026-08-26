@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -33,12 +34,35 @@ func TestNewDefaultPreferences(t *testing.T) {
 }
 
 func TestPreferences_DisableAutoConnect_NoOpWhenAlreadyDisabled(t *testing.T) {
-	preferences := newPreferences(tuiconfig.Configuration{AutoConnect: false})
+	preferences := testPreferences(tuiconfig.Configuration{AutoConnect: false})
 
 	if err := preferences.DisableAutoConnect(); err != nil {
 		t.Fatalf("DisableAutoConnect() error = %v", err)
 	}
 	if preferences.Current().AutoConnect {
 		t.Fatal("expected AutoConnect to remain disabled")
+	}
+}
+
+func TestPreferences_UpdateSavesBeforeChangingCurrentValue(t *testing.T) {
+	initial := tuiconfig.Configuration{Theme: tuiconfig.ThemeLight}
+	updated := tuiconfig.Configuration{Theme: tuiconfig.ThemeDark}
+	preferences := testPreferences(initial)
+	wantErr := errors.New("save failed")
+	preferences.save = func(got tuiconfig.Configuration) error {
+		if got != updated {
+			t.Fatalf("saved configuration = %+v, want %+v", got, updated)
+		}
+		if preferences.Current() != initial {
+			t.Fatal("current preferences changed before save completed")
+		}
+		return wantErr
+	}
+
+	if err := preferences.update(updated); !errors.Is(err, wantErr) {
+		t.Fatalf("update() error = %v, want %v", err, wantErr)
+	}
+	if preferences.Current() != updated {
+		t.Fatal("failed save was not applied to the current session")
 	}
 }

@@ -1,25 +1,39 @@
 package bubble_tea
 
-import tuiconfig "tungo/internal/config/tui"
+import (
+	"fmt"
+
+	tuiconfig "tungo/internal/config/tui"
+)
 
 type Preferences struct {
 	current tuiconfig.Configuration
+	save    func(tuiconfig.Configuration) error
 }
 
 func newDefaultPreferences() *Preferences {
-	return &Preferences{current: tuiconfig.Default()}
+	return newPreferences(tuiconfig.Default())
 }
 
 func newPreferences(prefs tuiconfig.Configuration) *Preferences {
-	return &Preferences{current: prefs}
+	return &Preferences{current: prefs, save: tuiconfig.Save}
 }
 
 func (p *Preferences) Current() tuiconfig.Configuration {
 	return p.current
 }
 
-func (p *Preferences) update(prefs tuiconfig.Configuration) {
+func (p *Preferences) update(prefs tuiconfig.Configuration) error {
+	err := p.save(prefs)
 	p.current = prefs
+	return err
+}
+
+func settingsSaveNotice(err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("Settings changed for this session but could not be saved: %v", err)
 }
 
 func (p *Preferences) DisableAutoConnect() error {
@@ -28,11 +42,7 @@ func (p *Preferences) DisableAutoConnect() error {
 	}
 	updated := p.current
 	updated.AutoConnect = false
-	if err := tuiconfig.Save(updated); err != nil {
-		return err
-	}
-	p.current = updated
-	return nil
+	return p.update(updated)
 }
 
 func LoadPreferences() *Preferences {

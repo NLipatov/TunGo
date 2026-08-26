@@ -219,6 +219,9 @@ func (m Configurator) settingsTabView() string {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
 	body := renderSelectableRows(m.settingsRows(), m.settingsCursor, contentWidth, styles)
+	if strings.TrimSpace(m.notice) != "" {
+		body = append([]string{m.notice, ""}, body...)
+	}
 	return renderScreen(
 		m.width,
 		m.height,

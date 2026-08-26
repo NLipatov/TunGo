@@ -154,6 +154,7 @@ type Configurator struct {
 
 func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
 	serverSupported := options.ServerConfigurations != nil
+	settingsNotice := ""
 	modeOptions := []string{modeClientLabel}
 	if serverSupported {
 		modeOptions = append(modeOptions, modeServerLabel)
@@ -167,8 +168,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 		p := settings.Current()
 		if p.AutoSelectMode == tuiconfig.ModePreferenceServer {
 			p.AutoSelectMode = tuiconfig.ModePreferenceClient
-			settings.update(p)
-			_ = tuiconfig.Save(p)
+			settingsNotice = settingsSaveNotice(settings.update(p))
 		}
 	}
 
@@ -187,6 +187,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 			},
 		},
 		preferences: settings.Current(),
+		notice:      settingsNotice,
 		logs:        newLogViewport(),
 	}
 
@@ -221,8 +222,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 						if selected != autoConfig {
 							p := settings.Current()
 							p.AutoSelectClientConfig = selected
-							settings.update(p)
-							_ = tuiconfig.Save(p)
+							model.notice = appendNotice(model.notice, settingsSaveNotice(settings.update(p)))
 						}
 						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", selected))
 						model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
@@ -241,8 +241,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 				} else {
 					p := settings.Current()
 					p.AutoSelectClientConfig = ""
-					settings.update(p)
-					_ = tuiconfig.Save(p)
+					model.notice = appendNotice(model.notice, settingsSaveNotice(settings.update(p)))
 				}
 			}
 		}
@@ -477,13 +476,13 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, len(rows))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
+		m.preferences, m.notice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
+		m.preferences, m.notice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -492,6 +491,15 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.settingsCursor = maxInt(0, len(m.settingsRows())-1)
 	}
 	return m, cmd
+}
+
+func applySettingsChangeWithNotice(
+	preferences *Preferences,
+	cursor, step int,
+	serverSupported bool,
+) (tuiconfig.Configuration, string) {
+	updated, err := applySettingsChange(preferences, cursor, step, serverSupported)
+	return updated, settingsSaveNotice(err)
 }
 
 func (m Configurator) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

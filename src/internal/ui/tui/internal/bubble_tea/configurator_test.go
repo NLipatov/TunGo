@@ -476,6 +476,22 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 	_ = cmd
 }
 
+func TestUpdateSettingsTab_SaveFailureIsVisible(t *testing.T) {
+	m := newTestConfigurator(t)
+	m.tab = configuratorTabSettings
+	m.settingsCursor = settingsThemeRow
+	m.settings.save = func(tuiconfig.Configuration) error { return errors.New("disk full") }
+
+	result, _ := m.updateSettingsTab(keyNamed(tea.KeyRight))
+	updated := result.(Configurator)
+	if !strings.Contains(updated.notice, "could not be saved: disk full") {
+		t.Fatalf("notice = %q", updated.notice)
+	}
+	if !strings.Contains(updated.settingsTabView(), updated.notice) {
+		t.Fatal("settings view does not show the save error")
+	}
+}
+
 // --- 6. updateLogsTab ---
 
 func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
@@ -2902,7 +2918,7 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_ActivateFails_ShowsNotice(
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -2922,7 +2938,7 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemo
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}

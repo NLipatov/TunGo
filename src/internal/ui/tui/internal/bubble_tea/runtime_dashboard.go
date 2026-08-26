@@ -57,6 +57,7 @@ type RuntimeDashboard struct {
 	height               int
 	screen               runtimeDashboardScreen
 	settingsCursor       int
+	settingsNotice       string
 	preferences          tuiconfig.Configuration
 	logFeed              RuntimeLogFeed
 	logs                 logViewport
@@ -276,13 +277,13 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, m.serverSupported))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
+		m.preferences, m.settingsNotice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
+		m.preferences, m.settingsNotice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -525,6 +526,9 @@ func (m RuntimeDashboard) settingsView() string {
 	contentWidth := 0
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
+	}
+	if m.settingsNotice != "" {
+		body = append(body, m.settingsNotice, "")
 	}
 	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences, m.serverSupported), m.settingsCursor, contentWidth, styles)...)
 
