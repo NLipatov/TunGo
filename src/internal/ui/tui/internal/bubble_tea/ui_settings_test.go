@@ -46,14 +46,19 @@ func TestPreferences_DisableAutoConnect_NoOpWhenAlreadyDisabled(t *testing.T) {
 
 func TestPreferences_DisableAutoConnectSavesChange(t *testing.T) {
 	preferences := testPreferences(tuiconfig.Configuration{AutoConnect: true})
+	called := false
 	var saved tuiconfig.Configuration
 	preferences.save = func(configuration tuiconfig.Configuration) error {
+		called = true
 		saved = configuration
 		return nil
 	}
 
 	if err := preferences.DisableAutoConnect(); err != nil {
 		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("preferences were not saved")
 	}
 	if saved.AutoConnect || preferences.Current().AutoConnect {
 		t.Fatal("AutoConnect was not disabled in persisted and current preferences")
