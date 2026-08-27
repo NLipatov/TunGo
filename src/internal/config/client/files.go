@@ -52,13 +52,14 @@ func (c *Configurations) List() ([]string, error) {
 	prefix := filepath.Base(c.activePath) + "."
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+		if entry.IsDir() {
 			continue
 		}
-		name := strings.TrimPrefix(entry.Name(), prefix)
-		if name != "" {
-			names = append(names, name)
+		name, ok := strings.CutPrefix(entry.Name(), prefix)
+		if !ok || name == "" {
+			continue
 		}
+		names = append(names, name)
 	}
 	return names, nil
 }
@@ -76,20 +77,6 @@ func (c *Configurations) Import(name, rawJSON string) error {
 		return fmt.Errorf("invalid client configuration: %w", err)
 	}
 	return save(path, configuration)
-}
-
-func save(path string, configuration Configuration) error {
-	data, err := json.MarshalIndent(configuration, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal client configuration: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return fmt.Errorf("failed to create client configuration directory: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("failed to write client configuration %q: %w", path, err)
-	}
-	return nil
 }
 
 // Activate replaces the active configuration with the named alternative.
@@ -119,8 +106,8 @@ func (c *Configurations) Delete(name string) error {
 }
 
 func (c *Configurations) alternativePath(name string) (string, error) {
-	if name == "" || strings.ContainsAny(name, `/\`) ||
-		name == "." || name == ".." || strings.ContainsRune(name, '\x00') || strings.ContainsRune(name, ':') {
+	if name == "" || name == "." || name == ".." ||
+		strings.ContainsAny(name, "/\\:\x00") {
 		return "", fmt.Errorf("invalid configuration name %q", name)
 	}
 	return c.activePath + "." + name, nil
@@ -137,4 +124,18 @@ func decode(data []byte) (Configuration, error) {
 		return Configuration{}, err
 	}
 	return configuration, nil
+}
+
+func save(path string, configuration Configuration) error {
+	data, err := json.MarshalIndent(configuration, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal client configuration: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("failed to create client configuration directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("failed to write client configuration %q: %w", path, err)
+	}
+	return nil
 }
