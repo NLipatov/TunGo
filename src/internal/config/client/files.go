@@ -75,6 +75,10 @@ func (c *Configurations) Import(name, rawJSON string) error {
 	if err != nil {
 		return fmt.Errorf("invalid client configuration: %w", err)
 	}
+	return save(path, configuration)
+}
+
+func save(path string, configuration Configuration) error {
 	data, err := json.MarshalIndent(configuration, "", "\t")
 	if err != nil {
 		return fmt.Errorf("failed to marshal client configuration: %w", err)
@@ -102,14 +106,7 @@ func (c *Configurations) Activate(name string) error {
 	if err != nil {
 		return fmt.Errorf("invalid client configuration %q: %w", name, err)
 	}
-	data, err = json.MarshalIndent(configuration, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal client configuration %q: %w", name, err)
-	}
-	if err := os.WriteFile(c.activePath, data, 0600); err != nil {
-		return fmt.Errorf("failed to activate client configuration %q: %w", name, err)
-	}
-	return nil
+	return save(c.activePath, configuration)
 }
 
 // Delete removes the named alternative.
