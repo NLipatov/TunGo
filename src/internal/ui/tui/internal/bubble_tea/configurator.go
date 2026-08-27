@@ -152,6 +152,9 @@ type Configurator struct {
 	done       bool
 }
 
+// NewConfigurator initializes a configurator with the available modes, saved preferences, and required input controls.
+// It may restore a saved client configuration and start the selected mode automatically.
+// Returns the initialized configurator, or an error if required client configuration dependencies are unavailable or cannot be loaded.
 func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
 	serverSupported := options.ServerConfigurations != nil
 	settingsNotice := ""
@@ -253,6 +256,8 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	return model, nil
 }
 
+// savedConfigurationName resolves a saved configuration preference against the available names.
+// It supports exact matches and legacy preferences containing an alternative path suffix.
 func savedConfigurationName(saved string, available []string) (string, bool) {
 	if slices.Contains(available, saved) {
 		return saved, true
@@ -493,6 +498,7 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	return m, cmd
 }
 
+// applySettingsChangeWithNotice applies a settings change and returns any resulting save notice.
 func applySettingsChangeWithNotice(
 	preferences *Preferences,
 	cursor, step int,

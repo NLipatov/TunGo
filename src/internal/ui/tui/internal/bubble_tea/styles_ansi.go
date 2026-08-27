@@ -220,6 +220,7 @@ func truncateVisible(s string, width int) string {
 	return truncateWithEllipsis(plain, width)
 }
 
+// stripANSI removes ANSI escape sequences from a string while preserving its UTF-8 text.
 func stripANSI(s string) string {
 	const (
 		ansiNormal = iota
@@ -286,6 +287,7 @@ func stripANSI(s string) string {
 	return out.String()
 }
 
+// enforceBaseThemeFill applies the configured theme colors to each line and restores them after color-resetting SGR sequences. Each line ends with an ANSI reset sequence.
 func enforceBaseThemeFill(s string, prefs tuiconfig.Configuration) string {
 	bg, fg := baseANSIForTheme(prefs)
 	base := bg + fg
@@ -336,6 +338,7 @@ func writeWithBaseReapplied(out *strings.Builder, s string, base string) {
 	}
 }
 
+// shouldReapplyBaseAfterSGR reports whether SGR parameters reset or restore foreground or background styling.
 func shouldReapplyBaseAfterSGR(params string) bool {
 	if params == "" {
 		return true
@@ -355,6 +358,7 @@ func shouldReapplyBaseAfterSGR(params string) bool {
 	return false
 }
 
+// baseANSIForTheme returns the background and foreground ANSI codes for the configured theme.
 func baseANSIForTheme(prefs tuiconfig.Configuration) (bg string, fg string) {
 	p := paletteForTheme(prefs.Theme)
 	return p.background, p.text

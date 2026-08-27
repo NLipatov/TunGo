@@ -29,6 +29,8 @@ type themePalette struct {
 	activeText       string
 }
 
+// paletteForTheme returns the ANSI color palette associated with a theme.
+// Unknown themes use the light palette.
 func paletteForTheme(theme tuiconfig.Theme) themePalette {
 	switch theme {
 	case tuiconfig.ThemeDarkHighContrast:
@@ -106,6 +108,7 @@ func paletteForTheme(theme tuiconfig.Theme) themePalette {
 	}
 }
 
+// ansiStylePrefix constructs an ANSI style prefix from foreground and background color prefixes, optionally including bold styling. It returns an empty string when either color prefix is missing.
 func ansiStylePrefix(fgPrefix, bgPrefix string, bold bool) string {
 	if fgPrefix == "" || bgPrefix == "" {
 		return ""
@@ -120,6 +123,7 @@ func ansiStylePrefix(fgPrefix, bgPrefix string, bold bool) string {
 	return out.String()
 }
 
+// resolveUIStyles builds UI text and frame styles from the configured theme.
 func resolveUIStyles(prefs tuiconfig.Configuration) uiStyles {
 	p := paletteForTheme(prefs.Theme)
 	textColor := p.text

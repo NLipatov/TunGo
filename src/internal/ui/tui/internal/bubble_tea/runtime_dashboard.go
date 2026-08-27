@@ -76,6 +76,7 @@ type RuntimeDashboard struct {
 	endpoints            []EndpointInfo
 }
 
+// NewRuntimeDashboard creates a runtime dashboard initialized with the supplied context, options, and preferences. A nil context uses a background context, and an initial traffic sample is recorded when dataplane graph display is enabled.
 func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *Preferences) RuntimeDashboard {
 	if ctx == nil {
 		ctx = context.Background()
@@ -469,6 +470,8 @@ func formatRuntimeProtocolHost(protocol settings.Protocol, host settings.Host) s
 	return protocol.String() + ": " + parts
 }
 
+// formatRuntimeProtocolAddress formats IPv4 and IPv6 addresses with their protocol label.
+// It returns an empty string when neither address is valid.
 func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.Addr) string {
 	parts := formatRuntimeAddressParts(ipv4, ipv6)
 	if parts == "" {
@@ -480,6 +483,7 @@ func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.A
 	return protocol.String() + ": " + parts
 }
 
+// sharedServerAddress returns the common server address when all endpoints use the same non-empty address.
 func sharedServerAddress(endpoints []EndpointInfo) (settings.Host, bool) {
 	if len(endpoints) == 0 {
 		return settings.Host{}, false

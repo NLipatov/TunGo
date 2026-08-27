@@ -10,6 +10,8 @@ import (
 
 const statsValueWidth = 12
 
+// formatStatsLines formats receive and transmit rates and cumulative totals using the configured units.
+// It returns lines for current rates followed by cumulative totals.
 func formatStatsLines(prefs tuiconfig.Configuration, snapshot trafficstats.Snapshot) []string {
 	units := unitSystemForPrefs(prefs)
 	rxRate := trafficstats.FormatRateWithSystem(snapshot.RXRate, units)
@@ -43,6 +45,7 @@ func writeRightPadded(b *strings.Builder, s string, width int) {
 	}
 }
 
+// writeLeftPadded writes s to b with leading spaces until it reaches width characters.
 func writeLeftPadded(b *strings.Builder, s string, width int) {
 	for i := len(s); i < width; i++ {
 		b.WriteByte(' ')
@@ -50,6 +53,7 @@ func writeLeftPadded(b *strings.Builder, s string, width int) {
 	b.WriteString(s)
 }
 
+// unitSystemForPrefs selects the traffic statistics unit system specified by the configuration.
 func unitSystemForPrefs(prefs tuiconfig.Configuration) trafficstats.UnitSystem {
 	if prefs.StatsUnits == tuiconfig.StatsUnitsBytes {
 		return trafficstats.UnitSystemBytes

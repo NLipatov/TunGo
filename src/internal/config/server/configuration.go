@@ -51,6 +51,7 @@ type AllowedPeer struct {
 	ClientID int `json:"ClientID"`
 }
 
+// newConfiguration creates a configuration with default protocol settings and UDP enabled.
 func newConfiguration() *Configuration {
 	configuration := &Configuration{
 		X25519PublicKey:  nil,

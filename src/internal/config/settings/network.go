@@ -43,6 +43,7 @@ func (n *Network) DeriveIP(clientID int) error {
 	return nil
 }
 
+// allocateIP allocates an IP address from subnet for the server when clientID is zero, or for the specified client otherwise.
 func allocateIP(subnet netip.Prefix, clientID int) (netip.Addr, error) {
 	if clientID == 0 {
 		s, err := nip.AllocateServerIP(subnet)

@@ -23,6 +23,7 @@ type logViewport struct {
 	tickSeq  uint64
 }
 
+// newLogViewport creates a ready log viewport configured to follow the latest entries.
 func newLogViewport() logViewport {
 	return logViewport{
 		viewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),

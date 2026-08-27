@@ -41,6 +41,8 @@ func (c *Configuration) applyDefaults() {
 	active.MTU = effectiveMTU
 }
 
+// effectiveMTU determines the usable MTU for the configured address families.
+// It returns the default MTU when the value falls outside the applicable IPv4 or IPv6 limits.
 func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
 	switch {

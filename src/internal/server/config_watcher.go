@@ -35,7 +35,7 @@ type peerAccessState struct {
 }
 
 // newConfigWatcher creates a new configuration watcher.
-// interval is the fallback polling interval (recommend: 30s-60s).
+// newConfigWatcher creates a configuration watcher that monitors the specified file at the given polling interval.
 func newConfigWatcher(
 	file *serverconfig.File,
 	runtime peerRuntime,

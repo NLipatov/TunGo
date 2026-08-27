@@ -51,6 +51,8 @@ var commands = []commandSpec{
 	},
 }
 
+// ParseCommand identifies the registered command matching the supplied arguments.
+// It returns an error when the arguments do not match a supported command.
 func ParseCommand(args []string) (Command, error) {
 	for _, spec := range commands {
 		if matches(args, spec.args) {
@@ -60,6 +62,7 @@ func ParseCommand(args []string) (Command, error) {
 	return Command{}, errors.New("invalid arguments")
 }
 
+// matches reports whether two argument lists have equal lengths and corresponding values, after trimming surrounding whitespace from the actual arguments.
 func matches(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -72,6 +75,8 @@ func matches(got, want []string) bool {
 	return true
 }
 
+// RuntimeModeArgs returns the command-line arguments for the specified runtime mode.
+// It returns an error if the runtime mode is unsupported.
 func RuntimeModeArgs(runtimeMode mode.Mode) ([]string, error) {
 	for _, spec := range commands {
 		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == runtimeMode {
@@ -81,6 +86,10 @@ func RuntimeModeArgs(runtimeMode mode.Mode) ([]string, error) {
 	return nil, fmt.Errorf("unsupported runtime mode: %v", runtimeMode)
 }
 
+// Usage builds formatted usage text for the available commands.
+//
+// commandName identifies the executable or command name shown in the usage header.
+// It returns the usage header followed by each supported command and its description.
 func Usage(commandName string) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "Usage: %s <command>\nCommands:\n", commandName)

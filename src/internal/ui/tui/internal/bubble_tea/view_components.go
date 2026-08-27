@@ -63,6 +63,7 @@ func renderTabsLine(
 	return rendered
 }
 
+// renderSelectableRows formats selectable rows with a cursor indicator, truncates them to the specified width, and highlights the selected row.
 func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles) []string {
 	out := make([]string, 0, len(rows))
 	for i, row := range rows {
@@ -80,6 +81,10 @@ func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles)
 	return out
 }
 
+// uiSettingsRows formats the current UI preferences as display rows.
+// The rows include mode selection when the server supports it and auto-connect
+// when applicable. serverSupported indicates whether server-side mode selection
+// is available.
 func uiSettingsRows(prefs tuiconfig.Configuration, serverSupported bool) []string {
 	rows := []string{
 		"Theme      : " + strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " ")),
@@ -97,6 +102,7 @@ func uiSettingsRows(prefs tuiconfig.Configuration, serverSupported bool) []strin
 	return rows
 }
 
+// onOff returns "ON" for true and "OFF" for false.
 func onOff(value bool) string {
 	if value {
 		return "ON"
@@ -104,6 +110,7 @@ func onOff(value bool) string {
 	return "OFF"
 }
 
+// modePreferenceLabel returns the display label for a mode preference.
 func modePreferenceLabel(m tuiconfig.ModePreference) string {
 	switch m {
 	case tuiconfig.ModePreferenceClient:
@@ -115,6 +122,7 @@ func modePreferenceLabel(m tuiconfig.ModePreference) string {
 	}
 }
 
+// statsUnitsLabel returns the user-facing label for the configured statistics units.
 func statsUnitsLabel(units tuiconfig.StatsUnits) string {
 	if units == tuiconfig.StatsUnitsBytes {
 		return "Decimal units (KB/MB/GB)"
@@ -308,6 +316,8 @@ func runtimeLogSnapshot(feed RuntimeLogFeed, reusable *[]string) []string {
 	return buf[:n]
 }
 
+// computeLogsViewportSize determines the log content width and viewport height for the terminal.
+// It accounts for UI framing, optional subtitle and footer content, and enforces minimum dimensions.
 func computeLogsViewportSize(
 	terminalWidth, terminalHeight int,
 	prefs tuiconfig.Configuration,

@@ -22,14 +22,22 @@ const (
 	frameVertSize   = frameBorderY + framePadY*2 // 4
 )
 
+// renderScreen renders a screen with wrapped body text and an optional footer hint.
 func renderScreen(width, height int, title, subtitle string, body []string, hint string, prefs tuiconfig.Configuration, styles uiStyles) string {
 	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, true, prefs, styles)
 }
 
+// renderScreenRaw renders a screen using the provided body lines without wrapping them.
 func renderScreenRaw(width, height int, title, subtitle string, body []string, hint string, prefs tuiconfig.Configuration, styles uiStyles) string {
 	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, false, prefs, styles)
 }
 
+// renderScreenWithBodyMode renders a styled card containing the title, subtitle, body,
+// and optional footer within the requested terminal dimensions.
+// Body lines can be wrapped according to the selected mode, and the card is centered
+// when both terminal dimensions are provided.
+// The returned string contains the rendered card with the configured base theme.
+// @param? Go doesn't use tags. Need Godoc convention no @param. We should perhaps no params. But "returned string" okay, summary not starts Returns. Yet requirement return documentation applicable but Go docs typically sentence. Could say "It returns..." within comment. Better. Also function name starts. final only comment. Ensure not claim optional dimensions maybe yes. "zero or negative dimensions" behavior base card newline, but not necessary. Use two lines.
 func renderScreenWithBodyMode(
 	width, height int,
 	title, subtitle string,
@@ -107,6 +115,8 @@ func renderScreenWithBodyMode(
 	return enforceBaseThemeFill(card, prefs) + "\n"
 }
 
+// buildFooterBlock builds a styled footer containing a horizontal rule and wrapped hint text.
+// It returns nil when the hint is blank.
 func buildFooterBlock(styles uiStyles, prefs tuiconfig.Configuration, contentWidth int, hint string) []string {
 	_ = prefs
 	var hintLines []string

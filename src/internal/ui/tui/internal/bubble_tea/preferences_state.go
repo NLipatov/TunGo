@@ -11,10 +11,12 @@ type Preferences struct {
 	save    func(tuiconfig.Configuration) error
 }
 
+// newDefaultPreferences creates preferences initialized with the default configuration.
 func newDefaultPreferences() *Preferences {
 	return newPreferences(tuiconfig.Default())
 }
 
+// newPreferences creates preferences initialized with the supplied configuration and the default persistence function.
 func newPreferences(prefs tuiconfig.Configuration) *Preferences {
 	return &Preferences{current: prefs, save: tuiconfig.Save}
 }
@@ -29,6 +31,7 @@ func (p *Preferences) update(prefs tuiconfig.Configuration) error {
 	return err
 }
 
+// settingsSaveNotice returns an empty string when saving succeeds or a notice describing the session-only change when saving fails.
 func settingsSaveNotice(err error) string {
 	if err == nil {
 		return ""
@@ -45,6 +48,8 @@ func (p *Preferences) DisableAutoConnect() error {
 	return p.update(updated)
 }
 
+// LoadPreferences loads the persisted configuration and returns preferences initialized with it.
+// It returns default preferences when the persisted configuration cannot be loaded.
 func LoadPreferences() *Preferences {
 	configuration, err := tuiconfig.Load()
 	if err != nil {

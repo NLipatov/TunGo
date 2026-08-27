@@ -175,6 +175,7 @@ func (m Configurator) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.
 	return m, nil
 }
 
+// buildServerManageLabels formats allowed peers as labels for the server management screen.
 func buildServerManageLabels(peers []serverconfig.AllowedPeer) []string {
 	labels := make([]string, 0, len(peers))
 	for _, peer := range peers {
@@ -183,6 +184,7 @@ func buildServerManageLabels(peers []serverconfig.AllowedPeer) []string {
 	return labels
 }
 
+// serverPeerDisplayName returns the peer's trimmed name, or a client identifier when the name is empty.
 func serverPeerDisplayName(peer serverconfig.AllowedPeer) string {
 	name := strings.TrimSpace(peer.Name)
 	if name == "" {
@@ -191,6 +193,7 @@ func serverPeerDisplayName(peer serverconfig.AllowedPeer) string {
 	return name
 }
 
+// serverPeerOptionLabel formats a peer's client ID, display name, and enabled status for presentation.
 func serverPeerOptionLabel(peer serverconfig.AllowedPeer) string {
 	status := "disabled"
 	if peer.Enabled {

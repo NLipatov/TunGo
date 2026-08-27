@@ -16,6 +16,9 @@ type TUI struct {
 	preferences          *bubbleTea.Preferences
 }
 
+// New creates a TUI with the supplied client configurations, server file, and daemon control.
+// It loads the user's UI preferences during construction.
+// New returns an error if clientConfigurations is nil.
 func New(
 	clientConfigurations *clientconfig.Configurations,
 	serverFile *serverconfig.File,

@@ -52,6 +52,8 @@ type Client struct {
 	ready         atomic.Bool
 }
 
+// New creates a client using the provided configuration and initializes its TUN manager.
+// It returns an error if the configuration is nil or the TUN manager cannot be initialized.
 func New(configuration *clientconfig.Configuration) (*Client, error) {
 	slog.Info("starting client")
 	if configuration == nil {

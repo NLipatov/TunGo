@@ -105,6 +105,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	return GeneratedClient{JSON: string(data), Path: path}, nil
 }
 
+// ensureIPv6Subnets assigns default IPv6 subnets to protocols without valid subnet configuration.
 func ensureIPv6Subnets(configuration *Configuration) {
 	defaults := [...]netip.Prefix{
 		netip.MustParsePrefix("fd00::/64"),
@@ -119,6 +120,8 @@ func ensureIPv6Subnets(configuration *Configuration) {
 	configuration.applyDefaults()
 }
 
+// resolveServerHost resolves a configured server host or detects available IPv4 and IPv6 addresses.
+// It returns an error when no valid server host can be resolved.
 func resolveServerHost(configured string) (settings.Host, error) {
 	if configured != "" {
 		value := strings.TrimSpace(configured)
@@ -158,6 +161,8 @@ func resolveServerHost(configured string) (settings.Host, error) {
 	return resolved, nil
 }
 
+// deriveClientSettings builds client settings from the server settings, host, and protocol.
+// UDP uses the default MTU. It returns an error for unsupported protocols.
 func deriveClientSettings(
 	serverSettings settings.Settings,
 	serverHost settings.Host,
@@ -189,6 +194,8 @@ func deriveClientSettings(
 	return clientSettings, nil
 }
 
+// clientTunName returns the client tunnel name for the specified protocol.
+// It returns an error for unsupported protocols.
 func clientTunName(protocol settings.Protocol) (string, error) {
 	switch protocol {
 	case settings.UDP:
@@ -202,6 +209,7 @@ func clientTunName(protocol settings.Protocol) (string, error) {
 	}
 }
 
+// defaultProtocol selects the first enabled protocol in UDP, TCP, and WebSocket order.
 func defaultProtocol(configuration *Configuration) settings.Protocol {
 	if configuration.EnableUDP {
 		return settings.UDP

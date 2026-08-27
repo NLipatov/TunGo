@@ -28,10 +28,12 @@ type File struct {
 	path string
 }
 
+// DefaultFile creates a File for the default server configuration path.
 func DefaultFile() *File {
 	return NewFile(filepath.Join(configpath.Directory(), "server_configuration.json"))
 }
 
+// NewFile creates a server configuration file manager for the specified path.
 func NewFile(path string) *File {
 	return &File{path: path}
 }
@@ -90,6 +92,7 @@ func (f *File) read() (*Configuration, error) {
 	return &configuration, nil
 }
 
+// applyEnvironment applies environment variable overrides to the server configuration.
 func applyEnvironment(configuration *Configuration) {
 	host := strings.TrimSpace(os.Getenv("Host"))
 	if host == "" {
@@ -103,6 +106,7 @@ func applyEnvironment(configuration *Configuration) {
 	applyBoolEnvironment("EnableWS", &configuration.EnableWS)
 }
 
+// applyBoolEnvironment applies a valid boolean value from the named environment variable to destination.
 func applyBoolEnvironment(name string, destination *bool) {
 	value := os.Getenv(name)
 	if value == "" {
@@ -158,6 +162,7 @@ func (f *File) EnsureKeys() error {
 	return f.write(*configuration)
 }
 
+// configuredOrGeneratedKeys returns configured X25519 keys when both environment values decode to 32-byte keys; otherwise, it generates a valid key pair. It returns an error if key generation or public key derivation fails.
 func configuredOrGeneratedKeys() ([]byte, []byte, error) {
 	publicValue := os.Getenv(publicKeyEnvVar)
 	privateValue := os.Getenv(privateKeyEnvVar)
@@ -184,6 +189,7 @@ func configuredOrGeneratedKeys() ([]byte, []byte, error) {
 	return public, private, nil
 }
 
+// validateX25519KeyPair verifies that an X25519 private key derives the supplied public key.
 func validateX25519KeyPair(public, private []byte) error {
 	derivedPublic, err := curve25519.X25519(private, curve25519.Basepoint)
 	if err != nil {

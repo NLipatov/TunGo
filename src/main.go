@@ -24,6 +24,7 @@ import (
 	"tungo/internal/ui/tui"
 )
 
+// main initializes logging, runs the TUI or CLI based on the command-line arguments, and exits with status 1 when execution fails.
 func main() {
 	exitCode := 0
 	defer func() { os.Exit(exitCode) }()
@@ -49,10 +50,12 @@ func main() {
 	}
 }
 
+// isTUI reports whether the process was started without command-line arguments.
 func isTUI() bool {
 	return len(os.Args) < 2
 }
 
+// runTUI initializes and runs the terminal user interface with the available client and server configurations.
 func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
@@ -80,6 +83,7 @@ func runTUI(ctx context.Context) error {
 	return tuiUI.Run(ctx)
 }
 
+// requireElevation verifies that the process has administrative privileges and returns an error with elevation instructions when it does not.
 func requireElevation() error {
 	if elevation.IsElevated() {
 		return nil
@@ -90,6 +94,8 @@ func requireElevation() error {
 	)
 }
 
+// runCLI parses the command-line arguments and executes the selected command.
+// It returns an error when parsing, configuration, startup, or command execution fails.
 func runCLI(ctx context.Context) error {
 	command, err := commandline.ParseCommand(os.Args[1:])
 	if err != nil {
