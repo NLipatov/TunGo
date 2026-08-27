@@ -224,6 +224,55 @@ func TestValidate_InvalidAddress(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsMismatchedAddressFamilies(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*Configuration)
+		want   string
+	}{
+		{
+			name: "IPv4 subnet is IPv6",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv4Subnet = netip.MustParsePrefix("fd00::/64")
+			},
+			want: "expected an IPv4 prefix",
+		},
+		{
+			name: "IPv4 address is IPv6",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv4 = netip.MustParseAddr("fd00::1")
+			},
+			want: "expected an IPv4 address",
+		},
+		{
+			name: "IPv6 subnet is IPv4",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv6Subnet = netip.MustParsePrefix("10.0.0.0/24")
+			},
+			want: "expected an IPv6 prefix",
+		},
+		{
+			name: "IPv6 address is IPv4",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+				configuration.TCPSettings.IPv6 = netip.MustParseAddr("10.0.0.1")
+			},
+			want: "expected an IPv6 address",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configuration := mkValid()
+			test.change(configuration)
+			err := validate(*configuration)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validate() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestValidate_AddressNotInCIDR(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv4 = netip.MustParseAddr("10.0.9.9") // not in 10.0.0.0/24

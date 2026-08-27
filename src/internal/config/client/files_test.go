@@ -107,6 +107,9 @@ func TestConfigurationsListActivateAndDelete(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "unrelated.json"), []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(activePath+"malformed", []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Mkdir(activePath+".directory", 0700); err != nil {
 		t.Fatal(err)
 	}
