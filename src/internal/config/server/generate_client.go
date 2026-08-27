@@ -31,8 +31,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	if err := f.EnsureKeys(); err != nil {
 		return GeneratedClient{}, fmt.Errorf("could not prepare server keys: %w", err)
 	}
-
-	serverConfiguration, err := f.load()
+	serverConfiguration, err := f.Load()
 	if err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to read server configuration: %w", err)
 	}

@@ -43,10 +43,6 @@ func (f *File) Path() string {
 }
 
 func (f *File) Load() (*Configuration, error) {
-	return f.load()
-}
-
-func (f *File) load() (*Configuration, error) {
 	configuration, err := f.read()
 	if err == nil {
 		return configuration, nil
@@ -129,7 +125,7 @@ func (f *File) write(configuration Configuration) error {
 }
 
 func (f *File) update(update func(*Configuration) error) error {
-	configuration, err := f.load()
+	configuration, err := f.Load()
 	if err != nil {
 		return err
 	}
@@ -140,7 +136,7 @@ func (f *File) update(update func(*Configuration) error) error {
 }
 
 func (f *File) EnsureKeys() error {
-	configuration, err := f.load()
+	configuration, err := f.Load()
 	if err != nil {
 		return err
 	}
