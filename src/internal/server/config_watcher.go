@@ -34,8 +34,7 @@ type peerAccessState struct {
 	clientID int
 }
 
-// newConfigWatcher creates a new configuration watcher.
-// newConfigWatcher creates a configuration watcher that monitors the specified file at the given polling interval.
+// newConfigWatcher creates a watcher for file with the given polling interval.
 func newConfigWatcher(
 	file *serverconfig.File,
 	runtime peerRuntime,

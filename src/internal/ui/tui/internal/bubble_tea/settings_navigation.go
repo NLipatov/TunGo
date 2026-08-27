@@ -53,7 +53,7 @@ func nextTheme(current tuiconfig.Theme, step int) tuiconfig.Theme {
 	return order[index]
 }
 
-// nextStatsUnits advances or reverses the statistics unit selection, wrapping at either end. 
+// nextStatsUnits advances or reverses the statistics unit selection, wrapping at either end.
 // It returns the next or previous statistics unit; unknown values advance from bytes.
 func nextStatsUnits(current tuiconfig.StatsUnits, step int) tuiconfig.StatsUnits {
 	order := []tuiconfig.StatsUnits{tuiconfig.StatsUnitsBytes, tuiconfig.StatsUnitsBiBytes}

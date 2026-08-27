@@ -28,7 +28,7 @@ type protocolTunnel interface {
 	Run() error
 }
 
-// is invalid or cannot be loaded, or a required dependency cannot be created.
+// New creates a server from configFile.
 func New(configFile *serverconfig.File) (*Server, error) {
 	if !platform.ServerModeSupported() {
 		return nil, fmt.Errorf("server runtime is not supported on this platform")
