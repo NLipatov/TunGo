@@ -42,7 +42,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	}
 	ipv6SubnetsAdded := false
 	if serverHost.IPv6 != "" {
-		ensureIPv6Subnets(serverConfiguration)
+		ipv6SubnetsAdded = ensureIPv6Subnets(serverConfiguration)
 	}
 
 	clientID := serverConfiguration.ClientCounter + 1
