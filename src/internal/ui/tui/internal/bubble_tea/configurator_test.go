@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -43,12 +45,12 @@ func TestConfiguratorResult(t *testing.T) {
 	wantErr := errors.New("failed")
 	m := newTestConfigurator(t)
 	m.done = true
-	m.resultMode = config.ModeServer
+	m.resultMode = mode.Server
 	m.resultErr = wantErr
 
-	mode, err := m.Result()
-	if mode != config.ModeServer || !errors.Is(err, wantErr) {
-		t.Fatalf("Result() = (%v, %v), want (%v, %v)", mode, err, config.ModeServer, wantErr)
+	runtimeMode, err := m.Result()
+	if runtimeMode != mode.Server || !errors.Is(err, wantErr) {
+		t.Fatalf("Result() = (%v, %v), want (%v, %v)", runtimeMode, err, mode.Server, wantErr)
 	}
 }
 
@@ -268,7 +270,7 @@ func TestView_MainTab_ClientSelectScreen(t *testing.T) {
 func TestView_MainTab_ClientRemoveScreen(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientRemove
-	m.client.removePaths = []string{"config1"}
+	m.client.removeNames = []string{"config1"}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Choose a configuration to remove") {
@@ -335,7 +337,7 @@ func TestView_MainTab_ServerManageScreen(t *testing.T) {
 func TestView_MainTab_ServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.server.deletePeer = config.ServerPeer{Name: "alpha", ClientID: 1}
+	m.server.deletePeer = serverconfig.AllowedPeer{Name: "alpha", ClientID: 1}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Delete client") {
@@ -472,6 +474,22 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 	// cmd may or may not be ClearScreen depending on whether theme actually changed.
 	// Just verify no panic and cmd is either nil or ClearScreen.
 	_ = cmd
+}
+
+func TestUpdateSettingsTab_SaveFailureIsVisible(t *testing.T) {
+	m := newTestConfigurator(t)
+	m.tab = configuratorTabSettings
+	m.settingsCursor = settingsThemeRow
+	m.settings.save = func(tuiconfig.Configuration) error { return errors.New("disk full") }
+
+	result, _ := m.updateSettingsTab(keyNamed(tea.KeyRight))
+	updated := result.(Configurator)
+	if !strings.Contains(updated.notice, "could not be saved: disk full") {
+		t.Fatalf("notice = %q", updated.notice)
+	}
+	if !strings.Contains(updated.settingsTabView(), updated.notice) {
+		t.Fatal("settings view does not show the save error")
+	}
 }
 
 // --- 6. updateLogsTab ---
@@ -680,8 +698,8 @@ func TestUpdateClientSelectScreen_EnterRemoveWithConfigs(t *testing.T) {
 	if s.screen != configuratorScreenClientRemove {
 		t.Fatalf("expected remove screen, got %v", s.screen)
 	}
-	if len(s.client.removePaths) != 2 {
-		t.Fatalf("expected 2 remove paths, got %d", len(s.client.removePaths))
+	if len(s.client.removeNames) != 2 {
+		t.Fatalf("expected 2 remove names, got %d", len(s.client.removeNames))
 	}
 }
 
@@ -704,7 +722,7 @@ func TestUpdateClientSelectScreen_EnterRemoveNoConfigs(t *testing.T) {
 
 func TestUpdateClientSelectScreen_EnterSelectConfig_ValidConfiguration(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{
 		clientConfigs: []string{"my-config"},
@@ -723,24 +741,24 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_ValidConfiguration(t *testin
 	if !s.done {
 		t.Fatal("expected done=true when configuration is valid")
 	}
-	if s.resultMode != config.ModeClient {
-		t.Fatalf("expected config.ModeClient, got %v", s.resultMode)
+	if s.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
 	}
-	if client.selected != "my-config" {
-		t.Fatalf("expected selector to be called with 'my-config', got %q", client.selected)
+	if client.activated != "my-config" {
+		t.Fatalf("expected Activate to be called with 'my-config', got %q", client.activated)
 	}
 }
 
 func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: errors.New("invalid client configuration (test): bad key"),
+		clientConfigs: []string{"my-config"},
+		activateErr:   errors.New("invalid client configuration (test): bad key"),
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -765,7 +783,7 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 func TestUpdateClientRemoveScreen_EscGoesBack(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientRemove
-	m.client.removePaths = []string{"config1"}
+	m.client.removeNames = []string{"config1"}
 
 	result, _ := m.updateClientRemoveScreen(keyNamed(tea.KeyEsc))
 	s := result.(Configurator)
@@ -776,7 +794,7 @@ func TestUpdateClientRemoveScreen_EscGoesBack(t *testing.T) {
 
 func TestUpdateClientRemoveScreen_EnterRemoves(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{
 		clientConfigs: []string{"remaining"},
@@ -786,7 +804,7 @@ func TestUpdateClientRemoveScreen_EnterRemoves(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.client.removePaths = []string{"config-to-remove"}
+	model.client.removeNames = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, _ := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -877,7 +895,7 @@ func TestUpdateClientAddJSONScreen_EnterInvalidJSON(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientAddJSON
 	m.client.addJSONInput.SetValue("not valid json")
-	m.options.testControl().createErr = errors.New("invalid client configuration: invalid JSON")
+	m.options.testControl().importErr = errors.New("invalid client configuration: invalid JSON")
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
@@ -930,7 +948,7 @@ func TestUpdateClientInvalidScreen_EnterOK(t *testing.T) {
 
 func TestUpdateClientInvalidScreen_EnterDeleteWhenAllowed(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{
 		clientConfigs: []string{},
@@ -996,8 +1014,8 @@ func TestUpdateServerSelectScreen_EnterStartServer(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true")
 	}
-	if s.resultMode != config.ModeServer {
-		t.Fatalf("expected config.ModeServer, got %v", s.resultMode)
+	if s.resultMode != mode.Server {
+		t.Fatalf("expected mode.Server, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -1006,7 +1024,7 @@ func TestUpdateServerSelectScreen_EnterStartServer(t *testing.T) {
 
 func TestUpdateServerSelectScreen_EnterManageClientsNoPeers(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{},
+		peers: []serverconfig.AllowedPeer{},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{}, manager), testSettings())
 	if err != nil {
@@ -1027,7 +1045,7 @@ func TestUpdateServerSelectScreen_EnterManageClientsNoPeers(t *testing.T) {
 
 func TestUpdateServerSelectScreen_EnterManageClientsWithPeers(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "peer1", ClientID: 1, Enabled: true},
 		},
 	}
@@ -1233,7 +1251,7 @@ func TestInputContainerWidth_PositiveWidth(t *testing.T) {
 
 func TestReloadClientConfigs_BuildsCorrectMenuOptions(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"config-a", "config-b"},
@@ -1266,7 +1284,7 @@ func TestReloadClientConfigs_BuildsCorrectMenuOptions(t *testing.T) {
 
 func TestReloadClientConfigs_EmptyConfigs(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{},
@@ -1290,7 +1308,7 @@ func TestReloadClientConfigs_EmptyConfigs(t *testing.T) {
 
 func TestReloadClientConfigs_ListError(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		listErr: errors.New("observe failed"),
@@ -1339,7 +1357,7 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 			m.client.menuOptions = []string{clientAddLabel}
 		}},
 		{"ClientRemove", configuratorScreenClientRemove, func(m *Configurator) {
-			m.client.removePaths = []string{"cfg1"}
+			m.client.removeNames = []string{"cfg1"}
 		}},
 		{"ClientAddName", configuratorScreenClientAddName, func(m *Configurator) {
 			m.width = 80
@@ -1357,7 +1375,7 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 			m.server.manageLabels = []string{"#1 test [enabled]"}
 		}},
 		{"ServerDeleteConfirm", configuratorScreenServerDeleteConfirm, func(m *Configurator) {
-			m.server.deletePeer = config.ServerPeer{Name: "a", ClientID: 1}
+			m.server.deletePeer = serverconfig.AllowedPeer{Name: "a", ClientID: 1}
 		}},
 	}
 
@@ -1436,7 +1454,7 @@ func TestUpdate_DispatchToClientSelectScreen(t *testing.T) {
 func TestUpdate_DispatchToClientRemoveScreen(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientRemove
-	m.client.removePaths = []string{"cfg"}
+	m.client.removeNames = []string{"cfg"}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(Configurator)
@@ -1493,7 +1511,7 @@ func TestUpdate_DispatchToServerSelectScreen(t *testing.T) {
 func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenServerManage
-	m.server.managePeers = []config.ServerPeer{{Name: "a", ClientID: 1, Enabled: true}}
+	m.server.managePeers = []serverconfig.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
 	m.server.manageLabels = []string{"#1 a [enabled]"}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
@@ -1506,8 +1524,8 @@ func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 func TestUpdate_DispatchToServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.server.managePeers = []config.ServerPeer{{Name: "a", ClientID: 1, Enabled: true}}
-	m.server.deletePeer = config.ServerPeer{Name: "a", ClientID: 1}
+	m.server.managePeers = []serverconfig.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
+	m.server.deletePeer = serverconfig.AllowedPeer{Name: "a", ClientID: 1}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(Configurator)
@@ -1564,7 +1582,7 @@ func TestUpdateServerManageScreen_D_UpperCase_EmptyPeersList(t *testing.T) {
 
 func TestUpdateServerManageScreen_EnterTogglesPeerEnabled(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
@@ -1584,7 +1602,7 @@ func TestUpdateServerManageScreen_EnterTogglesPeerEnabled(t *testing.T) {
 
 func TestUpdateServerManageScreen_SetPeerEnabledError(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		setEnabledErr: errors.New("enable failed"),
@@ -1594,7 +1612,7 @@ func TestUpdateServerManageScreen_SetPeerEnabledError(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]config.ServerPeer(nil), manager.peers...)
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), manager.peers...)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
@@ -1611,7 +1629,7 @@ func TestUpdateServerManageScreen_SetPeerEnabledError(t *testing.T) {
 
 func TestUpdateServerManageScreen_AfterToggle_ListPeersError(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		listPeersErr: errors.New("list failed"),
@@ -1621,7 +1639,7 @@ func TestUpdateServerManageScreen_AfterToggle_ListPeersError(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]config.ServerPeer(nil), manager.peers...)
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), manager.peers...)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
@@ -1642,7 +1660,7 @@ func TestUpdateServerManageScreen_AfterToggle_ListPeersError(t *testing.T) {
 func TestUpdateServerManageScreen_AfterToggle_PeersEmpty(t *testing.T) {
 	// After toggle, ListPeers returns empty list
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
@@ -1664,7 +1682,7 @@ func TestUpdateServerManageScreen_AfterToggle_PeersEmpty(t *testing.T) {
 
 func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "a", ClientID: 1, Enabled: true},
 			{Name: "b", ClientID: 2, Enabled: true},
 		},
@@ -1678,11 +1696,11 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 	// After toggle, let manager only have peer 1
 	// Actually, let's just set cursor high and have the list return fewer peers.
 	// The simplest: toggle peer 2 and then manager only has peer 1.
-	manager.peers = []config.ServerPeer{
+	manager.peers = []serverconfig.AllowedPeer{
 		{Name: "a", ClientID: 1, Enabled: true},
 		{Name: "b", ClientID: 2, Enabled: true},
 	}
-	model.server.managePeers = append([]config.ServerPeer(nil), manager.peers...)
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), manager.peers...)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 1
 
@@ -1697,7 +1715,7 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 	// To trigger the clamping branch (cursor >= len(peers)):
 	// We need the list to return fewer peers than cursor.
 	// Remove peer "b" from manager BEFORE the enter key
-	manager.peers = []config.ServerPeer{
+	manager.peers = []serverconfig.AllowedPeer{
 		{Name: "a", ClientID: 1, Enabled: true},
 	}
 
@@ -1718,7 +1736,7 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 func TestUpdateServerSelectScreen_EnterAddClient_GenerateError(t *testing.T) {
 	generateErr := errors.New("config read failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "a", ClientID: 1, Enabled: true},
 		},
 		generateErr: generateErr,
@@ -1749,7 +1767,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_GenerateError(t *testing.T) {
 
 func TestUpdateServerSelectScreen_ManageClients_ListError(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "a", ClientID: 1, Enabled: true},
 		},
 		listPeersErr: errors.New("list error"),
@@ -1779,14 +1797,14 @@ func TestUpdateServerSelectScreen_ManageClients_ListError(t *testing.T) {
 // 3. updateClientSelectScreen coverage
 // =========================================================================
 
-func TestUpdateClientSelectScreen_EnterConfig_SelectError(t *testing.T) {
-	selectorErr := errors.New("select failed")
+func TestUpdateClientSelectScreen_EnterConfig_ActivateError(t *testing.T) {
+	activateErr := errors.New("activate failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"my-config"},
-		selectErr:     selectorErr,
+		activateErr:   activateErr,
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -1800,10 +1818,10 @@ func TestUpdateClientSelectScreen_EnterConfig_SelectError(t *testing.T) {
 	s := result.(Configurator)
 
 	if !s.done {
-		t.Fatal("expected done=true on selector error")
+		t.Fatal("expected done=true on activate error")
 	}
-	if !errors.Is(s.resultErr, selectorErr) {
-		t.Fatalf("expected selector error, got %v", s.resultErr)
+	if !errors.Is(s.resultErr, activateErr) {
+		t.Fatalf("expected activate error, got %v", s.resultErr)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -1813,11 +1831,11 @@ func TestUpdateClientSelectScreen_EnterConfig_SelectError(t *testing.T) {
 func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 	nonInvalidErr := errors.New("network timeout while connecting")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: nonInvalidErr,
+		clientConfigs: []string{"my-config"},
+		activateErr:   nonInvalidErr,
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -1843,7 +1861,7 @@ func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 
 func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"my-config"},
@@ -1862,8 +1880,8 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != config.ModeClient {
-		t.Fatalf("expected config.ModeClient, got %v", s.resultMode)
+	if s.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -1877,7 +1895,7 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 func TestUpdateClientRemoveScreen_EnterEmptyPaths(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientRemove
-	m.client.removePaths = nil
+	m.client.removeNames = nil
 	m.cursor = 0
 
 	result, cmd := m.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -1895,7 +1913,7 @@ func TestUpdateClientRemoveScreen_EnterEmptyPaths(t *testing.T) {
 func TestUpdateClientRemoveScreen_DeleteError(t *testing.T) {
 	deleterErr := errors.New("delete failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"remaining"},
@@ -1905,7 +1923,7 @@ func TestUpdateClientRemoveScreen_DeleteError(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.client.removePaths = []string{"config-to-remove"}
+	model.client.removeNames = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -1925,7 +1943,7 @@ func TestUpdateClientRemoveScreen_DeleteError(t *testing.T) {
 func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		listErr: observeErr,
@@ -1934,7 +1952,7 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.client.removePaths = []string{"config-to-remove"}
+	model.client.removeNames = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -1957,7 +1975,7 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 
 func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{
 		clientConfigs: []string{},
@@ -1979,19 +1997,19 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 	if s.notice != "Configuration added." {
 		t.Fatalf("expected 'Configuration added.' notice, got %q", s.notice)
 	}
-	if !client.createCalled {
-		t.Fatal("expected CreateFromJSON to be called")
+	if !client.importCalled {
+		t.Fatal("expected Import to be called")
 	}
 }
 
-func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
-	createErr := errors.New("create failed")
+func TestUpdateClientAddJSONScreen_EnterValidJSON_ImportError(t *testing.T) {
+	importErr := errors.New("import failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{
 		clientConfigs: []string{},
-		createErr:     createErr,
+		importErr:     importErr,
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(client, manager), testSettings())
 	if err != nil {
@@ -2005,10 +2023,10 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 	s := result.(Configurator)
 
 	if !s.done {
-		t.Fatal("expected done=true on create error")
+		t.Fatal("expected done=true on import error")
 	}
-	if !errors.Is(s.resultErr, createErr) {
-		t.Fatalf("expected create error, got %v", s.resultErr)
+	if !errors.Is(s.resultErr, importErr) {
+		t.Fatalf("expected import error, got %v", s.resultErr)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -2018,7 +2036,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	client := &testConfigurationControl{listErr: observeErr}
 	model, err := NewConfigurator(testConfiguratorOptions(client, manager), testSettings())
@@ -2041,8 +2059,8 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
 	}
-	if !client.createCalled {
-		t.Fatal("expected CreateFromJSON to have been called before reload")
+	if !client.importCalled {
+		t.Fatal("expected Import to have been called before reload")
 	}
 }
 
@@ -2075,7 +2093,7 @@ func TestUpdateClientInvalidScreen_DeleteBlankInvalidConfig(t *testing.T) {
 func TestUpdateClientInvalidScreen_DeleteDeleteError(t *testing.T) {
 	deleterErr := errors.New("delete failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{},
@@ -2107,7 +2125,7 @@ func TestUpdateClientInvalidScreen_DeleteDeleteError(t *testing.T) {
 func TestUpdateClientInvalidScreen_DeleteReloadError(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		listErr: observeErr,
@@ -2161,7 +2179,7 @@ func TestUpdateClientInvalidScreen_NonEnterWithAllowDelete(t *testing.T) {
 func TestUpdateServerDeleteConfirmScreen_RemovePeerError(t *testing.T) {
 	removeErr := errors.New("remove failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		removeErr: removeErr,
@@ -2171,8 +2189,8 @@ func TestUpdateServerDeleteConfirmScreen_RemovePeerError(t *testing.T) {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = config.ServerPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.server.managePeers = append([]config.ServerPeer(nil), manager.peers...)
+	model.server.deletePeer = serverconfig.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), manager.peers...)
 	model.cursor = 0 // "Delete client"
 
 	result, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2189,7 +2207,7 @@ func TestUpdateServerDeleteConfirmScreen_RemovePeerError(t *testing.T) {
 func TestUpdateServerDeleteConfirmScreen_ListPeersErrorAfterRemove(t *testing.T) {
 	listErr := errors.New("list after remove failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		listPeersErrOnRemove: listErr,
@@ -2199,8 +2217,8 @@ func TestUpdateServerDeleteConfirmScreen_ListPeersErrorAfterRemove(t *testing.T)
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = config.ServerPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.server.managePeers = append([]config.ServerPeer(nil), manager.peers...)
+	model.server.deletePeer = serverconfig.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
+	model.server.managePeers = append([]serverconfig.AllowedPeer(nil), manager.peers...)
 	model.cursor = 0 // "Delete client"
 
 	result, cmd := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2259,7 +2277,7 @@ func TestUpdateServerDeleteConfirmScreen_CancelWithEmptyPeers(t *testing.T) {
 func TestUpdateModeScreen_EnterClient_ReloadFails(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		listErr: observeErr,
@@ -2333,7 +2351,7 @@ func TestView_UnknownScreen_ReturnsEmptyString(t *testing.T) {
 
 func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "a", ClientID: 1, Enabled: true},
 		},
 		generateErr: errors.New("disk full"),
@@ -2364,7 +2382,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
 
 func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{
+		peers: []serverconfig.AllowedPeer{
 			{Name: "a", ClientID: 1, Enabled: true},
 		},
 		generatePath: "/tmp/test_client.json",
@@ -2395,7 +2413,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
 
 func TestUpdateServerSelectScreen_ManageClientsListError_Exits(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers:        []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers:        []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 		listPeersErr: errors.New("list failed"),
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{}, manager), testSettings())
@@ -2420,11 +2438,11 @@ func TestUpdateServerSelectScreen_ManageClientsListError_Exits(t *testing.T) {
 
 func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
-		clientConfigs:     []string{"my-config"},
-		validateActiveErr: errors.New("connection refused"),
+		clientConfigs: []string{"my-config"},
+		activateErr:   errors.New("connection refused"),
 	}, manager), testSettings())
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
@@ -2449,7 +2467,7 @@ func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *te
 
 func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"my-config"},
@@ -2467,17 +2485,17 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != config.ModeClient {
-		t.Fatalf("expected config.ModeClient, got %v", s.resultMode)
+	if s.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
 	}
 }
 
-func TestUpdateClientSelectScreen_SelectError_Exits(t *testing.T) {
+func TestUpdateClientSelectScreen_ActivateError_Exits(t *testing.T) {
 	manager := &testConfigurationControl{
-		peers: []config.ServerPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		peers: []serverconfig.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
 	model, err := NewConfigurator(testConfiguratorOptions(&testConfigurationControl{
 		clientConfigs: []string{"my-config"},
@@ -2485,8 +2503,8 @@ func TestUpdateClientSelectScreen_SelectError_Exits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfigurator error: %v", err)
 	}
-	// Override selector to one that fails
-	model.options.testControl().selectErr = errors.New("select failed")
+	// Override activation to fail.
+	model.options.testControl().activateErr = errors.New("activate failed")
 	model.screen = configuratorScreenClientSelect
 	model.client.menuOptions = []string{"my-config", clientRemoveLabel, clientAddLabel}
 	model.client.configs = []string{"my-config"}
@@ -2495,10 +2513,10 @@ func TestUpdateClientSelectScreen_SelectError_Exits(t *testing.T) {
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
 	if !s.done {
-		t.Fatal("expected done=true on selector error")
+		t.Fatal("expected done=true on activate error")
 	}
-	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "select failed") {
-		t.Fatalf("expected select error, got %v", s.resultErr)
+	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "activate failed") {
+		t.Fatalf("expected activate error, got %v", s.resultErr)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -2558,7 +2576,7 @@ func TestUpdate_JSONScreen_EnterAcceptedAfterDebounce(t *testing.T) {
 	m := newTestConfigurator(t)
 	m.screen = configuratorScreenClientAddJSON
 	m.client.addJSONInput.SetValue("not valid json")
-	m.options.testControl().createErr = errors.New("invalid client configuration: invalid JSON")
+	m.options.testControl().importErr = errors.New("invalid client configuration: invalid JSON")
 	// No recent input — lastInputAt is zero, Enter should be accepted.
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
@@ -2774,7 +2792,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 		opts.testDaemon().status = func() (systemd.UnitStatus, error) {
 			return systemd.UnitStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
 		}
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -2789,12 +2807,12 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("daemon reconfigure confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonReconfigureConfirm
-		model.pendingDaemonMode = config.ModeClient
+		model.pendingDaemonMode = mode.Client
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)
 		if updated.screen != configuratorScreenDaemonReconfigureConfirm {
@@ -2804,12 +2822,12 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("systemd active confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonActiveConfirm
-		model.pendingStartMode = config.ModeClient
+		model.pendingStartMode = mode.Client
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)
@@ -2820,12 +2838,12 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 
 	t.Run("systemd check error confirm dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonCheckErrorConfirm
-		model.pendingStartMode = config.ModeClient
+		model.pendingStartMode = mode.Client
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(Configurator)
@@ -2845,7 +2863,7 @@ func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts.testDaemon().enable = func() error { return nil }
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2889,38 +2907,38 @@ func TestUpdateClientAddJSONScreen_NonEnter_ExecutesTickClosure(t *testing.T) {
 func TestNewConfiguratorSessionModel_AutoSelectClientMode_ListError(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.testControl().listErr = errors.New("observe failed")
-	_, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	_, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err == nil || !strings.Contains(err.Error(), "observe failed") {
 		t.Fatalf("expected observer error, got %v", err)
 	}
 }
 
-func TestNewConfiguratorSessionModel_AutoSelectConfig_SelectFails_ShowsNotice(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+func TestNewConfiguratorSessionModel_AutoSelectConfig_ActivateFails_ShowsNotice(t *testing.T) {
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().selectErr = errors.New("select failed")
+	opts.testControl().activateErr = errors.New("activate failed")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(model.notice, "Auto-select failed for \"cfg.json\": select failed") {
-		t.Fatalf("expected selector failure notice, got %q", model.notice)
+	if !strings.Contains(model.notice, "Auto-select failed for \"cfg.json\": activate failed") {
+		t.Fatalf("expected activation failure notice, got %q", model.notice)
 	}
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemonGuard(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}

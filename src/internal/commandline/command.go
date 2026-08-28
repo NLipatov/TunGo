@@ -4,8 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"tungo/internal/config"
+	"tungo/internal/mode"
 )
+
+type Command struct {
+	Kind              CommandKind
+	RuntimeMode       mode.Mode
+	RequiresElevation bool
+}
 
 type CommandKind uint8
 
@@ -15,12 +21,6 @@ const (
 	CommandVersion
 	CommandServerConfigGenerate
 )
-
-type Command struct {
-	Kind              CommandKind
-	RuntimeMode       config.Mode
-	RequiresElevation bool
-}
 
 type commandSpec struct {
 	args        []string
@@ -32,12 +32,12 @@ var commands = []commandSpec{
 	{
 		args:        []string{"s"},
 		description: "Start server runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: config.ModeServer, RequiresElevation: true},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: mode.Server, RequiresElevation: true},
 	},
 	{
 		args:        []string{"c"},
 		description: "Start client runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: config.ModeClient, RequiresElevation: true},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: mode.Client, RequiresElevation: true},
 	},
 	{
 		args:        []string{"s", "gen"},
@@ -51,6 +51,8 @@ var commands = []commandSpec{
 	},
 }
 
+// ParseCommand identifies the registered command matching the supplied arguments.
+// It returns an error when the arguments do not match a supported command.
 func ParseCommand(args []string) (Command, error) {
 	for _, spec := range commands {
 		if matches(args, spec.args) {
@@ -60,15 +62,7 @@ func ParseCommand(args []string) (Command, error) {
 	return Command{}, errors.New("invalid arguments")
 }
 
-func RuntimeModeArgs(mode config.Mode) ([]string, error) {
-	for _, spec := range commands {
-		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == mode {
-			return append([]string(nil), spec.args...), nil
-		}
-	}
-	return nil, fmt.Errorf("unsupported runtime mode: %v", mode)
-}
-
+// matches reports whether two argument lists have equal lengths and corresponding values, after trimming surrounding whitespace from the actual arguments.
 func matches(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -81,7 +75,22 @@ func matches(got, want []string) bool {
 	return true
 }
 
-func CommandUsage(commandName string) string {
+// RuntimeModeArgs returns the command-line arguments for the specified runtime mode.
+// It returns an error if the runtime mode is unsupported.
+func RuntimeModeArgs(runtimeMode mode.Mode) ([]string, error) {
+	for _, spec := range commands {
+		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == runtimeMode {
+			return append([]string(nil), spec.args...), nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported runtime mode: %v", runtimeMode)
+}
+
+// Usage builds formatted usage text for the available commands.
+//
+// commandName identifies the executable or command name shown in the usage header.
+// It returns the usage header followed by each supported command and its description.
+func Usage(commandName string) string {
 	var b strings.Builder
 	_, _ = fmt.Fprintf(&b, "Usage: %s <command>\nCommands:\n", commandName)
 	for _, spec := range commands {

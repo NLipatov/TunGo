@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
+	"tungo/internal/mode"
 )
 
 type systemdCommandResult struct {
@@ -100,7 +100,7 @@ func TestSetup_InactiveUnit(t *testing.T) {
 	}}
 	installer := newSystemdTestInstaller(t, commander)
 
-	path, err := installer.Setup(config.ModeServer)
+	path, err := installer.Setup(mode.Server)
 	if err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSetup_ActiveUnit(t *testing.T) {
 	}}
 	installer := newSystemdTestInstaller(t, commander)
 
-	if _, err := installer.Setup(config.ModeClient); err != nil {
+	if _, err := installer.Setup(mode.Client); err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
 	want := []string{"stop", "daemon-reload", "enable", "start"}
@@ -153,7 +153,7 @@ func TestSetup_RestartsActiveUnitAfterWriteError(t *testing.T) {
 	installer := newSystemdTestInstaller(t, commander)
 	installer.config.UnitPath = filepath.Join(t.TempDir(), "missing", "tungo.service")
 
-	if _, err := installer.Setup(config.ModeServer); err == nil {
+	if _, err := installer.Setup(mode.Server); err == nil {
 		t.Fatal("Setup() error = nil")
 	}
 	want := []string{"stop", "start"}

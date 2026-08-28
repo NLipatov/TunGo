@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"tungo/internal/config"
+	"tungo/internal/mode"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -49,31 +49,24 @@ func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientRemove
-		m.client.removePaths = append([]string(nil), m.client.configs...)
+		m.client.removeNames = append([]string(nil), m.client.configs...)
 		return m, nil
 	default:
-		if err := m.options.ClientConfigurationControl.Select(selected); err != nil {
+		if err := m.options.ClientConfigurations.Activate(selected); err != nil {
+			if isInvalidClientConfigurationError(err) {
+				m.client.invalidErr = err
+				m.client.invalidConfig = selected
+				m.client.invalidAllowDelete = true
+				m.cursor = 0
+				m.screen = configuratorScreenClientInvalid
+				return m, nil
+			}
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
 		}
 
-		cfgErr := m.options.ClientConfigurationControl.ValidateActive()
-		if isInvalidClientConfigurationError(cfgErr) {
-			m.client.invalidErr = cfgErr
-			m.client.invalidConfig = selected
-			m.client.invalidAllowDelete = true
-			m.cursor = 0
-			m.screen = configuratorScreenClientInvalid
-			return m, nil
-		}
-		if cfgErr != nil {
-			m.resultErr = cfgErr
-			m.done = true
-			return m, tea.Quit
-		}
-
-		m = m.startModeWithDaemonGuard(config.ModeClient, configuratorScreenClientSelect, false)
+		m = m.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, false)
 		if m.done {
 			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit
@@ -94,13 +87,13 @@ func (m Configurator) updateClientRemoveScreen(msg tea.KeyPressMsg) (tea.Model, 
 		return m, nil
 	}
 
-	m.updateCursor(msg, len(m.client.removePaths))
-	if msg.String() != "enter" || len(m.client.removePaths) == 0 {
+	m.updateCursor(msg, len(m.client.removeNames))
+	if msg.String() != "enter" || len(m.client.removeNames) == 0 {
 		return m, nil
 	}
 
-	toDelete := m.client.removePaths[m.cursor]
-	if err := m.options.ClientConfigurationControl.Delete(toDelete); err != nil {
+	toDelete := m.client.removeNames[m.cursor]
+	if err := m.options.ClientConfigurations.Delete(toDelete); err != nil {
 		m.resultErr = err
 		m.done = true
 		return m, tea.Quit
@@ -166,7 +159,7 @@ func (m Configurator) updateClientAddJSONScreen(msg tea.KeyPressMsg) (tea.Model,
 			return m, cmd
 		}
 
-		if err := m.options.ClientConfigurationControl.CreateFromJSON(m.client.addName, m.client.addJSONInput.Value()); err != nil {
+		if err := m.options.ClientConfigurations.Import(m.client.addName, m.client.addJSONInput.Value()); err != nil {
 			if isInvalidClientConfigurationError(err) {
 				m.client.invalidErr = err
 				m.client.invalidConfig = ""
@@ -229,7 +222,7 @@ func (m Configurator) updateClientInvalidScreen(msg tea.KeyPressMsg) (tea.Model,
 			m.done = true
 			return m, tea.Quit
 		}
-		if err := m.options.ClientConfigurationControl.Delete(m.client.invalidConfig); err != nil {
+		if err := m.options.ClientConfigurations.Delete(m.client.invalidConfig); err != nil {
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
@@ -252,13 +245,12 @@ func (m Configurator) persistAutoSelectClientConfig(selected string) Configurato
 	}
 	p := m.settings.Current()
 	p.AutoSelectClientConfig = selected
-	m.settings.update(p)
-	_ = savePreferencesToDisk(p)
+	m.notice = appendNotice(m.notice, settingsSaveNotice(m.settings.update(p)))
 	return m
 }
 
 func (m *Configurator) reloadClientConfigs() error {
-	configs, err := m.options.ClientConfigurationControl.List()
+	configs, err := m.options.ClientConfigurations.List()
 	if err != nil {
 		return err
 	}

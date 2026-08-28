@@ -9,7 +9,8 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func Validate(configuration Configuration) error {
+// validate checks that the client configuration contains valid identifiers, keys, active settings, network addresses, subnets, MTU, and DNS servers. It returns the first validation error encountered.
+func validate(configuration Configuration) error {
 	if configuration.ClientID <= 0 {
 		return fmt.Errorf("invalid ClientID %d: must be > 0", configuration.ClientID)
 	}

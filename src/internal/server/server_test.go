@@ -6,12 +6,14 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
 
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
+	"tungo/internal/platform"
 	"tungo/internal/protocol/noise"
 )
 
@@ -55,6 +57,27 @@ func newTestRuntime(t *testing.T) (*Server, error) {
 }
 
 // ------------------- tests -------------------
+
+func TestNewServer(t *testing.T) {
+	if !platform.ServerModeSupported() {
+		if server, err := New(nil); err == nil || server != nil {
+			t.Fatalf("New(nil) = %v, %v; want unsupported-platform error", server, err)
+		}
+		return
+	}
+
+	if server, err := New(nil); err == nil || server != nil {
+		t.Fatalf("New(nil) = %v, %v; want nil-configuration error", server, err)
+	}
+	file := serverconfig.NewFile(filepath.Join(t.TempDir(), "server_configuration.json"))
+	server, err := New(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.configFile != file || server.configuration == nil || server.tunManager == nil {
+		t.Fatalf("incomplete server: %+v", server)
+	}
+}
 
 func Test_addrPortToListen_ErrorsAndDualStackDefault(t *testing.T) {
 	f := &Server{}
@@ -122,7 +145,7 @@ func TestNewTunnel_TCP_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.TCP,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -158,7 +181,7 @@ func TestNewTunnel_UDP_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.UDP,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -190,7 +213,7 @@ func TestNewTunnel_WS_ListenError(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.WS,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -220,7 +243,7 @@ func TestNewTunnel_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
 	}
 	ws := settings.Settings{
 		Protocol: settings.WS,
-		Addressing: settings.Addressing{
+		Network: settings.Network{
 			Server: mustHost("127.0.0.1"),
 			Port:   portNum,
 		},
@@ -279,7 +302,7 @@ func TestNewTunnel_TCP_UDP_WS_Success(t *testing.T) {
 
 		ws := settings.Settings{
 			Protocol: proto,
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				Server: mustHost("127.0.0.1"),
 				Port:   portNum,
 			},

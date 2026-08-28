@@ -2,7 +2,14 @@ package server
 
 import (
 	"net/netip"
+
 	"tungo/internal/config/settings"
+)
+
+const (
+	udpTunName = "s_udptun0"
+	tcpTunName = "s_tcptun0"
+	wsTunName  = "s_wstun0"
 )
 
 type Configuration struct {
@@ -44,7 +51,8 @@ type AllowedPeer struct {
 	ClientID int `json:"ClientID"`
 }
 
-func New() *Configuration {
+// newConfiguration creates a configuration with default protocol settings and UDP enabled.
+func newConfiguration() *Configuration {
 	configuration := &Configuration{
 		X25519PublicKey:  nil,
 		X25519PrivateKey: nil,
@@ -53,10 +61,11 @@ func New() *Configuration {
 		EnableUDP:        true,
 		EnableWS:         false,
 	}
-	return configuration.ApplyServerDefaults()
+	configuration.applyDefaults()
+	return configuration
 }
 
-func (c *Configuration) ApplyServerDefaults() *Configuration {
+func (c *Configuration) applyDefaults() {
 	type proto struct {
 		protocol settings.Protocol
 		tunName  string
@@ -68,14 +77,13 @@ func (c *Configuration) ApplyServerDefaults() *Configuration {
 		{settings.UDP, udpTunName, "10.0.1.0/24", 9090},
 		{settings.WS, wsTunName, "10.0.2.0/24", 1010},
 	}
-	for i, s := range c.AllSettingsPtrs() {
+	for i, s := range c.settings() {
 		d := defaults[i]
-		c.applyDefaults(s, c.defaultSettings(d.protocol, d.tunName, d.cidr, d.port))
+		c.fillDefaults(s, c.defaultSettings(d.protocol, d.tunName, d.cidr, d.port))
 	}
-	return c
 }
 
-func (c *Configuration) applyDefaults(
+func (c *Configuration) fillDefaults(
 	to *settings.Settings,
 	from settings.Settings,
 ) {
@@ -85,13 +93,14 @@ func (c *Configuration) applyDefaults(
 	if !to.IPv4Subnet.IsValid() {
 		to.IPv4Subnet = from.IPv4Subnet
 	}
+	network := &to.Network
 	// Derive server IPv4 from subnet if not already set.
-	if to.IPv4Subnet.IsValid() && !to.IPv4.IsValid() {
-		_ = to.DeriveIP(0)
+	if network.IPv4Subnet.IsValid() && !network.IPv4.IsValid() {
+		_ = network.DeriveIP(0)
 	}
 	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
-	if to.IPv6Subnet.IsValid() && !to.IPv6.IsValid() {
-		_ = to.DeriveIP(0)
+	if network.IPv6Subnet.IsValid() && !network.IPv6.IsValid() {
+		_ = network.DeriveIP(0)
 	}
 	if to.Port == 0 {
 		to.Port = from.Port
@@ -112,20 +121,20 @@ func (c *Configuration) defaultSettings(
 	tunName, ipv4CIDR string,
 	port int,
 ) settings.Settings {
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			TunName:    tunName,
-			IPv4Subnet: netip.MustParsePrefix(ipv4CIDR),
-			Port:       port,
-		},
+	network := settings.Network{
+		TunName:    tunName,
+		IPv4Subnet: netip.MustParsePrefix(ipv4CIDR),
+		Port:       port,
+	}
+	// Derive server IP from subnet.
+	_ = network.DeriveIP(0)
+	return settings.Settings{
+		Network:       network,
 		MTU:           settings.DefaultEthernetMTU,
 		Protocol:      protocol,
 		Encryption:    settings.ChaCha20Poly1305,
 		DialTimeoutMs: 5000,
 	}
-	// Derive server IP from subnet.
-	_ = s.DeriveIP(0)
-	return s
 }
 
 func (c Configuration) Profiles() [3]settings.Profile {
@@ -136,7 +145,6 @@ func (c Configuration) Profiles() [3]settings.Profile {
 	}
 }
 
-// AllSettingsPtrs returns pointers to all protocol settings for in-place mutation.
-func (c *Configuration) AllSettingsPtrs() []*settings.Settings {
+func (c *Configuration) settings() []*settings.Settings {
 	return []*settings.Settings{&c.TCPSettings, &c.UDPSettings, &c.WSSettings}
 }

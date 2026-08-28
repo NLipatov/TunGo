@@ -5,20 +5,21 @@ import (
 	"net/netip"
 	"strings"
 	"time"
-	"tungo/internal/config"
 	"tungo/internal/config/settings"
+	tuiconfig "tungo/internal/config/tui"
+	"tungo/internal/mode"
 	"tungo/internal/trafficstats"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 type RuntimeDashboardOptions struct {
-	Mode            config.Mode
+	Mode            mode.Mode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	Ready           func() bool
 	Protocol        settings.Protocol
-	Endpoints       []config.EndpointInfo
+	Endpoints       []EndpointInfo
 }
 
 type runtimeTickMsg struct {
@@ -51,12 +52,13 @@ var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
 type RuntimeDashboard struct {
 	settings             *Preferences
 	ctx                  context.Context
-	mode                 config.Mode
+	mode                 mode.Mode
 	width                int
 	height               int
 	screen               runtimeDashboardScreen
 	settingsCursor       int
-	preferences          UIPreferences
+	settingsNotice       string
+	preferences          tuiconfig.Configuration
 	logFeed              RuntimeLogFeed
 	logs                 logViewport
 	rxSamples            [runtimeSparklinePoints]uint64
@@ -71,26 +73,27 @@ type RuntimeDashboard struct {
 	ready                func() bool
 	connected            bool
 	protocol             settings.Protocol
-	endpoints            []config.EndpointInfo
+	endpoints            []EndpointInfo
 }
 
+// NewRuntimeDashboard creates a runtime dashboard initialized with the supplied context, options, and preferences. A nil context uses a background context, and an initial traffic sample is recorded when dataplane graph display is enabled.
 func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *Preferences) RuntimeDashboard {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	mode := options.Mode
-	if mode != config.ModeServer {
-		mode = config.ModeClient
+	runtimeMode := options.Mode
+	if runtimeMode != mode.Server {
+		runtimeMode = mode.Client
 	}
 	ready := options.Ready
 	if ready == nil {
 		ready = func() bool { return true }
 	}
-	connected := mode == config.ModeServer || ready()
+	connected := runtimeMode == mode.Server || ready()
 	model := RuntimeDashboard{
 		settings:        settings,
 		ctx:             ctx,
-		mode:            mode,
+		mode:            runtimeMode,
 		serverSupported: options.ServerSupported,
 		screen:          runtimeScreenDataplane,
 		preferences:     settings.Current(),
@@ -158,7 +161,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
-				if m.mode == config.ModeClient && !m.connected {
+				if m.mode == mode.Client && !m.connected {
 					m.logs.stopUpdates()
 					m.reconfigureRequested = true
 					return m, tea.Quit
@@ -275,13 +278,13 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, m.serverSupported))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
+		m.preferences, m.settingsNotice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
+		m.preferences, m.settingsNotice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -298,7 +301,7 @@ func (m RuntimeDashboard) mainView() string {
 	if m.connected {
 		status = "Status: Connected"
 	}
-	if m.mode == config.ModeServer {
+	if m.mode == mode.Server {
 		modeLine = "Mode: Server"
 		status = "Status: Running"
 	}
@@ -366,7 +369,7 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == config.ModeServer && len(m.endpoints) > 1 {
+	if m.mode == mode.Server && len(m.endpoints) > 1 {
 		if sharedAddress, ok := sharedServerAddress(m.endpoints); ok {
 			return []string{formatRuntimeHostLine("Server IP", sharedAddress)}
 		}
@@ -391,7 +394,7 @@ func (m RuntimeDashboard) tunnelIPLines() []string {
 	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == config.ModeServer && len(m.endpoints) > 1 {
+	if m.mode == mode.Server && len(m.endpoints) > 1 {
 		lines := []string{"Tunnel IPs:"}
 		for _, endpoint := range m.endpoints {
 			if line := formatRuntimeProtocolAddress(endpoint.Protocol, endpoint.TunnelIPv4, endpoint.TunnelIPv6); line != "" {
@@ -409,7 +412,7 @@ func (m RuntimeDashboard) tunnelIPLines() []string {
 }
 
 func (m RuntimeDashboard) protocolLine() string {
-	if m.mode != config.ModeClient || m.protocol == settings.UNKNOWN {
+	if m.mode != mode.Client || m.protocol == settings.UNKNOWN {
 		return ""
 	}
 	return "Protocol: " + m.protocol.String()
@@ -467,6 +470,8 @@ func formatRuntimeProtocolHost(protocol settings.Protocol, host settings.Host) s
 	return protocol.String() + ": " + parts
 }
 
+// formatRuntimeProtocolAddress formats IPv4 and IPv6 addresses with their protocol label.
+// It returns an empty string when neither address is valid.
 func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.Addr) string {
 	parts := formatRuntimeAddressParts(ipv4, ipv6)
 	if parts == "" {
@@ -478,7 +483,8 @@ func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.A
 	return protocol.String() + ": " + parts
 }
 
-func sharedServerAddress(endpoints []config.EndpointInfo) (settings.Host, bool) {
+// sharedServerAddress returns the common server address when all endpoints use the same non-empty address.
+func sharedServerAddress(endpoints []EndpointInfo) (settings.Host, bool) {
 	if len(endpoints) == 0 {
 		return settings.Host{}, false
 	}
@@ -495,14 +501,14 @@ func sharedServerAddress(endpoints []config.EndpointInfo) (settings.Host, bool) 
 }
 
 func (m RuntimeDashboard) stopActionLabel() string {
-	if m.mode == config.ModeClient && m.preferences.AutoConnect {
+	if m.mode == mode.Client && m.preferences.AutoConnect {
 		return "Stop (AutoConnect will be disabled)"
 	}
 	return "Stop"
 }
 
 func (m RuntimeDashboard) stopConfirmTitle() string {
-	if m.mode == config.ModeServer {
+	if m.mode == mode.Server {
 		return runtimeStopConfirmTitleServer
 	}
 	return runtimeStopConfirmTitleClient
@@ -512,7 +518,7 @@ func (m RuntimeDashboard) dataplaneHint() string {
 	if m.confirmOpen {
 		return runtimeHintDataplaneConfirmOpen
 	}
-	if m.mode == config.ModeClient && !m.connected {
+	if m.mode == mode.Client && !m.connected {
 		return runtimeHintDataplaneReconfigure
 	}
 	return runtimeHintDataplaneStopConfirm
@@ -524,6 +530,9 @@ func (m RuntimeDashboard) settingsView() string {
 	contentWidth := 0
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
+	}
+	if m.settingsNotice != "" {
+		body = append(body, m.settingsNotice, "")
 	}
 	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences, m.serverSupported), m.settingsCursor, contentWidth, styles)...)
 

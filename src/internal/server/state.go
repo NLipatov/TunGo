@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"tungo/internal/config"
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/noise"
@@ -21,7 +20,7 @@ type tunManager interface {
 type Server struct {
 	configuration *serverconfig.Configuration
 	tunManager    tunManager
-	control       config.ServerRuntimeControl
+	configFile    *serverconfig.File
 	ready         atomic.Bool
 	allowedPeers  *allowedPeers
 	cookieManager *noise.CookieManager

@@ -9,10 +9,13 @@ import (
 
 	"tungo/internal/client"
 	"tungo/internal/commandline"
-	"tungo/internal/config"
+	clientconfig "tungo/internal/config/client"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/elevation"
 	"tungo/internal/logging"
+	"tungo/internal/mode"
+	"tungo/internal/platform"
 	"tungo/internal/platform/command"
 	"tungo/internal/product"
 	"tungo/internal/server"
@@ -21,6 +24,7 @@ import (
 	"tungo/internal/ui/tui"
 )
 
+// main initializes logging, runs the TUI or CLI based on the command-line arguments, and exits with status 1 when execution fails.
 func main() {
 	exitCode := 0
 	defer func() { os.Exit(exitCode) }()
@@ -46,65 +50,27 @@ func main() {
 	}
 }
 
-func runCLI(ctx context.Context) error {
-	command, err := commandline.ParseCommand(os.Args[1:])
-	if err != nil {
-		fmt.Print(commandline.CommandUsage(product.Name))
-		return fmt.Errorf("configuration error: %w", err)
-	}
-	if command.RequiresElevation {
-		if err := requireElevation(); err != nil {
-			return err
-		}
-	}
-	switch command.Kind {
-	case commandline.CommandVersion:
-		fmt.Printf("%s %s\n", product.Name, product.Version)
-		return nil
-	case commandline.CommandServerConfigGenerate:
-		serverControl := config.NewServerControl()
-		if serverControl == nil {
-			return fmt.Errorf("server configuration is not supported")
-		}
-		generated, err := serverControl.GenerateClientConfiguration()
-		if err != nil {
-			return fmt.Errorf("configuration generation failed: %w", err)
-		}
-		fmt.Println(generated.JSON)
-		return nil
-	case commandline.CommandRuntime:
-		switch command.RuntimeMode {
-		case config.ModeClient:
-			runningClient, err := client.New()
-			if err != nil {
-				return err
-			}
-			return runningClient.Run(ctx)
-		case config.ModeServer:
-			runningServer, err := server.New()
-			if err != nil {
-				return err
-			}
-			return runningServer.Run(ctx)
-		default:
-			return fmt.Errorf("invalid runtime mode: %v", command.RuntimeMode)
-		}
-	default:
-		return fmt.Errorf("unhandled command kind: %v", command.Kind)
-	}
+// isTUI reports whether the process was started without command-line arguments.
+func isTUI() bool {
+	return len(os.Args) < 2
 }
 
+// runTUI initializes and runs the terminal user interface with the available client and server configurations.
 func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls := config.NewControls()
+	clientConfigurations := clientconfig.Files()
+	var serverFile *serverconfig.File
+	if platform.ServerModeSupported() {
+		serverFile = serverconfig.DefaultFile()
+	}
 	var daemonControl systemd.Control
 	systemdControl := systemd.NewUnitInstaller(command.New())
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}
-	tuiUI, err := tui.New(configurationControls, daemonControl)
+	tuiUI, err := tui.New(clientConfigurations, serverFile, daemonControl)
 	if err != nil {
 		return err
 	}
@@ -117,6 +83,7 @@ func runTUI(ctx context.Context) error {
 	return tuiUI.Run(ctx)
 }
 
+// requireElevation verifies that the process has administrative privileges and returns an error with elevation instructions when it does not.
 func requireElevation() error {
 	if elevation.IsElevated() {
 		return nil
@@ -127,6 +94,55 @@ func requireElevation() error {
 	)
 }
 
-func isTUI() bool {
-	return len(os.Args) < 2
+// runCLI parses the command-line arguments and executes the selected command.
+// It returns an error when parsing, configuration, startup, or command execution fails.
+func runCLI(ctx context.Context) error {
+	command, err := commandline.ParseCommand(os.Args[1:])
+	if err != nil {
+		fmt.Print(commandline.Usage(product.Name))
+		return fmt.Errorf("configuration error: %w", err)
+	}
+	if command.RequiresElevation {
+		if err := requireElevation(); err != nil {
+			return err
+		}
+	}
+	switch command.Kind {
+	case commandline.CommandVersion:
+		fmt.Printf("%s %s\n", product.Name, product.Version)
+		return nil
+	case commandline.CommandServerConfigGenerate:
+		if !platform.ServerModeSupported() {
+			return fmt.Errorf("server configuration is not supported")
+		}
+		generated, err := serverconfig.DefaultFile().GenerateClient()
+		if err != nil {
+			return fmt.Errorf("configuration generation failed: %w", err)
+		}
+		fmt.Println(generated.JSON)
+		return nil
+	case commandline.CommandRuntime:
+		switch command.RuntimeMode {
+		case mode.Client:
+			configuration, err := clientconfig.Files().Active()
+			if err != nil {
+				return fmt.Errorf("failed to load client configuration: %w", err)
+			}
+			runningClient, err := client.New(configuration)
+			if err != nil {
+				return err
+			}
+			return runningClient.Run(ctx)
+		case mode.Server:
+			runningServer, err := server.New(serverconfig.DefaultFile())
+			if err != nil {
+				return err
+			}
+			return runningServer.Run(ctx)
+		default:
+			return fmt.Errorf("invalid runtime mode: %v", command.RuntimeMode)
+		}
+	default:
+		return fmt.Errorf("unhandled command kind: %v", command.Kind)
+	}
 }

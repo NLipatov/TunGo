@@ -25,23 +25,25 @@ type Configuration struct {
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
 }
 
-func (c *Configuration) ApplyClientDefaults() *Configuration {
-	active, err := c.activeSettings()
+func (c *Configuration) applyDefaults() {
+	active, err := c.selectedSettings()
 	if err != nil {
-		return c
+		return
 	}
 	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
 	if active.MTU != 0 && active.MTU != effectiveMTU {
 		slog.Warn(
 			"client MTU was changed to a supported default",
+			"protocol", c.Protocol.String(),
 			"configured", active.MTU,
 			"effective", effectiveMTU,
 		)
 	}
 	active.MTU = effectiveMTU
-	return c
 }
 
+// effectiveMTU determines the usable MTU for the configured address families.
+// It returns the default MTU when the value falls outside the applicable IPv4 or IPv6 limits.
 func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
 	switch {
@@ -58,20 +60,19 @@ func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
-	configured, err := c.activeSettings()
+	selected, err := c.selectedSettings()
 	if err != nil {
 		return settings.Settings{}, err
 	}
-
-	active := *configured
-	active.Protocol = c.Protocol
-	if err := active.DeriveIP(c.ClientID); err != nil {
+	selectedCopy := *selected
+	selectedCopy.Protocol = c.Protocol
+	if err := selectedCopy.Network.DeriveIP(c.ClientID); err != nil { //nolint:staticcheck // Keep the mutation owner explicit.
 		return settings.Settings{}, err
 	}
-	return active, nil
+	return selectedCopy, nil
 }
 
-func (c *Configuration) activeSettings() (*settings.Settings, error) {
+func (c *Configuration) selectedSettings() (*settings.Settings, error) {
 	switch c.Protocol {
 	case settings.UDP:
 		return &c.UDPSettings, nil

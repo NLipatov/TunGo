@@ -2,13 +2,15 @@ package bubble_tea
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
 	"time"
-	"tungo/internal/config"
 	"tungo/internal/config/settings"
+	tuiconfig "tungo/internal/config/tui"
+	"tungo/internal/mode"
 	"tungo/internal/trafficstats"
 	"unicode/utf8"
 
@@ -30,7 +32,7 @@ func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
 	if m.ctx == nil {
 		t.Fatal("expected fallback context when nil is passed")
 	}
-	if m.mode != config.ModeClient {
+	if m.mode != mode.Client {
 		t.Fatalf("expected default client mode, got %v", m.mode)
 	}
 }
@@ -75,13 +77,13 @@ func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeDark
+	p.Theme = tuiconfig.ThemeDark
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
@@ -103,13 +105,13 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeDark
+	p.Theme = tuiconfig.ThemeDark
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
@@ -117,10 +119,10 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
-	if s.Current().StatsUnits != StatsUnitsBytes {
+	if s.Current().StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected global StatsUnits to be toggled to bytes")
 	}
-	if toggled.preferences.StatsUnits != StatsUnitsBytes {
+	if toggled.preferences.StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected model StatsUnits to be toggled to bytes")
 	}
 }
@@ -262,7 +264,7 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
 	p.AutoConnect = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -290,7 +292,7 @@ func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *
 	s := testSettings()
 	p := s.Current()
 	p.AutoConnect = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -311,7 +313,7 @@ func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
 
 func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return false },
 	}, testSettings())
 	view := m.View().Content
@@ -350,13 +352,13 @@ func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeLight
+	p.Theme = tuiconfig.ThemeLight
 	p.Language = "en"
-	p.StatsUnits = StatsUnitsBiBytes
+	p.StatsUnits = tuiconfig.StatsUnitsBiBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
@@ -394,12 +396,12 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.preferences = s.Current()
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().Theme != ThemeDark {
+	if s.Current().Theme != tuiconfig.ThemeDark {
 		t.Fatalf("expected theme dark after right, got %q", s.Current().Theme)
 	}
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().Theme != ThemeLight {
+	if s.Current().Theme != tuiconfig.ThemeLight {
 		t.Fatalf("expected theme light after left, got %q", s.Current().Theme)
 	}
 
@@ -407,10 +409,10 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsStatsUnitsRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Current().StatsUnits != StatsUnitsBytes {
+	if s.Current().StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected stats units bytes, got %q", s.Current().StatsUnits)
 	}
-	if m.preferences.StatsUnits != StatsUnitsBytes {
+	if m.preferences.StatsUnits != tuiconfig.StatsUnitsBytes {
 		t.Fatalf("expected model stats units bytes, got %q", m.preferences.StatsUnits)
 	}
 
@@ -462,10 +464,10 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = false
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeServer,
+		Mode: mode.Server,
 	}, s)
 	m.width = 120
 	m.height = 30
@@ -487,7 +489,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
-		Endpoints: []config.EndpointInfo{{
+		Endpoints: []EndpointInfo{{
 			Protocol:   settings.UDP,
 			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
 			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
@@ -508,8 +510,8 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeServer,
-		Endpoints: []config.EndpointInfo{
+		Mode: mode.Server,
+		Endpoints: []EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{IPv4: "198.51.100.10"},
@@ -551,8 +553,8 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 
 func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeServer,
-		Endpoints: []config.EndpointInfo{
+		Mode: mode.Server,
+		Endpoints: []EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{IPv4: "198.51.100.10"},
@@ -613,7 +615,7 @@ func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 	p.ShowDataplaneStats = false
 	p.ShowDataplaneGraph = false
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.width = 120
@@ -689,12 +691,12 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
 	s := testSettings()
 	p := s.Current()
-	p.Theme = ThemeLight
-	p.StatsUnits = StatsUnitsBytes
+	p.Theme = tuiconfig.ThemeLight
+	p.StatsUnits = tuiconfig.StatsUnitsBytes
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = true
-	s.update(p)
+	_ = s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
@@ -705,8 +707,25 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when runtime theme changes")
 	}
-	if updated.preferences.Theme != ThemeDark {
+	if updated.preferences.Theme != tuiconfig.ThemeDark {
 		t.Fatalf("expected theme to change to dark, got %q", updated.preferences.Theme)
+	}
+}
+
+func TestRuntimeDashboard_SettingsSaveFailureIsVisible(t *testing.T) {
+	settings := testSettings()
+	settings.save = func(tuiconfig.Configuration) error { return errors.New("disk full") }
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, settings)
+	m.screen = runtimeScreenSettings
+	m.settingsCursor = settingsThemeRow
+
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	updated := updatedModel.(RuntimeDashboard)
+	if !strings.Contains(updated.settingsNotice, "could not be saved: disk full") {
+		t.Fatalf("settings notice = %q", updated.settingsNotice)
+	}
+	if !strings.Contains(updated.settingsView(), updated.settingsNotice) {
+		t.Fatal("settings view does not show the save error")
 	}
 }
 
@@ -1396,7 +1415,7 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 func TestRuntimeDashboard_ReadyStateUpdatesOnTick(t *testing.T) {
 	ready := false
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return ready },
 	}, testSettings())
 	if m.connected {
@@ -1412,7 +1431,7 @@ func TestRuntimeDashboard_ReadyStateUpdatesOnTick(t *testing.T) {
 
 func TestRuntimeDashboard_NilReadyDefaultsToConnected(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeClient,
+		Mode: mode.Client,
 	}, testSettings())
 	if !m.connected {
 		t.Fatal("nil Ready callback did not default to connected")
@@ -1421,7 +1440,7 @@ func TestRuntimeDashboard_NilReadyDefaultsToConnected(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return false },
 	}, testSettings())
 	m.width = 80
@@ -1435,7 +1454,7 @@ func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return true },
 	}, testSettings())
 	m.width = 80
@@ -1452,7 +1471,7 @@ func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeServer,
+		Mode:  mode.Server,
 		Ready: func() bool { return false },
 	}, testSettings())
 	m.width = 80
@@ -1466,7 +1485,7 @@ func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 
 func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return false },
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
@@ -1486,7 +1505,7 @@ func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing
 
 func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  config.ModeClient,
+		Mode:  mode.Client,
 		Ready: func() bool { return true },
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
@@ -1506,7 +1525,7 @@ func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 
 func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeServer,
+		Mode: mode.Server,
 	}, testSettings())
 	if got := m.stopConfirmTitle(); got != runtimeStopConfirmTitleServer {
 		t.Fatalf("expected %q, got %q", runtimeStopConfirmTitleServer, got)
@@ -1515,7 +1534,7 @@ func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []config.EndpointInfo{{
+		Endpoints: []EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1527,8 +1546,8 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: config.ModeServer,
-		Endpoints: []config.EndpointInfo{
+		Mode: mode.Server,
+		Endpoints: []EndpointInfo{
 			{Protocol: settings.TCP},
 			{Protocol: settings.UDP},
 		},
@@ -1541,7 +1560,7 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *t
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []config.EndpointInfo{{
+		Endpoints: []EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1569,7 +1588,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected empty protocol address list to have no shared server address")
 	}
 
-	if _, ok := sharedServerAddress([]config.EndpointInfo{
+	if _, ok := sharedServerAddress([]EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{IPv4: "198.51.100.10"},
@@ -1582,7 +1601,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected mixed server address pairs to be treated as different")
 	}
 
-	shared, ok := sharedServerAddress([]config.EndpointInfo{
+	shared, ok := sharedServerAddress([]EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{IPv4: "198.51.100.10"},

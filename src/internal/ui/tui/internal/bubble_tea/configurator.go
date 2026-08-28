@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -30,10 +32,10 @@ const (
 )
 
 type ConfiguratorOptions struct {
-	ClientConfigurationControl config.ClientConfigurationControl
-	ServerConfigurationControl config.ServerConfigurationControl
-	Daemon                     systemd.Control
-	LogFeed                    RuntimeLogFeed
+	ClientConfigurations ClientConfigurations
+	ServerConfigurations ServerConfigurations
+	Daemon               systemd.Control
+	LogFeed              RuntimeLogFeed
 }
 
 type configuratorScreen int
@@ -90,7 +92,7 @@ const (
 type clientState struct {
 	configs            []string
 	menuOptions        []string
-	removePaths        []string
+	removeNames        []string
 	addNameInput       textinput.Model
 	addJSONInput       textarea.Model
 	addName            string
@@ -103,9 +105,9 @@ type clientState struct {
 
 type serverState struct {
 	menuOptions  []string
-	managePeers  []config.ServerPeer
+	managePeers  []serverconfig.AllowedPeer
 	manageLabels []string
-	deletePeer   config.ServerPeer
+	deletePeer   serverconfig.AllowedPeer
 	deleteCursor int
 }
 
@@ -136,22 +138,26 @@ type Configurator struct {
 
 	tab            int
 	settingsCursor int
-	preferences    UIPreferences
+	preferences    tuiconfig.Configuration
 
 	logs logViewport
 
-	pendingStartMode    config.Mode
+	pendingStartMode    mode.Mode
 	pendingStartScreen  configuratorScreen
 	pendingClientConfig string
-	pendingDaemonMode   config.Mode
+	pendingDaemonMode   mode.Mode
 
-	resultMode config.Mode
+	resultMode mode.Mode
 	resultErr  error
 	done       bool
 }
 
+// NewConfigurator initializes a configurator with the available modes, saved preferences, and required input controls.
+// It may restore a saved client configuration and start the selected mode automatically.
+// Returns the initialized configurator, or an error if required client configuration dependencies are unavailable or cannot be loaded.
 func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
-	serverSupported := options.ServerConfigurationControl != nil
+	serverSupported := options.ServerConfigurations != nil
+	settingsNotice := ""
 	modeOptions := []string{modeClientLabel}
 	if serverSupported {
 		modeOptions = append(modeOptions, modeServerLabel)
@@ -163,10 +169,9 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	// If server is not supported but the saved preference is server, reset to client.
 	if !serverSupported {
 		p := settings.Current()
-		if p.AutoSelectMode == ModePreferenceServer {
-			p.AutoSelectMode = ModePreferenceClient
-			settings.update(p)
-			_ = savePreferencesToDisk(p)
+		if p.AutoSelectMode == tuiconfig.ModePreferenceServer {
+			p.AutoSelectMode = tuiconfig.ModePreferenceClient
+			settingsNotice = settingsSaveNotice(settings.update(p))
 		}
 	}
 
@@ -185,10 +190,11 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 			},
 		},
 		preferences: settings.Current(),
+		notice:      settingsNotice,
 		logs:        newLogViewport(),
 	}
 
-	if options.ClientConfigurationControl == nil {
+	if options.ClientConfigurations == nil {
 		return Configurator{}, errors.New("configurator dependencies are not initialized")
 	}
 	model.initNameInput()
@@ -198,15 +204,15 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	}
 	modeAutoselectNotice := ""
 	switch settings.Current().AutoSelectMode {
-	case ModePreferenceClient:
+	case tuiconfig.ModePreferenceClient:
 		modeAutoselectNotice = "Auto-selected mode: client."
-	case ModePreferenceServer:
+	case tuiconfig.ModePreferenceServer:
 		modeAutoselectNotice = "Auto-selected mode: server."
 	}
 
 	// Skip mode screen only when client is the only available option,
 	// or when client is explicitly preferred.
-	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == ModePreferenceClient {
+	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == tuiconfig.ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
 			return Configurator{}, err
 		}
@@ -214,41 +220,57 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 		if settings.Current().AutoConnect {
 			if autoConfig := settings.Current().AutoSelectClientConfig; autoConfig != "" {
-				if slices.Contains(model.client.configs, autoConfig) {
-					if err := model.options.ClientConfigurationControl.Select(autoConfig); err == nil {
-						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", autoConfig))
-						cfgErr := model.options.ClientConfigurationControl.ValidateActive()
-						if isInvalidClientConfigurationError(cfgErr) {
-							model.client.invalidErr = cfgErr
-							model.client.invalidConfig = autoConfig
-							model.client.invalidAllowDelete = true
-							model.cursor = 0
-							model.screen = configuratorScreenClientInvalid
-						} else if cfgErr != nil {
-							model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
-						} else {
-							model = model.startModeWithDaemonGuard(config.ModeClient, configuratorScreenClientSelect, true)
-							if !model.done && isDaemonStartConfirmationScreen(model.screen) {
-								model.pendingClientConfig = autoConfig
-							}
+				if selected, ok := savedConfigurationName(autoConfig, model.client.configs); ok {
+					if err := model.options.ClientConfigurations.Activate(selected); err == nil {
+						if selected != autoConfig {
+							p := settings.Current()
+							p.AutoSelectClientConfig = selected
+							model.notice = appendNotice(model.notice, settingsSaveNotice(settings.update(p)))
 						}
+						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", selected))
+						model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
+						if !model.done && isDaemonStartConfirmationScreen(model.screen) {
+							model.pendingClientConfig = selected
+						}
+					} else if isInvalidClientConfigurationError(err) {
+						model.client.invalidErr = err
+						model.client.invalidConfig = selected
+						model.client.invalidAllowDelete = true
+						model.cursor = 0
+						model.screen = configuratorScreenClientInvalid
 					} else {
-						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
+						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", selected, err)
 					}
 				} else {
 					p := settings.Current()
 					p.AutoSelectClientConfig = ""
-					settings.update(p)
-					_ = savePreferencesToDisk(p)
+					model.notice = appendNotice(model.notice, settingsSaveNotice(settings.update(p)))
 				}
 			}
 		}
-	} else if settings.Current().AutoSelectMode == ModePreferenceServer {
+	} else if settings.Current().AutoSelectMode == tuiconfig.ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 	}
 
 	return model, nil
+}
+
+// savedConfigurationName resolves a saved configuration preference against the available names.
+// It supports exact matches and legacy preferences containing an alternative path suffix.
+func savedConfigurationName(saved string, available []string) (string, bool) {
+	if slices.Contains(available, saved) {
+		return saved, true
+	}
+
+	// Older versions stored the full alternative path in this preference.
+	matched := ""
+	for _, name := range available {
+		if strings.HasSuffix(saved, "."+name) && len(name) > len(matched) {
+			matched = name
+		}
+	}
+	return matched, matched != ""
 }
 
 func (m Configurator) Init() tea.Cmd {
@@ -258,7 +280,7 @@ func (m Configurator) Init() tea.Cmd {
 	return nil
 }
 
-func (m Configurator) Result() (config.Mode, error) {
+func (m Configurator) Result() (mode.Mode, error) {
 	if !m.done {
 		return 0, ErrConfiguratorUserExit
 	}
@@ -459,13 +481,13 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, len(rows))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
+		m.preferences, m.notice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
+		m.preferences, m.notice = applySettingsChangeWithNotice(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -474,6 +496,16 @@ func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.settingsCursor = maxInt(0, len(m.settingsRows())-1)
 	}
 	return m, cmd
+}
+
+// applySettingsChangeWithNotice applies a settings change and returns any resulting save notice.
+func applySettingsChangeWithNotice(
+	preferences *Preferences,
+	cursor, step int,
+	serverSupported bool,
+) (tuiconfig.Configuration, string) {
+	updated, err := applySettingsChange(preferences, cursor, step, serverSupported)
+	return updated, settingsSaveNotice(err)
 }
 
 func (m Configurator) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

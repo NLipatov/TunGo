@@ -8,7 +8,9 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func Validate(configuration Configuration) error {
+// validate checks the server configuration for valid interface names, enabled
+// profile settings, subnet relationships, MTU values, and allowed peers.
+func validate(configuration Configuration) error {
 	if configuration.Host != "" && strings.TrimSpace(configuration.Host) == "" {
 		return fmt.Errorf("host is empty")
 	}

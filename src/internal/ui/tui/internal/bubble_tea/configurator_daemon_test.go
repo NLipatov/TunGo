@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -23,7 +24,7 @@ func TestModeOptions_AddsDaemonWhenDaemonAvailable(t *testing.T) {
 		}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,7 +38,7 @@ func TestModeOptions_DoesNotAddDaemonWhenDaemonUnavailable(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.Daemon = nil
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 		return systemd.UnitStatus{Installed: false}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,13 +73,13 @@ func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 
 func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	opts.Daemon = newDaemonControlStub()
 	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
 		return systemd.UnitStatus{Installed: false}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,13 +103,13 @@ func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeS
 
 func TestView_ClientSelectHint_ServerUnsupportedWithDaemon_ShowsEscBack(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	opts.Daemon = newDaemonControlStub()
 	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
 		return systemd.UnitStatus{Installed: false}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 		return systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Role: systemd.UnitRoleServer}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 	opts.testDaemon().start = func() error { return nil }
 	opts.testDaemon().disable = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +209,7 @@ func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 		}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	opts.testDaemon().start = func() error { return nil }
 	opts.testDaemon().enable = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -306,7 +307,7 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -338,7 +339,7 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 		return "", errors.New("cannot setup client daemon: invalid default config")
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -367,7 +368,7 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 	opts.testDaemon().start = func() error { return nil }
 	opts.testDaemon().enable = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -404,7 +405,7 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 	opts.testDaemon().stop = func() error { return nil }
 	opts.testDaemon().start = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -423,7 +424,7 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != config.ModeClient {
+	if updated.pendingDaemonMode != mode.Client {
 		t.Fatalf("expected pending daemon mode client, got %v", updated.pendingDaemonMode)
 	}
 }
@@ -442,12 +443,12 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 		return "/etc/systemd/system/tungo.service", nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = config.ModeClient
+	model.pendingDaemonMode = mode.Client
 	model.cursor = 0 // stop and restart
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -474,12 +475,12 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 
 func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = config.ModeServer
+	model.pendingDaemonMode = mode.Server
 	model.cursor = 1 // cancel
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -528,7 +529,7 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 		return nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -597,7 +598,7 @@ func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *test
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 	opts.testDaemon().delete = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -629,7 +630,7 @@ func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testin
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -672,7 +673,7 @@ func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) 
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -685,7 +686,7 @@ func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) 
 }
 
 func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg-a"}
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
@@ -708,7 +709,7 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != config.ModeClient {
+	if updated.pendingStartMode != mode.Client {
 		t.Fatalf("expected pending start mode client, got %v", updated.pendingStartMode)
 	}
 	if updated.pendingStartScreen != configuratorScreenClientSelect {
@@ -727,7 +728,7 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 	opts.testDaemon().stop = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -744,7 +745,7 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != config.ModeServer {
+	if updated.pendingStartMode != mode.Server {
 		t.Fatalf("expected pending start mode server, got %v", updated.pendingStartMode)
 	}
 }
@@ -757,12 +758,12 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *t
 		return nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeServer
+	model.pendingStartMode = mode.Server
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0 // stop and continue
 
@@ -777,16 +778,16 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *t
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != config.ModeServer {
-		t.Fatalf("expected config.ModeServer, got %v", updated.resultMode)
+	if updated.resultMode != mode.Server {
+		t.Fatalf("expected mode.Server, got %v", updated.resultMode)
 	}
 }
 
 func TestUpdateDaemonActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	model, err := NewConfigurator(opts, s)
@@ -794,7 +795,7 @@ func TestUpdateDaemonActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testi
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 1 // cancel
@@ -834,12 +835,12 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *te
 		}
 		return false, nil
 	}
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	model = model.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, false)
+	model = model.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
 	if model.screen != configuratorScreenDaemonCheckErrorConfirm {
 		t.Fatalf("expected check error confirm screen, got %v", model.screen)
 	}
@@ -850,7 +851,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *te
 	if cmd == nil {
 		t.Fatal("expected quit cmd after successful retry")
 	}
-	if !updated.done || updated.resultMode != config.ModeServer {
+	if !updated.done || updated.resultMode != mode.Server {
 		t.Fatalf("expected done server start after retry, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if checkCalls != 2 {
@@ -869,12 +870,12 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t 
 		}
 		return true, nil
 	}
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("NewConfigurator() error = %v", err)
 	}
 
-	model = model.startModeWithDaemonGuard(config.ModeClient, configuratorScreenClientSelect, false)
+	model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, false)
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
 
@@ -892,14 +893,14 @@ func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t 
 }
 
 func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSelectConfig(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 1 // Start anyway (unsafe)
@@ -909,7 +910,7 @@ func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSele
 	if cmd == nil {
 		t.Fatal("expected quit cmd for start anyway")
 	}
-	if !updated.done || updated.resultMode != config.ModeClient {
+	if !updated.done || updated.resultMode != mode.Client {
 		t.Fatalf("expected done client start, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if !strings.Contains(updated.notice, "without daemon guard") {
@@ -922,12 +923,12 @@ func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSele
 
 func TestUpdateDaemonCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 2 // Cancel
 
@@ -948,10 +949,10 @@ func TestUpdateDaemonCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *t
 }
 
 func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testDaemon().stop = func() error { return errors.New("stop failed") }
@@ -960,7 +961,7 @@ func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *test
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 0 // stop and continue
@@ -986,7 +987,7 @@ func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *test
 
 func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConfig(t *testing.T) {
 	stopCalls := 0
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	opts.testDaemon().stop = func() error {
 		stopCalls++
@@ -998,7 +999,7 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConf
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
@@ -1014,8 +1015,8 @@ func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConf
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != config.ModeClient {
-		t.Fatalf("expected config.ModeClient, got %v", updated.resultMode)
+	if updated.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", updated.resultMode)
 	}
 	if s.Current().AutoSelectClientConfig != "cfg-a" {
 		t.Fatalf("expected AutoSelectClientConfig persisted after confirmation, got %q", s.Current().AutoSelectClientConfig)
@@ -1033,13 +1034,13 @@ func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
 	opts.testDaemon().start = func() error { return nil }
 	opts.testDaemon().enable = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonManage
 	model.tab = configuratorTabLogs
-	model.pendingDaemonMode = config.ModeServer
+	model.pendingDaemonMode = mode.Server
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEsc))
 	updated := updatedModel.(Configurator)
@@ -1058,7 +1059,7 @@ func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
 }
 
 func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1076,7 +1077,7 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.Daemon = newDaemonControlStub()
 	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return systemd.UnitStatus{}, errors.New("status boom") }
-	model, err = NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err = NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1087,7 +1088,7 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 }
 
 func TestDaemonStatusLineAndNotice_ErrorAndEmptyNotice(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1196,7 +1197,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			}
 			tc.configureHooks(&opts)
 
-			model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+			model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1221,7 +1222,7 @@ func TestUpdateDaemonManageScreen_UnknownOption_Noop(t *testing.T) {
 		return systemd.UnitStatus{Installed: true}, nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1238,12 +1239,12 @@ func TestUpdateDaemonManageScreen_UnknownOption_Noop(t *testing.T) {
 
 func TestUpdateDaemonReconfigureConfirmScreen_EscAndNonEnter(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = config.ModeServer
+	model.pendingDaemonMode = mode.Server
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyDown))
@@ -1273,12 +1274,12 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 	}
 	opts.testDaemon().setupServer = func() (string, error) { return "", errors.New("setup failed") }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = config.ModeServer
+	model.pendingDaemonMode = mode.Server
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1289,12 +1290,12 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 }
 
 func TestUpdateDaemonActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 
@@ -1308,7 +1309,7 @@ func TestUpdateDaemonActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 	}
 
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeServer
+	model.pendingStartMode = mode.Server
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0
 	updatedModel, _ = model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1325,29 +1326,29 @@ func TestStartModeWithDaemonGuard_PreserveNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 	opts.testDaemon().stop = func() error { return nil }
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.notice = "keep me"
 
-	updated := model.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, true)
+	updated := model.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, true)
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected confirm screen, got %v", updated.screen)
 	}
 	if updated.notice != "keep me" {
 		t.Fatalf("expected notice to be preserved, got %q", updated.notice)
 	}
-	if updated.pendingStartMode != config.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
+	if updated.pendingStartMode != mode.Server || updated.pendingStartScreen != configuratorScreenServerSelect {
 		t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 	}
 }
 
 func TestPersistAutoSelectClientConfig_EmptyValueIgnored(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoSelectClientConfig = "old-cfg"
-	s.update(p)
+	_ = s.update(p)
 
 	model, err := NewConfigurator(defaultConfiguratorOpts(), s)
 	if err != nil {
@@ -1361,12 +1362,12 @@ func TestPersistAutoSelectClientConfig_EmptyValueIgnored(t *testing.T) {
 
 func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 	t.Run("without hooks starts immediately", func(t *testing.T) {
-		model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, false)
-		if !updated.done || updated.resultMode != config.ModeServer {
+		updated := model.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
+		if !updated.done || updated.resultMode != mode.Server {
 			t.Fatalf("expected immediate start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1375,18 +1376,18 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon().isActive = func() (bool, error) { return false, errors.New("status failed") }
 		opts.testDaemon().stop = func() error { return nil }
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, false)
+		updated := model.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenDaemonCheckErrorConfirm {
 			t.Fatalf("expected daemon check error confirm screen, got %v", updated.screen)
 		}
 		if !strings.Contains(updated.notice, "Failed to check daemon status") {
 			t.Fatalf("expected status failure notice, got %q", updated.notice)
 		}
-		if updated.pendingStartMode != config.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
+		if updated.pendingStartMode != mode.Server || updated.pendingStartScreen != configuratorScreenServerSelect {
 			t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 		}
 	})
@@ -1395,12 +1396,12 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon().isActive = func() (bool, error) { return false, nil }
 		opts.testDaemon().stop = func() error { return nil }
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithDaemonGuard(config.ModeClient, configuratorScreenClientSelect, false)
-		if !updated.done || updated.resultMode != config.ModeClient {
+		updated := model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, false)
+		if !updated.done || updated.resultMode != mode.Client {
 			t.Fatalf("expected immediate client start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1409,12 +1410,12 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 		opts.testDaemon().stop = func() error { return nil }
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.notice = "temporary notice"
-		updated := model.startModeWithDaemonGuard(config.ModeServer, configuratorScreenServerSelect, false)
+		updated := model.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenDaemonActiveConfirm {
 			t.Fatalf("expected confirm screen, got %v", updated.screen)
 		}
@@ -1425,7 +1426,7 @@ func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 }
 
 func TestLeaveDaemonManageScreen_WithoutDaemonModeOption_ResetsCursor(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1450,7 +1451,7 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 		return nil
 	}
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1480,7 +1481,7 @@ func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(
 	opts.testDaemon().stop = func() error { return nil }
 	opts.testDaemon().start = func() error { return nil }
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1499,18 +1500,18 @@ func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != config.ModeServer {
+	if updated.pendingDaemonMode != mode.Server {
 		t.Fatalf("expected pending daemon mode server, got %v", updated.pendingDaemonMode)
 	}
 }
 
 func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 0
 
@@ -1522,7 +1523,7 @@ func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected to stay on confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != config.ModeClient {
+	if updated.pendingStartMode != mode.Client {
 		t.Fatalf("expected pending mode to remain unchanged, got %v", updated.pendingStartMode)
 	}
 }
@@ -1530,13 +1531,13 @@ func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	t.Run("unavailable daemon returns explicit error", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.options.Daemon = nil
 
-		_, err = model.applyDaemonSetup(config.ModeClient, false)
+		_, err = model.applyDaemonSetup(mode.Client, false)
 		if err == nil || !strings.Contains(err.Error(), "daemon setup is unavailable") {
 			t.Fatalf("expected unavailable daemon error, got %v", err)
 		}
@@ -1545,13 +1546,13 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	t.Run("invalid client configuration prevents setup", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon()
-		opts.testControl().validateActiveErr = errors.New("invalid client config")
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		opts.testControl().activeErr = errors.New("invalid client config")
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		_, err = model.applyDaemonSetup(config.ModeClient, false)
+		_, err = model.applyDaemonSetup(mode.Client, false)
 		if err == nil || !strings.Contains(err.Error(), "cannot setup client daemon: invalid client config") {
 			t.Fatalf("expected client validation error, got %v", err)
 		}
@@ -1560,11 +1561,11 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	t.Run("client setup error is propagated", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon().setupClient = func() (string, error) { return "", errors.New("restart failed") }
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		_, err = model.applyDaemonSetup(config.ModeClient, true)
+		_, err = model.applyDaemonSetup(mode.Client, true)
 		if err == nil || !strings.Contains(err.Error(), "restart failed") {
 			t.Fatalf("expected setup error, got %v", err)
 		}
@@ -1580,11 +1581,11 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 			status.ActiveState = "active"
 			return "/etc/systemd/system/tungo.service", nil
 		}
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceServer))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated, err := model.applyDaemonSetup(config.ModeServer, true)
+		updated, err := model.applyDaemonSetup(mode.Server, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1599,7 +1600,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	t.Run("unknown mode returns explicit error", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon()
-		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1612,12 +1613,12 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 
 func TestUpdateDaemonCheckErrorConfirmScreen_EscapeAndNavigation(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonCheckErrorConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
 
 	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyDown))
@@ -1647,14 +1648,14 @@ func TestStartModeWithDaemonGuard_PreservesNoticeOnStatusError(t *testing.T) {
 	opts.testDaemon().isActive = func() (bool, error) {
 		return false, errors.New("status unavailable")
 	}
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.notice = "Configuration selected."
 
 	updated := model.startModeWithDaemonGuard(
-		config.ModeClient,
+		mode.Client,
 		configuratorScreenClientSelect,
 		true,
 	)
@@ -1701,13 +1702,13 @@ func TestDaemonPresentationHelpers_Boundaries(t *testing.T) {
 }
 
 func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = config.ModeClient
+	model.pendingDaemonMode = mode.Client
 	clientView := model.mainTabView()
 	if !strings.Contains(clientView, "requires restart") || !strings.Contains(clientView, "client daemon setup") {
 		t.Fatalf("expected client reconfigure label in view, got: %s", clientView)
@@ -1716,20 +1717,20 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 		t.Fatalf("expected reconfigure confirm hint to include tab navigation, got: %s", clientView)
 	}
 
-	model.pendingDaemonMode = config.ModeServer
+	model.pendingDaemonMode = mode.Server
 	serverView := model.mainTabView()
 	if !strings.Contains(serverView, "server daemon setup") {
 		t.Fatalf("expected server reconfigure label in view, got: %s", serverView)
 	}
 
 	model.screen = configuratorScreenDaemonActiveConfirm
-	model.pendingStartMode = config.ModeClient
+	model.pendingStartMode = mode.Client
 	startClientView := model.mainTabView()
 	if !strings.Contains(startClientView, "starting client") {
 		t.Fatalf("expected client start label in confirm view, got: %s", startClientView)
 	}
 
-	model.pendingStartMode = config.ModeServer
+	model.pendingStartMode = mode.Server
 	startServerView := model.mainTabView()
 	if !strings.Contains(startServerView, "starting server") {
 		t.Fatalf("expected server start label in confirm view, got: %s", startServerView)

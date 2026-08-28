@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	tuiconfig "tungo/internal/config/tui"
 )
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
@@ -162,10 +163,10 @@ func TestLogTailLimit_Adaptive(t *testing.T) {
 }
 
 func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
-	rows := uiSettingsRows(UIPreferences{
-		Theme:              ThemeLight,
+	rows := uiSettingsRows(tuiconfig.Configuration{
+		Theme:              tuiconfig.ThemeLight,
 		Language:           "en",
-		StatsUnits:         StatsUnitsBytes,
+		StatsUnits:         tuiconfig.StatsUnitsBytes,
 		ShowDataplaneStats: true,
 		ShowDataplaneGraph: true,
 		ShowFooter:         true,
@@ -177,10 +178,10 @@ func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
 		t.Fatalf("expected bytes label, got %q", rows[1])
 	}
 
-	rows = uiSettingsRows(UIPreferences{
-		Theme:              ThemeLight,
+	rows = uiSettingsRows(tuiconfig.Configuration{
+		Theme:              tuiconfig.ThemeLight,
 		Language:           "en",
-		StatsUnits:         StatsUnitsBiBytes,
+		StatsUnits:         tuiconfig.StatsUnitsBiBytes,
 		ShowDataplaneStats: true,
 		ShowDataplaneGraph: true,
 		ShowFooter:         true,
@@ -191,7 +192,7 @@ func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
 }
 
 func TestRenderTabsLine_RightAlignsProductLabelWhenWidthAllows(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{Theme: ThemeDark})
+	styles := resolveUIStyles(tuiconfig.Configuration{Theme: tuiconfig.ThemeDark})
 	line := renderTabsLine(
 		"TunGo [v0.9.0]",
 		[]string{"Main", "Settings", "Logs"},
@@ -212,7 +213,7 @@ func TestRenderTabsLine_RightAlignsProductLabelWhenWidthAllows(t *testing.T) {
 }
 
 func TestRenderTabsLine_KeepProductLabelOnVeryNarrowWidth(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{Theme: ThemeDark})
+	styles := resolveUIStyles(tuiconfig.Configuration{Theme: tuiconfig.ThemeDark})
 	line := renderTabsLine(
 		"TunGo [v0.9.0]",
 		[]string{"Main", "Settings", "Logs"},
@@ -387,19 +388,19 @@ func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModePreferenceLabel_Client(t *testing.T) {
-	if got := modePreferenceLabel(ModePreferenceClient); got != "client" {
+	if got := modePreferenceLabel(tuiconfig.ModePreferenceClient); got != "client" {
 		t.Errorf("got %q, want %q", got, "client")
 	}
 }
 
 func TestModePreferenceLabel_Server(t *testing.T) {
-	if got := modePreferenceLabel(ModePreferenceServer); got != "server" {
+	if got := modePreferenceLabel(tuiconfig.ModePreferenceServer); got != "server" {
 		t.Errorf("got %q, want %q", got, "server")
 	}
 }
 
 func TestModePreferenceLabel_None(t *testing.T) {
-	if got := modePreferenceLabel(ModePreferenceNone); got != "not set" {
+	if got := modePreferenceLabel(tuiconfig.ModePreferenceNone); got != "not set" {
 		t.Errorf("got %q, want %q", got, "not set")
 	}
 }
@@ -415,7 +416,7 @@ func TestModePreferenceLabel_Unknown(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUISettingsRows_NoServer_HasAutoConnectNoModeRow(t *testing.T) {
-	prefs := UIPreferences{AutoSelectMode: ModePreferenceNone}
+	prefs := tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceNone}
 	rows := uiSettingsRows(prefs, false)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
@@ -437,7 +438,7 @@ func TestUISettingsRows_NoServer_HasAutoConnectNoModeRow(t *testing.T) {
 }
 
 func TestUISettingsRows_ServerSupported_ModeClient_HasModeAndAutoConnect(t *testing.T) {
-	prefs := UIPreferences{AutoSelectMode: ModePreferenceClient}
+	prefs := tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceClient}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount, len(rows))
@@ -460,7 +461,7 @@ func TestUISettingsRows_ServerSupported_ModeClient_HasModeAndAutoConnect(t *test
 }
 
 func TestUISettingsRows_ServerSupported_ModeServer_ModeRowNoAutoConnect(t *testing.T) {
-	prefs := UIPreferences{AutoSelectMode: ModePreferenceServer}
+	prefs := tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceServer}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
@@ -480,7 +481,7 @@ func TestUISettingsRows_ServerSupported_ModeServer_ModeRowNoAutoConnect(t *testi
 }
 
 func TestUISettingsRows_ServerSupported_ModeNone_ModeRowNoAutoConnect(t *testing.T) {
-	prefs := UIPreferences{AutoSelectMode: ModePreferenceNone}
+	prefs := tuiconfig.Configuration{AutoSelectMode: tuiconfig.ModePreferenceNone}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))

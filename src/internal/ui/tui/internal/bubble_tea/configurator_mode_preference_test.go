@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/internal/config"
+	tuiconfig "tungo/internal/config/tui"
+	"tungo/internal/mode"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -14,10 +15,10 @@ func defaultConfiguratorOpts() ConfiguratorOptions {
 	return testConfiguratorOptions(newTestConfigurationControl())
 }
 
-func settingsForMode(m ModePreference) *Preferences {
-	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+func settingsForMode(m tuiconfig.ModePreference) *Preferences {
+	p := tuiconfig.Default()
 	p.AutoSelectMode = m
-	return newPreferences(p)
+	return testPreferences(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ func settingsForMode(m ModePreference) *Preferences {
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AutoSelectModeClient_NavigatesToClientSelect(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestNewConfiguratorSessionModel_AutoSelectModeClient_NavigatesToClientSelec
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectModeServer_NavigatesToServerSelect(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceServer))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestNewConfiguratorSessionModel_AutoSelectModeServer_NavigatesToServerSelec
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectModeNone_StaysAtModeScreen(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,9 +63,9 @@ func TestNewConfiguratorSessionModel_AutoSelectModeNone_StaysAtModeScreen(t *tes
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClientSelect(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,8 +76,8 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClie
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
-	s := settingsForMode(ModePreferenceServer)
+	opts.ServerConfigurations = nil
+	s := settingsForMode(tuiconfig.ModePreferenceServer)
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -86,15 +87,15 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient
 	if model.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected configuratorScreenClientSelect after server-mode reset, got %v", model.screen)
 	}
-	if s.Current().AutoSelectMode != ModePreferenceClient {
+	if s.Current().AutoSelectMode != tuiconfig.ModePreferenceClient {
 		t.Fatalf("expected AutoSelectMode reset to Client, got %q", s.Current().AutoSelectMode)
 	}
 }
 
 func TestUpdateClientSelectScreen_Esc_ServerNotSupported_Exits(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
+	opts.ServerConfigurations = nil
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestUpdateClientSelectScreen_Esc_ServerNotSupported_Exits(t *testing.T) {
 }
 
 func TestUpdateClientSelectScreen_Esc_ServerSupported_GoesBackToModeScreen(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,8 +132,8 @@ func TestUpdateClientSelectScreen_Esc_ServerSupported_GoesBackToModeScreen(t *te
 
 func TestView_ClientSelectHint_ServerNotSupported_ShowsEscExit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
-	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceNone))
+	opts.ServerConfigurations = nil
+	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestView_ClientSelectHint_ServerNotSupported_ShowsEscExit(t *testing.T) {
 }
 
 func TestView_ClientSelectHint_ServerSupported_ShowsEscBack(t *testing.T) {
-	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(ModePreferenceNone))
+	model, err := NewConfigurator(defaultConfiguratorOpts(), settingsForMode(tuiconfig.ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -169,11 +170,11 @@ func TestView_ClientSelectHint_ServerSupported_ShowsEscBack(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -185,11 +186,11 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	if !model.done {
 		t.Fatal("expected done=true when AutoSelectClientConfig matches an available config")
 	}
-	if model.resultMode != config.ModeClient {
+	if model.resultMode != mode.Client {
 		t.Fatalf("expected resultMode=Client, got %v", model.resultMode)
 	}
-	if opts.testControl().selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
+	if opts.testControl().activated != "cfg.json" {
+		t.Fatalf("expected Activate to receive cfg.json, got %q", opts.testControl().activated)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
@@ -199,12 +200,37 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	}
 }
 
+func TestNewConfiguratorSessionModel_MigratesSavedConfigurationPath(t *testing.T) {
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
+	p := s.Current()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "/etc/tungo/client_configuration.json.prod.office"
+	_ = s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.testControl().clientConfigs = []string{"office", "prod.office"}
+
+	model, err := NewConfigurator(opts, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !model.done {
+		t.Fatal("expected the saved configuration to start")
+	}
+	if opts.testControl().activated != "prod.office" {
+		t.Fatalf("Activate received %q, want prod.office", opts.testControl().activated)
+	}
+	if got := s.Current().AutoSelectClientConfig; got != "prod.office" {
+		t.Fatalf("saved configuration = %q, want prod.office", got)
+	}
+}
+
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_RequiresConfirmation(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -221,14 +247,14 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if model.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected configuratorScreenDaemonActiveConfirm, got %v", model.screen)
 	}
-	if model.pendingStartMode != config.ModeClient {
+	if model.pendingStartMode != mode.Client {
 		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
 	}
 	if model.pendingClientConfig != "cfg.json" {
 		t.Fatalf("expected pendingClientConfig=cfg.json, got %q", model.pendingClientConfig)
 	}
-	if opts.testControl().selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
+	if opts.testControl().activated != "cfg.json" {
+		t.Fatalf("expected Activate to receive cfg.json, got %q", opts.testControl().activated)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
@@ -242,11 +268,11 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 // direct regression test for the "auto-connects even with AutoConnect=false" bug. If AutoConnect is
 // false, the auto-skip block must not run, even when AutoSelectClientConfig is set and valid.
 func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = false
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -264,14 +290,14 @@ func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Se
 }
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect(t *testing.T) {
-	s := settingsForMode(ModePreferenceNone)
+	s := settingsForMode(tuiconfig.ModePreferenceNone)
 	p := s.Current()
 	p.AutoConnect = false
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.ServerConfigurationControl = nil
+	opts.ServerConfigurations = nil
 	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := NewConfigurator(opts, s)
@@ -287,15 +313,15 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsInvalidScreen(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().activateErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -313,15 +339,15 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_ShowsNotice(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("permission denied")
+	opts.testControl().activateErr = errors.New("permission denied")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -339,11 +365,11 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsSelection(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 	p := s.Current()
 	p.AutoConnect = true
 	p.AutoSelectClientConfig = "missing.json"
-	s.update(p)
+	_ = s.update(p)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"other.json"}
@@ -364,7 +390,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsS
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NotSet_ShowsSelection(t *testing.T) {
-	s := settingsForMode(ModePreferenceClient)
+	s := settingsForMode(tuiconfig.ModePreferenceClient)
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
@@ -406,11 +432,11 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testi
 	}
 }
 
-func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails(t *testing.T) {
+func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenActivateFails(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().selectErr = errors.New("select failed")
+	opts.testControl().activateErr = errors.New("activate failed")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
@@ -432,7 +458,7 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenConfigInval
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
+	opts.testControl().activateErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {

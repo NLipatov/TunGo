@@ -8,10 +8,10 @@ import (
 	"tungo/internal/config/settings"
 )
 
-// mkValid returns a fully valid configuration ready for Validate().
-// It uses New and ensures all protocols are enabled.
+// mkValid returns a fully valid configuration ready for validate().
+// It uses the default configuration and enables all protocols.
 func mkValid() *Configuration {
-	cfg := New()
+	cfg := newConfiguration()
 	cfg.EnableTCP = true
 	cfg.EnableUDP = true
 	cfg.EnableWS = true
@@ -23,7 +23,7 @@ func mkValid() *Configuration {
 	return cfg
 }
 
-// --- Tests for defaultSettings and ApplyServerDefaults/applyDefaults ---
+// --- Tests for defaultSettings and applyDefaults ---
 
 func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 	c := &Configuration{}
@@ -48,7 +48,7 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	// Start with empty settings so every field should be filled from defaults.
 	c := &Configuration{}
-	_ = c.ApplyServerDefaults()
+	c.applyDefaults()
 
 	for _, tc := range []struct {
 		name        string
@@ -66,11 +66,11 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 			tc.s.MTU == 0 ||
 			tc.s.Protocol == settings.UNKNOWN ||
 			tc.s.DialTimeoutMs == 0 {
-			t.Fatalf("ApplyServerDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
+			t.Fatalf("applyDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
 		}
-		// IPv6 is opt-in — ApplyServerDefaults must NOT populate it
+		// IPv6 is opt-in — applyDefaults must NOT populate it
 		if tc.s.IPv6Subnet.IsValid() || tc.s.IPv6.IsValid() {
-			t.Fatalf("ApplyServerDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
+			t.Fatalf("applyDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
 		}
 	}
 }
@@ -78,13 +78,13 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 	c := &Configuration{
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 				// IPv6 not set — should be derived as fd00::1
 			},
 		},
 	}
-	_ = c.ApplyServerDefaults()
+	c.applyDefaults()
 
 	if !c.TCPSettings.IPv6.IsValid() {
 		t.Fatal("expected IPv6 to be derived from IPv6Subnet")
@@ -97,7 +97,7 @@ func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T) {
 	c := &Configuration{
 		TCPSettings: settings.Settings{
-			Addressing: settings.Addressing{
+			Network: settings.Network{
 				TunName:    "custom0",
 				IPv4Subnet: netip.MustParsePrefix("10.9.0.0/24"),
 				IPv4:       netip.MustParseAddr("10.9.0.1"),
@@ -108,7 +108,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 			DialTimeoutMs: 2500,
 		},
 	}
-	_ = c.ApplyServerDefaults()
+	c.applyDefaults()
 
 	// Ensure values were not overridden.
 	if c.TCPSettings.TunName != "custom0" ||
@@ -118,15 +118,15 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
 		c.TCPSettings.DialTimeoutMs != 2500 {
-		t.Fatalf("ApplyServerDefaults should not override explicit fields: %+v", c.TCPSettings)
+		t.Fatalf("applyDefaults should not override explicit fields: %+v", c.TCPSettings)
 	}
 }
 
-// --- Tests for Validate() happy-path and all error branches ---
+// --- Tests for validate() happy-path and all error branches ---
 
 func TestValidate_HappyPath_AllEnabled(t *testing.T) {
 	cfg := mkValid()
-	if err := Validate(*cfg); err != nil {
+	if err := validate(*cfg); err != nil {
 		t.Fatalf("expected valid config, got error: %v", err)
 	}
 }
@@ -136,7 +136,7 @@ func TestValidate_SkipsDisabledProtocol(t *testing.T) {
 	// Make WS invalid but disabled; Validate should ignore WS and still pass.
 	cfg.EnableWS = false
 	cfg.WSSettings.IPv4Subnet = netip.Prefix{} // invalid, but skipped
-	if err := Validate(*cfg); err != nil {
+	if err := validate(*cfg); err != nil {
 		t.Fatalf("expected valid config with WS disabled, got: %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestValidate_SkipsDisabledProtocol(t *testing.T) {
 func TestValidate_InterfaceNameEmpty(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.TunName = ""
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for empty interface name")
 	}
 }
@@ -152,7 +152,7 @@ func TestValidate_InterfaceNameEmpty(t *testing.T) {
 func TestValidate_InterfaceNameDuplicate(t *testing.T) {
 	cfg := mkValid()
 	cfg.UDPSettings.TunName = cfg.TCPSettings.TunName // duplicate
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for duplicate interface name")
 	}
 }
@@ -160,7 +160,7 @@ func TestValidate_InterfaceNameDuplicate(t *testing.T) {
 func TestValidate_PortOutOfRangeLow(t *testing.T) {
 	cfg := mkValid()
 	cfg.UDPSettings.Port = 0
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for port below range")
 	}
 }
@@ -168,7 +168,7 @@ func TestValidate_PortOutOfRangeLow(t *testing.T) {
 func TestValidate_PortOutOfRangeHigh(t *testing.T) {
 	cfg := mkValid()
 	cfg.UDPSettings.Port = 70000
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for port above range")
 	}
 }
@@ -177,7 +177,7 @@ func TestValidate_PortDuplicateAcrossAll(t *testing.T) {
 	cfg := mkValid()
 	// Make UDP use same port as TCP; ports must be globally unique per your rule.
 	cfg.UDPSettings.Port = cfg.TCPSettings.Port
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for duplicate port across protocols")
 	}
 }
@@ -185,7 +185,7 @@ func TestValidate_PortDuplicateAcrossAll(t *testing.T) {
 func TestValidate_MTUTooSmall(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.MTU = 500 // below 576
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for MTU too small")
 	}
 }
@@ -195,7 +195,7 @@ func TestValidate_IPv6MTUTooSmall(t *testing.T) {
 	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd00::1")
 	cfg.TCPSettings.MTU = settings.MinimumIPv6MTU - 1
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatal("expected error for IPv6 MTU below minimum")
 	}
 }
@@ -203,7 +203,7 @@ func TestValidate_IPv6MTUTooSmall(t *testing.T) {
 func TestValidate_MTUTooLarge(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.MTU = settings.MaximumMTU + 1
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for MTU too large")
 	}
 }
@@ -211,7 +211,7 @@ func TestValidate_MTUTooLarge(t *testing.T) {
 func TestValidate_InvalidCIDR(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv4Subnet = netip.Prefix{}
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for invalid CIDR")
 	}
 }
@@ -219,15 +219,64 @@ func TestValidate_InvalidCIDR(t *testing.T) {
 func TestValidate_InvalidAddress(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv4 = netip.Addr{}
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for invalid address")
+	}
+}
+
+func TestValidate_RejectsMismatchedAddressFamilies(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*Configuration)
+		want   string
+	}{
+		{
+			name: "IPv4 subnet is IPv6",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv4Subnet = netip.MustParsePrefix("fd00::/64")
+			},
+			want: "expected an IPv4 prefix",
+		},
+		{
+			name: "IPv4 address is IPv6",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv4 = netip.MustParseAddr("fd00::1")
+			},
+			want: "expected an IPv4 address",
+		},
+		{
+			name: "IPv6 subnet is IPv4",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv6Subnet = netip.MustParsePrefix("10.0.0.0/24")
+			},
+			want: "expected an IPv6 prefix",
+		},
+		{
+			name: "IPv6 address is IPv4",
+			change: func(configuration *Configuration) {
+				configuration.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+				configuration.TCPSettings.IPv6 = netip.MustParseAddr("10.0.0.1")
+			},
+			want: "expected an IPv6 address",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configuration := mkValid()
+			test.change(configuration)
+			err := validate(*configuration)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validate() error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 
 func TestValidate_AddressNotInCIDR(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv4 = netip.MustParseAddr("10.0.9.9") // not in 10.0.0.0/24
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for address not in CIDR")
 	}
 }
@@ -237,7 +286,7 @@ func TestValidate_SubnetOverlap(t *testing.T) {
 	// Force overlap: make UDP use same 10.0.0.0/24 as TCP.
 	cfg.UDPSettings.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
 	cfg.UDPSettings.IPv4 = netip.MustParseAddr("10.0.0.2")
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatalf("expected error for overlapping subnets")
 	}
 }
@@ -246,7 +295,7 @@ func TestValidate_IPv6_Invalid(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	// IPv6 left as zero value → invalid after Unmap
-	if err := Validate(*cfg); err == nil || !strings.Contains(err.Error(), "invalid 'IPv6'") {
+	if err := validate(*cfg); err == nil || !strings.Contains(err.Error(), "invalid 'IPv6'") {
 		t.Fatalf("expected IPv6 validation error, got: %v", err)
 	}
 }
@@ -255,7 +304,7 @@ func TestValidate_IPv6_NotInSubnet(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd01::99") // outside fd00::/64
-	if err := Validate(*cfg); err == nil || !strings.Contains(err.Error(), "not in 'IPv6Subnet'") {
+	if err := validate(*cfg); err == nil || !strings.Contains(err.Error(), "not in 'IPv6Subnet'") {
 		t.Fatalf("expected IPv6 not-in-subnet error, got: %v", err)
 	}
 }
@@ -264,7 +313,7 @@ func TestValidate_IPv6_HappyPath(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd00::1")
-	if err := Validate(*cfg); err != nil {
+	if err := validate(*cfg); err != nil {
 		t.Fatalf("expected valid config with IPv6, got: %v", err)
 	}
 }
@@ -419,7 +468,7 @@ func TestValidate_PropagatesValidateAllowedPeersError(t *testing.T) {
 			ClientID:  5,
 		},
 	}
-	if err := Validate(*cfg); err == nil {
+	if err := validate(*cfg); err == nil {
 		t.Fatal("expected Validate to propagate ValidateAllowedPeers error")
 	}
 }

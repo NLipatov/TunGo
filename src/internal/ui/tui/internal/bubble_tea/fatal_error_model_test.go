@@ -3,12 +3,19 @@ package bubble_tea
 import (
 	"strings"
 	"testing"
+	tuiconfig "tungo/internal/config/tui"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 func testSettings() *Preferences {
-	return newDefaultPreferences()
+	return testPreferences(tuiconfig.Default())
+}
+
+func testPreferences(configuration tuiconfig.Configuration) *Preferences {
+	preferences := newPreferences(configuration)
+	preferences.save = func(tuiconfig.Configuration) error { return nil }
+	return preferences
 }
 
 func TestFatalErrorModel_View_ContainsMessage(t *testing.T) {
@@ -105,14 +112,14 @@ func TestFatalErrorModel_Update_WindowSizeUpdates(t *testing.T) {
 
 func TestFatalErrorModel_View_RespectsTheme(t *testing.T) {
 
-	themes := []ThemeOption{ThemeLight, ThemeDark, ThemeDarkHighContrast, ThemeDarkMatrix}
+	themes := []tuiconfig.Theme{tuiconfig.ThemeLight, tuiconfig.ThemeDark, tuiconfig.ThemeDarkHighContrast, tuiconfig.ThemeDarkMatrix}
 	views := make([]string, len(themes))
 
 	s := testSettings()
 	for i, theme := range themes {
 		p := s.Current()
 		p.Theme = theme
-		s.update(p)
+		_ = s.update(p)
 		m := newFatalErrorModel("details", s)
 		views[i] = m.View().Content
 	}

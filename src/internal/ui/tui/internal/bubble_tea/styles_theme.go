@@ -2,6 +2,7 @@ package bubble_tea
 
 import (
 	"strings"
+	tuiconfig "tungo/internal/config/tui"
 )
 
 type uiStyles struct {
@@ -28,9 +29,11 @@ type themePalette struct {
 	activeText       string
 }
 
-func paletteForTheme(theme ThemeOption) themePalette {
+// paletteForTheme returns the ANSI color palette associated with a theme.
+// Unknown themes use the light palette.
+func paletteForTheme(theme tuiconfig.Theme) themePalette {
 	switch theme {
-	case ThemeDarkHighContrast:
+	case tuiconfig.ThemeDarkHighContrast:
 		return themePalette{
 			background:       ansiBgBlack,
 			text:             ansiFgBrightWhite,
@@ -40,7 +43,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgBrightYellow,
 			activeText:       ansiFgBlack,
 		}
-	case ThemeDarkMatrix:
+	case tuiconfig.ThemeDarkMatrix:
 		return themePalette{
 			background:       ansiBgBlack,
 			text:             ansiFgBrightGreen,
@@ -50,7 +53,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgBrightGreen,
 			activeText:       ansiFgBlack,
 		}
-	case ThemeDarkOcean:
+	case tuiconfig.ThemeDarkOcean:
 		return themePalette{
 			background:       ansiBgBlack,
 			text:             ansiFgBrightWhite,
@@ -60,7 +63,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgBlue,
 			activeText:       ansiFgBrightWhite,
 		}
-	case ThemeDarkNord:
+	case tuiconfig.ThemeDarkNord:
 		return themePalette{
 			background:       ansiBgBrightBlack,
 			text:             ansiFgWhite,
@@ -70,7 +73,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgCyan,
 			activeText:       ansiFgBlack,
 		}
-	case ThemeDarkMono:
+	case tuiconfig.ThemeDarkMono:
 		return themePalette{
 			background:       ansiBgBlack,
 			text:             ansiFgWhite,
@@ -80,7 +83,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgWhite,
 			activeText:       ansiFgBlack,
 		}
-	case ThemeDark:
+	case tuiconfig.ThemeDark:
 		return themePalette{
 			background:       ansiBgBlack,
 			text:             ansiFgWhite,
@@ -90,7 +93,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 			activeBackground: ansiBgCyan,
 			activeText:       ansiFgBlack,
 		}
-	case ThemeLight:
+	case tuiconfig.ThemeLight:
 		fallthrough
 	default:
 		return themePalette{
@@ -105,6 +108,7 @@ func paletteForTheme(theme ThemeOption) themePalette {
 	}
 }
 
+// ansiStylePrefix constructs an ANSI style prefix from foreground and background color prefixes, optionally including bold styling. It returns an empty string when either color prefix is missing.
 func ansiStylePrefix(fgPrefix, bgPrefix string, bold bool) string {
 	if fgPrefix == "" || bgPrefix == "" {
 		return ""
@@ -119,13 +123,9 @@ func ansiStylePrefix(fgPrefix, bgPrefix string, bold bool) string {
 	return out.String()
 }
 
-func resolveUIStyles(prefs UIPreferences) uiStyles {
-	theme := prefs.Theme
-	if !isValidTheme(theme) {
-		theme = ThemeLight
-	}
-
-	p := paletteForTheme(theme)
+// resolveUIStyles builds UI text and frame styles from the configured theme.
+func resolveUIStyles(prefs tuiconfig.Configuration) uiStyles {
+	p := paletteForTheme(prefs.Theme)
 	textColor := p.text
 	mutedColor := p.muted
 	brandColor := p.brand

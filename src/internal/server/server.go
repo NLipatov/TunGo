@@ -10,8 +10,9 @@ import (
 	"net/netip"
 	"sync"
 
-	"tungo/internal/config"
+	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
+	"tungo/internal/platform"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/server/session"
 	tcpserver "tungo/internal/server/tcp"
@@ -27,13 +28,18 @@ type protocolTunnel interface {
 	Run() error
 }
 
-// New builds a server that owns all configured protocol tunnels.
-func New() (*Server, error) {
-	control := config.NewServerControl()
-	if control == nil {
+// New creates a server from configFile.
+func New(configFile *serverconfig.File) (*Server, error) {
+	if !platform.ServerModeSupported() {
 		return nil, fmt.Errorf("server runtime is not supported on this platform")
 	}
-	conf, err := control.ServerConfiguration()
+	if configFile == nil {
+		return nil, fmt.Errorf("server configuration file is nil")
+	}
+	if err := configFile.EnsureKeys(); err != nil {
+		return nil, fmt.Errorf("could not prepare server keys: %w", err)
+	}
+	conf, err := configFile.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server configuration: %w", err)
 	}
@@ -46,7 +52,7 @@ func New() (*Server, error) {
 	return &Server{
 		configuration: conf,
 		tunManager:    servertun.NewManager(),
-		control:       control,
+		configFile:    configFile,
 		allowedPeers:  newAllowedPeers(conf.AllowedPeers),
 		cookieManager: cookieManager,
 		loadMonitor:   noise.NewLoadMonitor(noise.DefaultLoadThreshold),
@@ -58,10 +64,10 @@ func New() (*Server, error) {
 func (s *Server) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	watcherDone := make(chan struct{})
-	if s.control != nil {
+	if s.configFile != nil {
 		go func() {
 			defer close(watcherDone)
-			s.control.WatchServerConfiguration(runCtx, s, s)
+			newConfigWatcher(s.configFile, s, defaultWatchInterval).watch(runCtx)
 		}()
 	} else {
 		close(watcherDone)
@@ -157,9 +163,6 @@ func (s *Server) newTunnel(
 		return nil, fmt.Errorf("protocol %v not supported", workerSettings.Protocol)
 	}
 }
-
-var _ config.ServerSessionRevoker = (*Server)(nil)
-var _ config.ServerAllowedPeersUpdater = (*Server)(nil)
 
 func (s *Server) newTCPTunnel(
 	ctx context.Context,

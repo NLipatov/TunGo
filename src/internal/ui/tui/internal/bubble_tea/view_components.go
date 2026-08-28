@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	tuiconfig "tungo/internal/config/tui"
 	"unicode"
 )
 
@@ -62,6 +63,7 @@ func renderTabsLine(
 	return rendered
 }
 
+// renderSelectableRows formats selectable rows with a cursor indicator, truncates them to the specified width, and highlights the selected row.
 func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles) []string {
 	out := make([]string, 0, len(rows))
 	for i, row := range rows {
@@ -79,7 +81,11 @@ func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles)
 	return out
 }
 
-func uiSettingsRows(prefs UIPreferences, serverSupported bool) []string {
+// uiSettingsRows formats the current UI preferences as display rows.
+// The rows include mode selection when the server supports it and auto-connect
+// when applicable. serverSupported indicates whether server-side mode selection
+// is available.
+func uiSettingsRows(prefs tuiconfig.Configuration, serverSupported bool) []string {
 	rows := []string{
 		"Theme      : " + strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " ")),
 		"Stats units: " + statsUnitsLabel(prefs.StatsUnits),
@@ -90,12 +96,13 @@ func uiSettingsRows(prefs UIPreferences, serverSupported bool) []string {
 	if serverSupported {
 		rows = append(rows, "Autoselect Mode: "+modePreferenceLabel(prefs.AutoSelectMode))
 	}
-	if prefs.AutoSelectMode == ModePreferenceClient || !serverSupported {
+	if prefs.AutoSelectMode == tuiconfig.ModePreferenceClient || !serverSupported {
 		rows = append(rows, "Auto-connect: "+onOff(prefs.AutoConnect))
 	}
 	return rows
 }
 
+// onOff returns "ON" for true and "OFF" for false.
 func onOff(value bool) string {
 	if value {
 		return "ON"
@@ -103,19 +110,21 @@ func onOff(value bool) string {
 	return "OFF"
 }
 
-func modePreferenceLabel(m ModePreference) string {
+// modePreferenceLabel returns the display label for a mode preference.
+func modePreferenceLabel(m tuiconfig.ModePreference) string {
 	switch m {
-	case ModePreferenceClient:
+	case tuiconfig.ModePreferenceClient:
 		return "client"
-	case ModePreferenceServer:
+	case tuiconfig.ModePreferenceServer:
 		return "server"
 	default:
 		return "not set"
 	}
 }
 
-func statsUnitsLabel(units StatsUnitsOption) string {
-	if units == StatsUnitsBytes {
+// statsUnitsLabel returns the user-facing label for the configured statistics units.
+func statsUnitsLabel(units tuiconfig.StatsUnits) string {
+	if units == tuiconfig.StatsUnitsBytes {
 		return "Decimal units (KB/MB/GB)"
 	}
 	return "Binary units (KiB/MiB/GiB)"
@@ -307,9 +316,11 @@ func runtimeLogSnapshot(feed RuntimeLogFeed, reusable *[]string) []string {
 	return buf[:n]
 }
 
+// computeLogsViewportSize determines the log content width and viewport height for the terminal.
+// It accounts for UI framing, optional subtitle and footer content, and enforces minimum dimensions.
 func computeLogsViewportSize(
 	terminalWidth, terminalHeight int,
-	prefs UIPreferences,
+	prefs tuiconfig.Configuration,
 	subtitle, hint string,
 ) (contentWidth int, viewportHeight int) {
 	contentWidth = 80

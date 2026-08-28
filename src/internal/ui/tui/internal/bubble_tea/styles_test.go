@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	tuiconfig "tungo/internal/config/tui"
 	"tungo/internal/trafficstats"
 )
 
@@ -61,7 +62,7 @@ func Test_wrapText_ANSIIsNotWrapped(t *testing.T) {
 }
 
 func Test_formatStatsLines_FixedWidth(t *testing.T) {
-	prefs := UIPreferences{StatsUnits: StatsUnitsBiBytes}
+	prefs := tuiconfig.Configuration{StatsUnits: tuiconfig.StatsUnitsBiBytes}
 	small := trafficstats.Snapshot{
 		RXBytesTotal: 1,
 		TXBytesTotal: 2,
@@ -95,18 +96,18 @@ func TestHelpers_BasicBranches(t *testing.T) {
 	if got := maxInt(1, 5); got != 5 {
 		t.Fatalf("expected max=5, got %d", got)
 	}
-	if unitSystemForPrefs(UIPreferences{StatsUnits: StatsUnitsBytes}) != trafficstats.UnitSystemBytes {
+	if unitSystemForPrefs(tuiconfig.Configuration{StatsUnits: tuiconfig.StatsUnitsBytes}) != trafficstats.UnitSystemBytes {
 		t.Fatal("expected decimal bytes unit system")
 	}
-	if unitSystemForPrefs(UIPreferences{StatsUnits: StatsUnitsBiBytes}) != trafficstats.UnitSystemBinary {
+	if unitSystemForPrefs(tuiconfig.Configuration{StatsUnits: tuiconfig.StatsUnitsBiBytes}) != trafficstats.UnitSystemBinary {
 		t.Fatal("expected binary unit system")
 	}
 }
 
 func TestResolveUIStyles_DarkBrandUsesLightBlue(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeDark,
-		StatsUnits: StatsUnitsBiBytes,
+	styles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeDark,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 
@@ -120,9 +121,9 @@ func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
 		if !strings.HasPrefix(string(theme), "dark") {
 			continue
 		}
-		styles := resolveUIStyles(UIPreferences{
+		styles := resolveUIStyles(tuiconfig.Configuration{
 			Theme:      theme,
-			StatsUnits: StatsUnitsBiBytes,
+			StatsUnits: tuiconfig.StatsUnitsBiBytes,
 			ShowFooter: true,
 		})
 		if !strings.Contains(styles.brand.prefix, ansiFgBrightCyan) {
@@ -132,9 +133,9 @@ func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
 }
 
 func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeLight,
-		StatsUnits: StatsUnitsBiBytes,
+	styles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 
@@ -147,14 +148,14 @@ func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
 }
 
 func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
-	light := resolveUIStyles(UIPreferences{
-		Theme:      ThemeLight,
-		StatsUnits: StatsUnitsBiBytes,
+	light := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
-	contrast := resolveUIStyles(UIPreferences{
-		Theme:      ThemeDarkHighContrast,
-		StatsUnits: StatsUnitsBiBytes,
+	contrast := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeDarkHighContrast,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 	if light.active.prefix == contrast.active.prefix {
@@ -167,18 +168,18 @@ func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
 
 func TestResolveUIStyles_DarkVariantsUseDistinctActiveAccent(t *testing.T) {
 
-	matrix := resolveUIStyles(UIPreferences{
-		Theme:      ThemeDarkMatrix,
-		StatsUnits: StatsUnitsBiBytes,
+	matrix := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeDarkMatrix,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 	if !strings.Contains(matrix.active.prefix, ansiBgBrightGreen) {
 		t.Fatalf("expected dark_matrix active accent background to be bright green, got %q", matrix.active.prefix)
 	}
 
-	nord := resolveUIStyles(UIPreferences{
-		Theme:      ThemeDarkNord,
-		StatsUnits: StatsUnitsBiBytes,
+	nord := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeDarkNord,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 	if !strings.Contains(nord.active.prefix, ansiBgCyan) {
@@ -212,8 +213,8 @@ func TestContentWidthForTerminal_NonPositiveWidth(t *testing.T) {
 
 func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
 
-	prefs := UIPreferences{
-		Theme:      ThemeDark,
+	prefs := tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeDark,
 		ShowFooter: true,
 	}
 	ansiTitle := "\x1b[31mTitle\x1b[0m"
@@ -227,16 +228,16 @@ func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
 }
 
 func TestBuildFooterBlock_OnlyHintWhenProvided(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeLight,
+	styles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
 		Language:   "en",
-		StatsUnits: StatsUnitsBiBytes,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
-	lines := buildFooterBlock(styles, UIPreferences{
-		Theme:      ThemeLight,
+	lines := buildFooterBlock(styles, tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
 		Language:   "en",
-		StatsUnits: StatsUnitsBiBytes,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	}, 0, "hint line")
 	if len(lines) < 2 {
@@ -245,16 +246,16 @@ func TestBuildFooterBlock_OnlyHintWhenProvided(t *testing.T) {
 }
 
 func TestBuildFooterBlock_NoHint_ReturnsNil(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeLight,
+	styles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
 		Language:   "en",
-		StatsUnits: StatsUnitsBiBytes,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
-	lines := buildFooterBlock(styles, UIPreferences{
-		Theme:      ThemeLight,
+	lines := buildFooterBlock(styles, tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
 		Language:   "en",
-		StatsUnits: StatsUnitsBiBytes,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	}, 0, "")
 	if lines != nil {
@@ -263,8 +264,8 @@ func TestBuildFooterBlock_NoHint_ReturnsNil(t *testing.T) {
 }
 
 func TestRenderScreen_SubtitleANSIAndNoViewportSize(t *testing.T) {
-	prefs := UIPreferences{
-		Theme:      ThemeLight,
+	prefs := tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
 		ShowFooter: false,
 	}
 	out := renderScreen(0, 0, "Title", "\x1b[31mansi subtitle\x1b[0m", []string{"body"}, "", prefs, resolveUIStyles(prefs))
@@ -320,7 +321,7 @@ func TestSplitRunes_NoSplitWhenWithinLimit(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_ReappliesAfterAnsiReset(t *testing.T) {
-	out := enforceBaseThemeFill("x"+ansiReset+"y", UIPreferences{Theme: ThemeLight})
+	out := enforceBaseThemeFill("x"+ansiReset+"y", tuiconfig.Configuration{Theme: tuiconfig.ThemeLight})
 	if !strings.Contains(out, ansiReset) {
 		t.Fatalf("expected reset sequence in output, got %q", out)
 	}
@@ -341,7 +342,7 @@ func TestVisibleWidthANSI_AndStripANSI_WithCSI(t *testing.T) {
 
 func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
 	base := ansiBgBlack + ansiFgWhite
-	out := enforceBaseThemeFill("\x1b[mx\x1b[49my\x1b[39mz\x1b[0mw", UIPreferences{Theme: ThemeDark})
+	out := enforceBaseThemeFill("\x1b[mx\x1b[49my\x1b[39mz\x1b[0mw", tuiconfig.Configuration{Theme: tuiconfig.ThemeDark})
 
 	if !strings.Contains(out, "\x1b[m"+base) {
 		t.Fatalf("expected base reapplied after CSI m reset, got %q", out)
@@ -359,7 +360,7 @@ func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
 
 func TestEnforceBaseThemeFill_AppliesBasePerLine(t *testing.T) {
 	base := ansiBgBlack + ansiFgWhite
-	out := enforceBaseThemeFill("line1\nline2", UIPreferences{Theme: ThemeDark})
+	out := enforceBaseThemeFill("line1\nline2", tuiconfig.Configuration{Theme: tuiconfig.ThemeDark})
 	if strings.Count(out, base) < 2 {
 		t.Fatalf("expected base sequence on each line, got %q", out)
 	}
@@ -376,17 +377,17 @@ func TestAnsiStylePrefix_UsesAnsiConstants(t *testing.T) {
 }
 
 func TestOptionTextStyle_ReturnsNonNil(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	styles := resolveUIStyles(tuiconfig.Configuration{Theme: tuiconfig.ThemeLight})
 	_ = styles.option.Render("test")
 }
 
 func TestActiveOptionTextStyle_ReturnsNonNil(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	styles := resolveUIStyles(tuiconfig.Configuration{Theme: tuiconfig.ThemeLight})
 	_ = styles.active.Render("test")
 }
 
 func TestHeaderLabelStyle_ReturnsNonNil(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	styles := resolveUIStyles(tuiconfig.Configuration{Theme: tuiconfig.ThemeLight})
 	_ = styles.brand.Render("test")
 }
 
@@ -492,12 +493,12 @@ func TestTruncateVisible_WidthZero(t *testing.T) {
 }
 
 func TestBaseANSIForTheme_UnknownTheme(t *testing.T) {
-	bg, fg := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
+	bg, fg := baseANSIForTheme(tuiconfig.Configuration{Theme: tuiconfig.Theme("unknown_theme")})
 	if bg == "" || fg == "" {
 		t.Fatalf("expected non-empty bg/fg for fallback theme, got bg=%q fg=%q", bg, fg)
 	}
 	// Verify it uses light theme palette
-	lightPalette := paletteForTheme(ThemeLight)
+	lightPalette := paletteForTheme(tuiconfig.ThemeLight)
 	if bg != lightPalette.background {
 		t.Fatalf("expected light background %q, got %q", lightPalette.background, bg)
 	}
@@ -579,14 +580,14 @@ func TestPlaceCardCentered_CardTallerThanHeight(t *testing.T) {
 }
 
 func TestResolveUIStyles_UnknownTheme_FallsToLight(t *testing.T) {
-	styles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeOption("imaginary_theme"),
-		StatsUnits: StatsUnitsBiBytes,
+	styles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.Theme("imaginary_theme"),
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
-	lightStyles := resolveUIStyles(UIPreferences{
-		Theme:      ThemeLight,
-		StatsUnits: StatsUnitsBiBytes,
+	lightStyles := resolveUIStyles(tuiconfig.Configuration{
+		Theme:      tuiconfig.ThemeLight,
+		StatsUnits: tuiconfig.StatsUnitsBiBytes,
 		ShowFooter: true,
 	})
 	if styles.brand.prefix != lightStyles.brand.prefix {

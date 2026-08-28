@@ -20,6 +20,42 @@ type clientTestTunManager struct {
 	disposeCalls atomic.Int32
 }
 
+func TestNewClient(t *testing.T) {
+	if client, err := New(nil); err == nil || client != nil {
+		t.Fatalf("New(nil) = %v, %v; want nil and error", client, err)
+	}
+
+	configuration := &clientconfig.Configuration{
+		ClientID: 1,
+		Protocol: settings.TCP,
+		TCPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun0",
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+				Server:     settings.Host{IPv4: "192.0.2.1"},
+				Port:       8080,
+			},
+			MTU:      settings.DefaultMTU,
+			Protocol: settings.TCP,
+		},
+		X25519PublicKey:  make([]byte, 32),
+		ClientPublicKey:  make([]byte, 32),
+		ClientPrivateKey: make([]byte, 32),
+	}
+	client, err := New(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.configuration != configuration || client.Ready() {
+		t.Fatalf("unexpected new client state: %+v", client)
+	}
+
+	configuration.Protocol = settings.UNKNOWN
+	if client, err := New(configuration); err == nil || client != nil {
+		t.Fatalf("New(invalid configuration) = %v, %v; want nil and error", client, err)
+	}
+}
+
 func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriter, error) {
 	return nil, nil
 }
@@ -117,7 +153,7 @@ func TestAllowedSources(t *testing.T) {
 		{name: "empty"},
 		{
 			name: "dual stack with mapped IPv4",
-			s: settings.Settings{Addressing: settings.Addressing{
+			s: settings.Settings{Network: settings.Network{
 				IPv4: netip.MustParseAddr("::ffff:192.0.2.1"),
 				IPv6: netip.MustParseAddr("2001:db8::1"),
 			}},
