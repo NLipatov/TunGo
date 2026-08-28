@@ -221,6 +221,7 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 			}
 			if tt.wantWarning {
 				for _, field := range []string{
+					"protocol=UDP",
 					"configured=" + strconv.Itoa(tt.s.MTU),
 					"effective=" + strconv.Itoa(tt.want),
 				} {

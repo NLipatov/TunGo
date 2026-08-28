@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 
-	clientconfig "tungo/internal/config/client"
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/transport/host"
@@ -39,6 +40,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	if err != nil {
 		return GeneratedClient{}, err
 	}
+	ipv6SubnetsAdded := false
 	if serverHost.IPv6 != "" {
 		ensureIPv6Subnets(serverConfiguration)
 	}
@@ -62,7 +64,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 	if err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to derive ws settings: %w", err)
 	}
-	configuration := clientconfig.Configuration{
+	configuration := client.Configuration{
 		ClientID:         clientID,
 		TCPSettings:      tcpSettings,
 		UDPSettings:      udpSettings,
@@ -101,22 +103,28 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		}
 		return GeneratedClient{}, registrationErr
 	}
+	if ipv6SubnetsAdded {
+		slog.Info("server IPv6 tunnel subnets added", "path", f.path)
+	}
 	return GeneratedClient{JSON: string(data), Path: path}, nil
 }
 
 // ensureIPv6Subnets assigns default IPv6 subnets to protocols without valid subnet configuration.
-func ensureIPv6Subnets(configuration *Configuration) {
+func ensureIPv6Subnets(configuration *Configuration) bool {
 	defaults := [...]netip.Prefix{
 		netip.MustParsePrefix("fd00::/64"),
 		netip.MustParsePrefix("fd00:1::/64"),
 		netip.MustParsePrefix("fd00:2::/64"),
 	}
+	added := false
 	for i, protocolSettings := range configuration.settings() {
 		if !protocolSettings.IPv6Subnet.IsValid() {
 			protocolSettings.IPv6Subnet = defaults[i]
+			added = true
 		}
 	}
 	configuration.applyDefaults()
+	return added
 }
 
 // resolveServerHost resolves a configured server host or detects available IPv4 and IPv6 addresses.

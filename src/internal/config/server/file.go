@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,6 +56,7 @@ func (f *File) Load() (*Configuration, error) {
 	if err := f.write(*configuration); err != nil {
 		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}
+	slog.Info("server configuration created with defaults", "path", f.path)
 	return f.read()
 }
 
@@ -144,7 +146,7 @@ func (f *File) EnsureKeys() error {
 		return validateX25519KeyPair(configuration.X25519PublicKey, configuration.X25519PrivateKey)
 	}
 
-	public, private, err := configuredOrGeneratedKeys()
+	public, private, source, err := configuredOrGeneratedKeys()
 	if err != nil {
 		return err
 	}
@@ -155,18 +157,23 @@ func (f *File) EnsureKeys() error {
 	}
 	configuration.X25519PublicKey = append([]byte(nil), public...)
 	configuration.X25519PrivateKey = append([]byte(nil), private...)
-	return f.write(*configuration)
+	if err := f.write(*configuration); err != nil {
+		return err
+	}
+	slog.Info("server key pair saved", "source", source)
+	return nil
 }
 
-// configuredOrGeneratedKeys returns configured X25519 keys when both environment values decode to 32-byte keys; otherwise, it generates a valid key pair. It returns an error if key generation or public key derivation fails.
-func configuredOrGeneratedKeys() ([]byte, []byte, error) {
+// configuredOrGeneratedKeys returns configured X25519 keys when both environment values decode
+// to 32-byte keys; otherwise, it generates a valid key pair. It also reports the key source.
+func configuredOrGeneratedKeys() ([]byte, []byte, string, error) {
 	publicValue := os.Getenv(publicKeyEnvVar)
 	privateValue := os.Getenv(privateKeyEnvVar)
 	if publicValue != "" && privateValue != "" {
 		public, publicErr := base64.StdEncoding.DecodeString(publicValue)
 		private, privateErr := base64.StdEncoding.DecodeString(privateValue)
 		if publicErr == nil && privateErr == nil && len(public) == 32 && len(private) == 32 {
-			return public, private, nil
+			return public, private, "environment", nil
 		}
 		clear(public)
 		clear(private)
@@ -175,14 +182,14 @@ func configuredOrGeneratedKeys() ([]byte, []byte, error) {
 	private := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, private); err != nil {
 		clear(private)
-		return nil, nil, fmt.Errorf("failed to generate X25519 private key: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to generate X25519 private key: %w", err)
 	}
 	public, err := curve25519.X25519(private, curve25519.Basepoint)
 	if err != nil {
 		clear(private)
-		return nil, nil, fmt.Errorf("failed to derive X25519 public key: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to derive X25519 public key: %w", err)
 	}
-	return public, private, nil
+	return public, private, "generated", nil
 }
 
 // validateX25519KeyPair verifies that an X25519 private key derives the supplied public key.

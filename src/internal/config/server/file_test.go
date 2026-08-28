@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,15 @@ import (
 
 	"golang.org/x/crypto/curve25519"
 )
+
+func captureServerConfigLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	return &logs
+}
 
 func writeServerConfiguration(t *testing.T, path string, configuration Configuration) {
 	t.Helper()
@@ -36,6 +46,7 @@ func testX25519KeyPair(t *testing.T, seed byte) ([]byte, []byte) {
 }
 
 func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
+	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	configuration, err := NewFile(path).Load()
 	if err != nil {
@@ -46,6 +57,10 @@ func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("default configuration was not written: %v", err)
+	}
+	if !strings.Contains(logs.String(), "server configuration created with defaults") ||
+		!strings.Contains(logs.String(), "path="+path) {
+		t.Fatalf("creation log = %q", logs.String())
 	}
 }
 
@@ -179,6 +194,7 @@ func TestFileOperationsPropagateLoadErrors(t *testing.T) {
 
 func TestFileEnsureKeys(t *testing.T) {
 	t.Run("uses environment", func(t *testing.T) {
+		logs := captureServerConfigLogs(t)
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
 		writeServerConfiguration(t, path, *newConfiguration())
 		public, private := testX25519KeyPair(t, 1)
@@ -196,9 +212,14 @@ func TestFileEnsureKeys(t *testing.T) {
 			!bytes.Equal(configuration.X25519PrivateKey, private) {
 			t.Fatal("environment keys were not persisted")
 		}
+		if !strings.Contains(logs.String(), "server key pair saved") ||
+			!strings.Contains(logs.String(), "source=environment") {
+			t.Fatalf("key log = %q", logs.String())
+		}
 	})
 
 	t.Run("invalid environment falls back to generated keys", func(t *testing.T) {
+		logs := captureServerConfigLogs(t)
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
 		writeServerConfiguration(t, path, *newConfiguration())
 		t.Setenv(publicKeyEnvVar, "invalid")
@@ -213,6 +234,10 @@ func TestFileEnsureKeys(t *testing.T) {
 		}
 		if len(configuration.X25519PublicKey) != 32 || len(configuration.X25519PrivateKey) != 32 {
 			t.Fatal("generated keys were not persisted")
+		}
+		if !strings.Contains(logs.String(), "server key pair saved") ||
+			!strings.Contains(logs.String(), "source=generated") {
+			t.Fatalf("key log = %q", logs.String())
 		}
 	})
 

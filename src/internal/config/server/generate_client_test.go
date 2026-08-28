@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	clientconfig "tungo/internal/config/client"
@@ -82,6 +83,7 @@ func TestFileGenerateClientDoesNotRegisterPeerWhenClientFileWriteFails(t *testin
 }
 
 func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
+	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "server_configuration.json")
 	serverConfiguration := newConfiguration()
 	serverConfiguration.Host = "2001:db8::1"
@@ -99,6 +101,10 @@ func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 		if !profile.Settings.IPv6Subnet.IsValid() {
 			t.Fatalf("%s IPv6 subnet was not enabled", profile.Settings.Protocol)
 		}
+	}
+	if !strings.Contains(logs.String(), "server IPv6 tunnel subnets added") ||
+		!strings.Contains(logs.String(), "path="+path) {
+		t.Fatalf("IPv6 defaults log = %q", logs.String())
 	}
 }
 

@@ -34,6 +34,7 @@ func (c *Configuration) applyDefaults() {
 	if active.MTU != 0 && active.MTU != effectiveMTU {
 		slog.Warn(
 			"client MTU was changed to a supported default",
+			"protocol", c.Protocol.String(),
 			"configured", active.MTU,
 			"effective", effectiveMTU,
 		)
