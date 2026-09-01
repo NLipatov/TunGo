@@ -50,27 +50,31 @@ func (v *V6) SetAddressStatic(ifName string, prefix netip.Prefix) error {
 	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{prefix})
 }
 
-func (v *V6) SetDNS(ifName string, dnsServers []string) error {
+func (v *V6) SetDNS(ifName string, servers []string) error {
+	addresses, err := v.parseDNS(servers)
+	if err != nil {
+		return err
+	}
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	var addrs []netip.Addr
-	for _, s := range dnsServers {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
+	return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addresses, nil)
+}
+
+func (v *V6) parseDNS(servers []string) ([]netip.Addr, error) {
+	addresses := make([]netip.Addr, 0, len(servers))
+	for _, raw := range servers {
+		addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+		if err != nil || !addr.Is6() || addr.Is4In6() {
+			return nil, fmt.Errorf("invalid IPv6 DNS %q", raw)
 		}
-		a, aErr := netip.ParseAddr(s)
-		if aErr != nil || !a.Is6() {
-			return fmt.Errorf("SetDNS(v6): bad IPv6 DNS %q", s)
-		}
-		addrs = append(addrs, a)
+		addresses = append(addresses, addr)
 	}
-	if len(addrs) == 0 {
-		return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), nil, nil)
+	if len(addresses) == 0 {
+		return nil, nil
 	}
-	return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addrs, nil)
+	return addresses, nil
 }
 
 func (v *V6) SetMTU(ifName string, mtu int) error {

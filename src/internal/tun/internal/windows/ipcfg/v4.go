@@ -48,24 +48,31 @@ func (v *V4) SetAddressStatic(ifName string, prefix netip.Prefix) error {
 	return luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET), []netip.Prefix{prefix})
 }
 
-func (v *V4) SetDNS(ifName string, dnsServers []string) error {
+func (v *V4) SetDNS(ifName string, servers []string) error {
+	addresses, err := v.parseDNS(servers)
+	if err != nil {
+		return err
+	}
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	if len(dnsServers) == 0 {
-		// "DHCP-like": clear DNS list for IPv4
-		return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), nil, nil)
-	}
-	addresses := make([]netip.Addr, 0, len(dnsServers))
-	for _, s := range dnsServers {
-		a, aErr := netip.ParseAddr(strings.TrimSpace(s))
-		if aErr != nil || !a.Is4() {
-			return fmt.Errorf("SetDNS: bad IPv4 DNS %q", s)
-		}
-		addresses = append(addresses, a)
-	}
 	return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), addresses, nil)
+}
+
+func (v *V4) parseDNS(servers []string) ([]netip.Addr, error) {
+	addresses := make([]netip.Addr, 0, len(servers))
+	for _, raw := range servers {
+		addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+		if err != nil || !addr.Is4() {
+			return nil, fmt.Errorf("invalid IPv4 DNS %q", raw)
+		}
+		addresses = append(addresses, addr)
+	}
+	if len(addresses) == 0 {
+		return nil, nil
+	}
+	return addresses, nil
 }
 
 func (v *V4) SetMTU(ifName string, mtu int) error {
