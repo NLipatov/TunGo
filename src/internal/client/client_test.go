@@ -1,9 +1,11 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -18,6 +20,7 @@ import (
 
 type clientTestTunManager struct {
 	disposeCalls atomic.Int32
+	closeErr     error
 }
 
 func TestNewClient(t *testing.T) {
@@ -62,7 +65,32 @@ func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriter, error) {
 
 func (m *clientTestTunManager) CloseTunnel() error {
 	m.disposeCalls.Add(1)
-	return nil
+	return m.closeErr
+}
+
+func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
+	cleanupErr := errors.New("cleanup failed")
+	manager := &clientTestTunManager{closeErr: cleanupErr}
+	client := &Client{
+		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
+		tunManager:    manager,
+	}
+
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	if err := client.runTunnel(t.Context()); err == nil {
+		t.Fatal("runTunnel() error = nil")
+	}
+	if !strings.Contains(logs.String(), "failed to clean stale tunnel state") ||
+		!strings.Contains(logs.String(), cleanupErr.Error()) {
+		t.Fatalf("preflight cleanup log = %q", logs.String())
+	}
+	if got := manager.disposeCalls.Load(); got != 1 {
+		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
+	}
 }
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {

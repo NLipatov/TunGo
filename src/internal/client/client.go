@@ -117,7 +117,9 @@ func (c *Client) runSession(parentCtx context.Context) error {
 func (c *Client) runTunnel(
 	ctx context.Context,
 ) error {
-	c.closeTun(false) // clean stale
+	if err := c.tunManager.CloseTunnel(); err != nil {
+		slog.Warn("failed to clean stale tunnel state", "err", err)
+	}
 	transport, crypto, rekey, err := c.connect(ctx)
 	if err != nil {
 		return err
@@ -132,7 +134,7 @@ func (c *Client) runTunnel(
 		slog.Error("failed to open tunnel", "err", err)
 		return err
 	}
-	defer c.closeTun(true)
+	defer c.closeTun()
 	tun = trafficstats.WrapTun(tun)
 	selected, err := c.configuration.ActiveSettings()
 	if err != nil {
@@ -181,8 +183,8 @@ func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
 	return addrPort.Addr().Unmap(), nil
 }
 
-func (c *Client) closeTun(logFail bool) {
-	if err := c.tunManager.CloseTunnel(); err != nil && logFail {
+func (c *Client) closeTun() {
+	if err := c.tunManager.CloseTunnel(); err != nil {
 		slog.Warn("failed to close tunnel", "err", err)
 	}
 }

@@ -55,12 +55,7 @@ func (v *V4) SetDNS(ifName string, dnsServers []string) error {
 	}
 	if len(dnsServers) == 0 {
 		// "DHCP-like": clear DNS list for IPv4
-		setDNSErr := luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), nil, nil)
-		if setDNSErr != nil {
-			return setDNSErr
-		}
-		_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET))
-		return nil
+		return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), nil, nil)
 	}
 	addresses := make([]netip.Addr, 0, len(dnsServers))
 	for _, s := range dnsServers {
@@ -70,11 +65,7 @@ func (v *V4) SetDNS(ifName string, dnsServers []string) error {
 		}
 		addresses = append(addresses, a)
 	}
-	if err := luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), addresses, nil); err != nil {
-		return err
-	}
-	_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET))
-	return nil
+	return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET), addresses, nil)
 }
 
 func (v *V4) SetMTU(ifName string, mtu int) error {

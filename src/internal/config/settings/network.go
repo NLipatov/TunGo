@@ -70,20 +70,6 @@ func (n Network) IsZero() bool {
 		!n.IPv6.IsValid()
 }
 
-func (n Network) DNSv4Resolvers() []string {
-	if len(n.DNSv4) == 0 {
-		return append([]string(nil), DefaultClientDNSv4Resolvers...)
-	}
-	return append([]string(nil), n.DNSv4...)
-}
-
-func (n Network) DNSv6Resolvers() []string {
-	if len(n.DNSv6) == 0 {
-		return append([]string(nil), DefaultClientDNSv6Resolvers...)
-	}
-	return append([]string(nil), n.DNSv6...)
-}
-
 // IPv4CIDR returns the IPv4 address combined with the subnet prefix length, e.g. "10.0.0.2/24".
 func (n Network) IPv4CIDR() (string, error) {
 	if !n.IPv4.IsValid() {

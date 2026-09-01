@@ -5,28 +5,28 @@ import (
 	"testing"
 )
 
-// sysctlMockCommander implements command.Runner for testing forwarding settings.
-type sysctlMockCommander struct {
+// sysctlMockRunner records commands for forwarding tests.
+type sysctlMockRunner struct {
 	// If non-nil, return these bytes and error for any CombinedOutput call.
 	output []byte
 	err    error
 }
 
-func (m *sysctlMockCommander) Run(_ string, _ ...string) error {
+func (m *sysctlMockRunner) Run(_ string, _ ...string) error {
 	panic("not implemented")
 }
 
-func (m *sysctlMockCommander) Output(_ string, _ ...string) ([]byte, error) {
+func (m *sysctlMockRunner) Output(_ string, _ ...string) ([]byte, error) {
 	return m.output, m.err
 }
 
-func (m *sysctlMockCommander) CombinedOutput(_ string, _ ...string) ([]byte, error) {
+func (m *sysctlMockRunner) CombinedOutput(_ string, _ ...string) ([]byte, error) {
 	return m.output, m.err
 }
 
 func TestNetIpv4IpForward_Success(t *testing.T) {
 	expected := []byte("net.ipv4.ip_forward = 1\n")
-	mock := &sysctlMockCommander{output: expected, err: nil}
+	mock := &sysctlMockRunner{output: expected, err: nil}
 	w := New(mock)
 
 	out, err := w.NetIpv4IpForward()
@@ -40,7 +40,7 @@ func TestNetIpv4IpForward_Success(t *testing.T) {
 
 func TestNetIpv4IpForward_Error(t *testing.T) {
 	mockErr := errors.New("sysctl failed")
-	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	mock := &sysctlMockRunner{output: nil, err: mockErr}
 	w := New(mock)
 
 	out, err := w.NetIpv4IpForward()
@@ -54,7 +54,7 @@ func TestNetIpv4IpForward_Error(t *testing.T) {
 
 func TestWNetIpv4IpForward_Success(t *testing.T) {
 	expected := []byte("net.ipv4.ip_forward = 1\n")
-	mock := &sysctlMockCommander{output: expected, err: nil}
+	mock := &sysctlMockRunner{output: expected, err: nil}
 	w := New(mock)
 
 	out, err := w.WNetIpv4IpForward()
@@ -68,7 +68,7 @@ func TestWNetIpv4IpForward_Success(t *testing.T) {
 
 func TestWNetIpv4IpForward_Error(t *testing.T) {
 	mockErr := errors.New("cannot write")
-	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	mock := &sysctlMockRunner{output: nil, err: mockErr}
 	w := New(mock)
 
 	out, err := w.WNetIpv4IpForward()
@@ -82,7 +82,7 @@ func TestWNetIpv4IpForward_Error(t *testing.T) {
 
 func TestNetIpv6ConfAllForwarding_Success(t *testing.T) {
 	expected := []byte("net.ipv6.conf.all.forwarding = 1\n")
-	mock := &sysctlMockCommander{output: expected, err: nil}
+	mock := &sysctlMockRunner{output: expected, err: nil}
 	w := New(mock)
 
 	out, err := w.NetIpv6ConfAllForwarding()
@@ -96,7 +96,7 @@ func TestNetIpv6ConfAllForwarding_Success(t *testing.T) {
 
 func TestNetIpv6ConfAllForwarding_Error(t *testing.T) {
 	mockErr := errors.New("sysctl failed")
-	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	mock := &sysctlMockRunner{output: nil, err: mockErr}
 	w := New(mock)
 
 	out, err := w.NetIpv6ConfAllForwarding()
@@ -110,7 +110,7 @@ func TestNetIpv6ConfAllForwarding_Error(t *testing.T) {
 
 func TestWNetIpv6ConfAllForwarding_Success(t *testing.T) {
 	expected := []byte("net.ipv6.conf.all.forwarding = 1\n")
-	mock := &sysctlMockCommander{output: expected, err: nil}
+	mock := &sysctlMockRunner{output: expected, err: nil}
 	w := New(mock)
 
 	out, err := w.WNetIpv6ConfAllForwarding()
@@ -124,7 +124,7 @@ func TestWNetIpv6ConfAllForwarding_Success(t *testing.T) {
 
 func TestWNetIpv6ConfAllForwarding_Error(t *testing.T) {
 	mockErr := errors.New("cannot write")
-	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	mock := &sysctlMockRunner{output: nil, err: mockErr}
 	w := New(mock)
 
 	out, err := w.WNetIpv6ConfAllForwarding()

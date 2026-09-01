@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/netip"
 
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/darwin/dns"
 	"tungo/internal/tun/internal/darwin/ifconfig"
 	"tungo/internal/tun/internal/darwin/route"
 	"tungo/internal/tun/internal/darwin/utun"
@@ -33,9 +35,15 @@ type routeConfigurator interface {
 	Del(destIP string) error
 }
 
+type dnsConfigurator interface {
+	Set(resolvers []string) error
+	Revert() error
+}
+
 type Manager struct {
 	settings         settings.Settings
 	tun              tun
+	dns              dnsConfigurator
 	ifconfig4        interfaceConfigurator
 	ifconfig6        interfaceConfigurator
 	route4           routeConfigurator
@@ -43,6 +51,7 @@ type Manager struct {
 	pinnedServerAddr netip.Addr
 }
 
+// New creates a tunnel manager from a normalized, validated client configuration.
 func New(configuration *client.Configuration) (*Manager, error) {
 	active, err := configuration.ActiveSettings()
 	if err != nil {
@@ -51,6 +60,7 @@ func New(configuration *client.Configuration) (*Manager, error) {
 	cmd := command.New()
 	return &Manager{
 		settings:  active,
+		dns:       dns.New(cmd),
 		ifconfig4: ifconfig.NewV4(cmd),
 		ifconfig6: ifconfig.NewV6(cmd),
 		route4:    route.NewV4(cmd),
@@ -80,12 +90,30 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.addSplitRoutes(); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
 	}
+	if err := m.setDNS(); err != nil {
+		slog.Warn("failed to configure DNS", "interface", m.tun.Name(), "err", err)
+	}
 	return m.tun, nil
+}
+
+func (m *Manager) setDNS() error {
+	resolvers := make([]string, 0, 4)
+	if m.settings.HasIPv4() {
+		resolvers = append(resolvers, m.settings.DNSv4...)
+	}
+	if m.settings.HasIPv6() {
+		resolvers = append(resolvers, m.settings.DNSv6...)
+	}
+
+	if err := m.dns.Set(resolvers); err != nil {
+		return fmt.Errorf("set DNS: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) setMTU() error {
 	configurator := m.ifconfig4
-	if !hasIPv4(m.settings) {
+	if !m.settings.HasIPv4() {
 		configurator = m.ifconfig6
 	}
 	if err := configurator.SetMTU(m.tun.Name(), m.settings.MTU); err != nil {
@@ -97,9 +125,9 @@ func (m *Manager) setMTU() error {
 func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
 	var route routeConfigurator
 	switch {
-	case serverAddr.Is4() && hasIPv4(m.settings):
+	case serverAddr.Is4() && m.settings.HasIPv4():
 		route = m.route4
-	case serverAddr.Is6() && hasIPv6(m.settings):
+	case serverAddr.Is6() && m.settings.HasIPv6():
 		route = m.route6
 	default:
 		return nil
@@ -112,13 +140,13 @@ func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
 }
 
 func (m *Manager) assignAddresses() error {
-	if hasIPv4(m.settings) {
+	if m.settings.HasIPv4() {
 		prefix := netip.PrefixFrom(m.settings.IPv4, m.settings.IPv4.BitLen())
 		if err := m.ifconfig4.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
 			return fmt.Errorf("set IPv4 address %s on %s: %w", prefix, m.tun.Name(), err)
 		}
 	}
-	if hasIPv6(m.settings) {
+	if m.settings.HasIPv6() {
 		prefix := netip.PrefixFrom(m.settings.IPv6, m.settings.IPv6Subnet.Bits())
 		if err := m.ifconfig6.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
 			return fmt.Errorf("set IPv6 address %s on %s: %w", prefix, m.tun.Name(), err)
@@ -128,13 +156,13 @@ func (m *Manager) assignAddresses() error {
 }
 
 func (m *Manager) addSplitRoutes() error {
-	if hasIPv4(m.settings) {
+	if m.settings.HasIPv4() {
 		_ = m.route4.DelSplit(m.tun.Name())
 		if err := m.route4.AddSplit(m.tun.Name()); err != nil {
 			return fmt.Errorf("add IPv4 split default: %w", err)
 		}
 	}
-	if hasIPv6(m.settings) {
+	if m.settings.HasIPv6() {
 		_ = m.route6.DelSplit(m.tun.Name())
 		if err := m.route6.AddSplit(m.tun.Name()); err != nil {
 			return fmt.Errorf("add IPv6 split default: %w", err)
@@ -145,13 +173,16 @@ func (m *Manager) addSplitRoutes() error {
 
 func (m *Manager) CloseTunnel() error {
 	var cleanupErrs []error
+	if err := m.dns.Revert(); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
+	}
 	if m.tun != nil {
-		if hasIPv4(m.settings) {
+		if m.settings.HasIPv4() {
 			if err := m.route4.DelSplit(m.tun.Name()); err != nil {
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))
 			}
 		}
-		if hasIPv6(m.settings) {
+		if m.settings.HasIPv6() {
 			if err := m.route6.DelSplit(m.tun.Name()); err != nil {
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
 			}

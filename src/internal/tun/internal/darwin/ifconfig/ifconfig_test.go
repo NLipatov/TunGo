@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// mockCommander records every call and returns pre-configured results.
-type mockCommander struct {
+// mockRunner records every call and returns pre-configured results.
+type mockRunner struct {
 	calls []mockCall
 
 	combinedOutputBytes []byte
@@ -26,17 +26,17 @@ type mockCall struct {
 	args []string
 }
 
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	m.calls = append(m.calls, mockCall{name: name, args: args})
 	return m.combinedOutputBytes, m.combinedOutputErr
 }
 
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
 	m.calls = append(m.calls, mockCall{name: name, args: args})
 	return m.outputBytes, m.outputErr
 }
 
-func (m *mockCommander) Run(name string, args ...string) error {
+func (m *mockRunner) Run(name string, args ...string) error {
 	m.calls = append(m.calls, mockCall{name: name, args: args})
 	return m.runErr
 }
@@ -44,7 +44,7 @@ func (m *mockCommander) Run(name string, args ...string) error {
 // --- v4.LinkAddrAdd tests ---
 
 func TestV4LinkAddrAdd_ValidCIDR(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV4(m)
 
 	err := c.LinkAddrAdd("utun7", netip.MustParsePrefix("10.0.0.1/24"))
@@ -85,7 +85,7 @@ func TestV4LinkAddrAdd_DifferentMasks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.cidr, func(t *testing.T) {
-			m := &mockCommander{}
+			m := &mockRunner{}
 			c := NewV4(m)
 
 			if err := c.LinkAddrAdd("utun0", netip.MustParsePrefix(tt.cidr)); err != nil {
@@ -104,7 +104,7 @@ func TestV4LinkAddrAdd_DifferentMasks(t *testing.T) {
 }
 
 func TestV4LinkAddrAdd_NotIPv4(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV4(m)
 
 	err := c.LinkAddrAdd("utun0", netip.MustParsePrefix("fd00::1/64"))
@@ -115,12 +115,12 @@ func TestV4LinkAddrAdd_NotIPv4(t *testing.T) {
 		t.Errorf("expected 'not an IPv4 prefix' in error, got: %v", err)
 	}
 	if len(m.calls) != 0 {
-		t.Errorf("expected no commander calls, got %d", len(m.calls))
+		t.Errorf("expected no runner calls, got %d", len(m.calls))
 	}
 }
 
-func TestV4LinkAddrAdd_CommanderError(t *testing.T) {
-	m := &mockCommander{
+func TestV4LinkAddrAdd_RunnerError(t *testing.T) {
+	m := &mockRunner{
 		combinedOutputBytes: []byte("some output"),
 		combinedOutputErr:   errors.New("ifconfig failed"),
 	}
@@ -128,7 +128,7 @@ func TestV4LinkAddrAdd_CommanderError(t *testing.T) {
 
 	err := c.LinkAddrAdd("utun0", netip.MustParsePrefix("10.0.0.1/24"))
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 	if !strings.Contains(err.Error(), "failed to assign IPv4") {
 		t.Errorf("expected 'failed to assign IPv4' in error, got: %v", err)
@@ -137,14 +137,14 @@ func TestV4LinkAddrAdd_CommanderError(t *testing.T) {
 		t.Errorf("expected underlying error message, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "some output") {
-		t.Errorf("expected commander output in error, got: %v", err)
+		t.Errorf("expected runner output in error, got: %v", err)
 	}
 }
 
 // --- v4.SetMTU tests ---
 
 func TestV4SetMTU_ValidMTU(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV4(m)
 
 	err := c.SetMTU("utun0", 1400)
@@ -172,8 +172,8 @@ func TestV4SetMTU_ValidMTU(t *testing.T) {
 	}
 }
 
-func TestV4SetMTU_CommanderError(t *testing.T) {
-	m := &mockCommander{
+func TestV4SetMTU_RunnerError(t *testing.T) {
+	m := &mockRunner{
 		combinedOutputBytes: []byte("mtu error output"),
 		combinedOutputErr:   errors.New("mtu set failed"),
 	}
@@ -181,20 +181,20 @@ func TestV4SetMTU_CommanderError(t *testing.T) {
 
 	err := c.SetMTU("utun0", 1500)
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 	if !strings.Contains(err.Error(), "ifconfig set mtu failed") {
 		t.Errorf("expected 'ifconfig set mtu failed' in error, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "mtu error output") {
-		t.Errorf("expected commander output in error, got: %v", err)
+		t.Errorf("expected runner output in error, got: %v", err)
 	}
 }
 
 // --- v6.LinkAddrAdd tests ---
 
 func TestV6LinkAddrAdd_ValidCIDR(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV6(m)
 
 	err := c.LinkAddrAdd("utun7", netip.MustParsePrefix("fd00::1/64"))
@@ -223,7 +223,7 @@ func TestV6LinkAddrAdd_ValidCIDR(t *testing.T) {
 }
 
 func TestV6LinkAddrAdd_FullAddress(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV6(m)
 
 	err := c.LinkAddrAdd("utun0", netip.MustParsePrefix("2001:db8::1/128"))
@@ -242,7 +242,7 @@ func TestV6LinkAddrAdd_FullAddress(t *testing.T) {
 }
 
 func TestV6LinkAddrAdd_NotIPv6(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV6(m)
 
 	err := c.LinkAddrAdd("utun0", netip.MustParsePrefix("10.0.0.1/24"))
@@ -253,12 +253,12 @@ func TestV6LinkAddrAdd_NotIPv6(t *testing.T) {
 		t.Errorf("expected 'not an IPv6 prefix' in error, got: %v", err)
 	}
 	if len(m.calls) != 0 {
-		t.Errorf("expected no commander calls, got %d", len(m.calls))
+		t.Errorf("expected no runner calls, got %d", len(m.calls))
 	}
 }
 
-func TestV6LinkAddrAdd_CommanderError(t *testing.T) {
-	m := &mockCommander{
+func TestV6LinkAddrAdd_RunnerError(t *testing.T) {
+	m := &mockRunner{
 		combinedOutputBytes: []byte("v6 output"),
 		combinedOutputErr:   errors.New("v6 ifconfig failed"),
 	}
@@ -266,7 +266,7 @@ func TestV6LinkAddrAdd_CommanderError(t *testing.T) {
 
 	err := c.LinkAddrAdd("utun0", netip.MustParsePrefix("fd00::1/64"))
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 	if !strings.Contains(err.Error(), "failed to assign IPv6") {
 		t.Errorf("expected 'failed to assign IPv6' in error, got: %v", err)
@@ -275,14 +275,14 @@ func TestV6LinkAddrAdd_CommanderError(t *testing.T) {
 		t.Errorf("expected underlying error message, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "v6 output") {
-		t.Errorf("expected commander output in error, got: %v", err)
+		t.Errorf("expected runner output in error, got: %v", err)
 	}
 }
 
 // --- v6.SetMTU tests ---
 
 func TestV6SetMTU_ValidMTU(t *testing.T) {
-	m := &mockCommander{}
+	m := &mockRunner{}
 	c := NewV6(m)
 
 	err := c.SetMTU("utun0", 1280)
@@ -310,8 +310,8 @@ func TestV6SetMTU_ValidMTU(t *testing.T) {
 	}
 }
 
-func TestV6SetMTU_CommanderError(t *testing.T) {
-	m := &mockCommander{
+func TestV6SetMTU_RunnerError(t *testing.T) {
+	m := &mockRunner{
 		combinedOutputBytes: []byte("v6 mtu err"),
 		combinedOutputErr:   errors.New("mtu v6 failed"),
 	}
@@ -319,13 +319,13 @@ func TestV6SetMTU_CommanderError(t *testing.T) {
 
 	err := c.SetMTU("utun0", 1500)
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 	if !strings.Contains(err.Error(), "ifconfig set mtu failed") {
 		t.Errorf("expected 'ifconfig set mtu failed' in error, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "v6 mtu err") {
-		t.Errorf("expected commander output in error, got: %v", err)
+		t.Errorf("expected runner output in error, got: %v", err)
 	}
 }
 
@@ -337,10 +337,10 @@ func TestSetMTU_BoundaryValues(t *testing.T) {
 	}
 	constructors := []struct {
 		name  string
-		newFn func(*mockCommander) mtuSetter
+		newFn func(*mockRunner) mtuSetter
 	}{
-		{"v4", func(m *mockCommander) mtuSetter { return NewV4(m) }},
-		{"v6", func(m *mockCommander) mtuSetter { return NewV6(m) }},
+		{"v4", func(m *mockRunner) mtuSetter { return NewV4(m) }},
+		{"v6", func(m *mockRunner) mtuSetter { return NewV6(m) }},
 	}
 
 	tests := []int{-1, 0, 1, 1500, 9000}
@@ -349,7 +349,7 @@ func TestSetMTU_BoundaryValues(t *testing.T) {
 		for _, mtu := range tests {
 			name := fmt.Sprintf("%s/mtu_%d", ctor.name, mtu)
 			t.Run(name, func(t *testing.T) {
-				m := &mockCommander{}
+				m := &mockRunner{}
 				c := ctor.newFn(m)
 
 				err := c.SetMTU("utun0", mtu)

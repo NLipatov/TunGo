@@ -54,6 +54,12 @@ func TestConfigurationsActiveAppliesDefaultsAndValidates(t *testing.T) {
 	if configuration.UDPSettings.MTU != settings.DefaultMTU {
 		t.Fatalf("MTU = %d, want %d", configuration.UDPSettings.MTU, settings.DefaultMTU)
 	}
+	if !slices.Equal(configuration.UDPSettings.DNSv4, settings.DefaultClientDNSv4Resolvers) {
+		t.Fatalf("DNSv4 = %v, want %v", configuration.UDPSettings.DNSv4, settings.DefaultClientDNSv4Resolvers)
+	}
+	if len(configuration.UDPSettings.DNSv6) != 0 {
+		t.Fatalf("DNSv6 = %v, want no IPv6 resolvers", configuration.UDPSettings.DNSv6)
+	}
 	active, err := configuration.ActiveSettings()
 	if err != nil {
 		t.Fatal(err)

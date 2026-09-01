@@ -6,27 +6,27 @@ import (
 	"testing"
 )
 
-type mockCommander struct {
+type mockRunner struct {
 	outputMap map[string][]byte
 	errMap    map[string]error
 }
 
-func (m *mockCommander) Run(_ string, _ ...string) error {
+func (m *mockRunner) Run(_ string, _ ...string) error {
 	panic("not implemented")
 }
 
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	cmd := strings.Join(append([]string{name}, args...), " ")
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
 	cmd := strings.Join(append([]string{name}, args...), " ")
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
 func newConfiguratorWithMocks(out map[string][]byte, errs map[string]error) *Configurator {
-	return New(&mockCommander{
+	return New(&mockRunner{
 		outputMap: out,
 		errMap:    errs,
 	})
@@ -80,7 +80,7 @@ func TestConfigurator_IPv6_Errors(t *testing.T) {
 	const v6CIDR = "fd00::/64"
 
 	errFail := errors.New("fail")
-	failAll := &mockCommander{
+	failAll := &mockRunner{
 		outputMap: map[string][]byte{},
 		errMap:    make(map[string]error),
 	}
@@ -97,7 +97,7 @@ func TestConfigurator_IPv6_Errors(t *testing.T) {
 	} {
 		failAll.errMap[cmd] = errFail
 	}
-	w := &Configurator{commander: failAll}
+	w := &Configurator{runner: failAll}
 
 	tests := []struct {
 		name string
@@ -128,7 +128,7 @@ func TestConfigurator_IPv4_Errors(t *testing.T) {
 	const cidr = "10.0.0.0/24"
 
 	errFail := errors.New("fail")
-	failAll := &mockCommander{
+	failAll := &mockRunner{
 		outputMap: map[string][]byte{},
 		errMap:    make(map[string]error),
 	}
@@ -144,7 +144,7 @@ func TestConfigurator_IPv4_Errors(t *testing.T) {
 	} {
 		failAll.errMap[cmd] = errFail
 	}
-	w := &Configurator{commander: failAll}
+	w := &Configurator{runner: failAll}
 
 	tests := []struct {
 		name string

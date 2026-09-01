@@ -68,17 +68,9 @@ func (v *V6) SetDNS(ifName string, dnsServers []string) error {
 		addrs = append(addrs, a)
 	}
 	if len(addrs) == 0 {
-		if err := luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), nil, nil); err != nil {
-			return err
-		}
-		_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET6))
-		return nil
+		return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), nil, nil)
 	}
-	if err = luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addrs, nil); err != nil {
-		return err
-	}
-	_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET6))
-	return nil
+	return luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addrs, nil)
 }
 
 func (v *V6) SetMTU(ifName string, mtu int) error {

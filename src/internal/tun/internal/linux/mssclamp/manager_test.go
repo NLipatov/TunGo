@@ -12,13 +12,13 @@ const (
 	nftProbe       = "nft --version"
 )
 
-type recordingCommander struct {
+type recordingRunner struct {
 	calls     []string
 	outputMap map[string][]byte
 	errMap    map[string]error
 }
 
-func newRecordingCommander(available ...string) *recordingCommander {
+func newRecordingRunner(available ...string) *recordingRunner {
 	errMap := map[string]error{
 		iptablesProbe:  errors.New("iptables unavailable"),
 		ip6tablesProbe: errors.New("ip6tables unavailable"),
@@ -34,29 +34,29 @@ func newRecordingCommander(available ...string) *recordingCommander {
 			delete(errMap, nftProbe)
 		}
 	}
-	return &recordingCommander{
+	return &recordingRunner{
 		outputMap: make(map[string][]byte),
 		errMap:    errMap,
 	}
 }
 
-func (m *recordingCommander) record(name string, args ...string) string {
+func (m *recordingRunner) record(name string, args ...string) string {
 	cmd := strings.Join(append([]string{name}, args...), " ")
 	m.calls = append(m.calls, cmd)
 	return cmd
 }
 
-func (m *recordingCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *recordingRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	cmd := m.record(name, args...)
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
-func (m *recordingCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *recordingRunner) Output(name string, args ...string) ([]byte, error) {
 	cmd := m.record(name, args...)
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
-func (m *recordingCommander) Run(name string, args ...string) error {
+func (m *recordingRunner) Run(name string, args ...string) error {
 	cmd := m.record(name, args...)
 	return m.errMap[cmd]
 }
@@ -103,7 +103,7 @@ func TestInstallPrefersIptablesWhenItCoversRequestedFamilies(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			cmd := newRecordingCommander(test.available...)
+			cmd := newRecordingRunner(test.available...)
 			if err := NewManager(cmd).Install("tun0", test.families); err != nil {
 				t.Fatalf("Install() error = %v", err)
 			}
@@ -149,7 +149,7 @@ func TestInstallFallsBackToNftWhenIptablesCannotCoverRequestedFamilies(t *testin
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			cmd := newRecordingCommander(test.available...)
+			cmd := newRecordingRunner(test.available...)
 			if err := NewManager(cmd).Install("tun0", test.families); err != nil {
 				t.Fatalf("Install() error = %v", err)
 			}
@@ -173,7 +173,7 @@ func TestInstallFallsBackToNftWhenIptablesCannotCoverRequestedFamilies(t *testin
 }
 
 func TestNftTablesAreScopedToTun(t *testing.T) {
-	cmd := newRecordingCommander("nft")
+	cmd := newRecordingRunner("nft")
 	manager := NewManager(cmd)
 	for _, tunName := range []string{"tun-0", "tun-1"} {
 		if err := manager.Install(tunName, Families{IPv4: true}); err != nil {
@@ -210,7 +210,7 @@ func TestNftTablesAreScopedToTun(t *testing.T) {
 }
 
 func TestInstallRejectsMissingFamilies(t *testing.T) {
-	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	cmd := newRecordingRunner("iptables", "ip6tables", "nft")
 	if err := NewManager(cmd).Install("tun0", Families{}); err == nil {
 		t.Fatal("Install() error = nil")
 	}
@@ -220,7 +220,7 @@ func TestInstallRejectsMissingFamilies(t *testing.T) {
 }
 
 func TestInstallFailsWhenNoBackendCoversRequestedFamilies(t *testing.T) {
-	cmd := newRecordingCommander("iptables")
+	cmd := newRecordingRunner("iptables")
 	err := NewManager(cmd).Install("tun0", Families{IPv4: true, IPv6: true})
 	if err == nil || !strings.Contains(err.Error(), "requested IP families") {
 		t.Fatalf("Install() error = %v", err)
@@ -228,7 +228,7 @@ func TestInstallFailsWhenNoBackendCoversRequestedFamilies(t *testing.T) {
 }
 
 func TestInstallReturnsIptablesRuleError(t *testing.T) {
-	cmd := newRecordingCommander("iptables")
+	cmd := newRecordingRunner("iptables")
 	failedCommand := "iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
 	cmd.errMap[failedCommand] = errors.New("permission denied")
 
@@ -239,7 +239,7 @@ func TestInstallReturnsIptablesRuleError(t *testing.T) {
 }
 
 func TestRemoveCleansEveryAvailableBackend(t *testing.T) {
-	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	cmd := newRecordingRunner("iptables", "ip6tables", "nft")
 	missingRule := "iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
 	cmd.errMap[missingRule] = errors.New("Bad rule (does a matching rule exist in that chain?)")
 	missingTable := "nft delete table inet " + nftTableName("tun0")
@@ -268,7 +268,7 @@ func TestRemoveCleansEveryAvailableBackend(t *testing.T) {
 }
 
 func TestRemoveReturnsRealErrorsAfterTryingEveryBackend(t *testing.T) {
-	cmd := newRecordingCommander("iptables", "ip6tables", "nft")
+	cmd := newRecordingRunner("iptables", "ip6tables", "nft")
 	v4Failure := "iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
 	v6Failure := "ip6tables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
 	nftFailure := "nft delete table inet " + nftTableName("tun0")
@@ -291,7 +291,7 @@ func TestRemoveReturnsRealErrorsAfterTryingEveryBackend(t *testing.T) {
 }
 
 func TestRemoveFailsWhenNoCleanupBackendIsAvailable(t *testing.T) {
-	cmd := newRecordingCommander()
+	cmd := newRecordingRunner()
 	if err := NewManager(cmd).Remove("tun0"); err == nil {
 		t.Fatal("Remove() error = nil")
 	}

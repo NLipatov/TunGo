@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/netip"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -88,6 +90,27 @@ type clienttunManagerMSSMock struct {
 	removeErr         error
 	installedFamilies *[]mssclamp.Families
 	removedTunNames   *[]string
+}
+
+type clienttunManagerDNSMock struct {
+	setInterfaces []string
+	setResolvers4 [][]string
+	setResolvers6 [][]string
+	revertCalls   int
+	setErr        error
+	revertErr     error
+}
+
+func (m *clienttunManagerDNSMock) Set(ifName string, ipv4Resolvers, ipv6Resolvers []string) error {
+	m.setInterfaces = append(m.setInterfaces, ifName)
+	m.setResolvers4 = append(m.setResolvers4, append([]string(nil), ipv4Resolvers...))
+	m.setResolvers6 = append(m.setResolvers6, append([]string(nil), ipv6Resolvers...))
+	return m.setErr
+}
+
+func (m *clienttunManagerDNSMock) Revert() error {
+	m.revertCalls++
+	return m.revertErr
 }
 
 type clientTunMock struct {
@@ -189,6 +212,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.0/30"),
 				IPv4:       mustAddr("10.0.0.2"),
 				Server:     mustHost("198.51.100.1"),
+				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
 			},
 			MTU:      1400,
 			Protocol: settings.UDP,
@@ -199,6 +223,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.4/30"),
 				IPv4:       mustAddr("10.0.0.6"),
 				Server:     mustHost("203.0.113.1"),
+				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
 			},
 			MTU:      1400,
 			Protocol: settings.TCP,
@@ -209,6 +234,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.8/30"),
 				IPv4:       mustAddr("10.0.0.10"),
 				Server:     mustHost("203.0.113.2"),
+				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
 			},
 			MTU:      1250,
 			Protocol: settings.WS,
@@ -223,6 +249,7 @@ func newMgr(
 	return &Manager{
 		configuration: conf,
 		settings:      profiles[proto],
+		dns:           &clienttunManagerDNSMock{},
 		ip:            ipMock,
 		ioctl:         ioctlMock,
 		mss:           mssMock,
@@ -238,10 +265,10 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 		t.Fatalf("RouteDel() targets = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 	cleanupSteps := []string{"ldel;", "rdel;"}
-	if hasIPv4(m.settings) {
+	if m.settings.HasIPv4() {
 		cleanupSteps = append(cleanupSteps, "splitdel;")
 	}
-	if hasIPv6(m.settings) {
+	if m.settings.HasIPv6() {
 		cleanupSteps = append(cleanupSteps, "splitdel6;")
 	}
 	for _, cleanupStep := range cleanupSteps {
@@ -252,6 +279,12 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 }
 
 func setLinuxActiveSettings(m *Manager, active settings.Settings) {
+	if active.IPv4Subnet.IsValid() && len(active.DNSv4) == 0 {
+		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+	}
+	if active.IPv6Subnet.IsValid() && len(active.DNSv6) == 0 {
+		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+	}
 	m.settings = active
 	switch active.Protocol {
 	case settings.TCP:
@@ -289,6 +322,65 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	}
 	if len(installedFamilies) != 1 || installedFamilies[0] != (mssclamp.Families{IPv4: true}) {
 		t.Fatalf("MSS families = %v, want IPv4 only", installedFamilies)
+	}
+}
+
+func TestOpenTunnelConfiguresAndRestoresDNS(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	dnsMock := &clienttunManagerDNSMock{}
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	m.dns = dnsMock
+
+	if _, err := m.OpenTunnel(testServerAddrV4); err != nil {
+		t.Fatalf("OpenTunnel() error = %v", err)
+	}
+	if !reflect.DeepEqual(dnsMock.setInterfaces, []string{"tun0"}) ||
+		!reflect.DeepEqual(dnsMock.setResolvers4, [][]string{settings.DefaultClientDNSv4Resolvers}) ||
+		!reflect.DeepEqual(dnsMock.setResolvers6, [][]string{nil}) {
+		t.Fatalf(
+			"DNS setup = interfaces %v IPv4 %v IPv6 %v",
+			dnsMock.setInterfaces,
+			dnsMock.setResolvers4,
+			dnsMock.setResolvers6,
+		)
+	}
+
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if dnsMock.revertCalls != 1 {
+		t.Fatalf("DNS Revert() calls = %d, want 1", dnsMock.revertCalls)
+	}
+}
+
+func TestOpenTunnelContinuesWhenDNSSetupFails(t *testing.T) {
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	dnsMock := &clienttunManagerDNSMock{setErr: errors.New("DNS failed")}
+	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	m.dns = dnsMock
+
+	dev, err := m.OpenTunnel(testServerAddrV4)
+	if err != nil || dev == nil {
+		t.Fatalf("OpenTunnel() = %v, %v; want working degraded tunnel", dev, err)
+	}
+	if dnsMock.revertCalls != 0 || m.tun == nil {
+		t.Fatalf("degraded state: Revert calls=%d TUN=%v", dnsMock.revertCalls, m.tun)
+	}
+	if !strings.Contains(logs.String(), "failed to configure DNS") ||
+		!strings.Contains(logs.String(), "DNS failed") {
+		t.Fatalf("DNS degradation log = %q", logs.String())
+	}
+
+	if err := m.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if dnsMock.revertCalls != 1 {
+		t.Fatalf("DNS Revert() calls = %d, want 1", dnsMock.revertCalls)
 	}
 }
 
@@ -521,6 +613,7 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// Enable IPv6 on the active protocol's settings.
 	mgr.settings.IPv6 = mustAddr("fd00::2")
 	mgr.settings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.settings.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
 	mgr.configuration.UDPSettings = mgr.settings
 
 	_, err := mgr.OpenTunnel(testServerAddrV6)
@@ -718,6 +811,37 @@ func TestCloseTunnelReturnsTunCloseErrorAndClearsTun(t *testing.T) {
 	}
 	if mgr.tun != nil {
 		t.Fatal("CloseTunnel() retained TUN after Close returned an error")
+	}
+}
+
+func TestCloseTunnelRetriesDNSRestore(t *testing.T) {
+	dnsMock := &clienttunManagerDNSMock{revertErr: errors.New("restore failed")}
+	mgr := newMgr(
+		settings.UDP,
+		&clienttunManagerIPMock{},
+		clienttunManagerIOCTLMock{},
+		clienttunManagerMSSMock{},
+	)
+	mgr.dns = dnsMock
+	tun := &clientTunMock{}
+	mgr.tun = tun
+
+	if err := mgr.CloseTunnel(); err == nil || !strings.Contains(err.Error(), "restore failed") {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if mgr.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
+		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", mgr.tun, tun.closeCalls, dnsMock.revertCalls)
+	}
+
+	dnsMock.revertErr = nil
+	if err := mgr.CloseTunnel(); err != nil {
+		t.Fatalf("retry CloseTunnel() error = %v", err)
+	}
+	if dnsMock.revertCalls != 2 {
+		t.Fatalf("DNS Revert() calls = %d, want 2", dnsMock.revertCalls)
+	}
+	if tun.closeCalls != 1 {
+		t.Fatalf("TUN close calls = %d, want 1", tun.closeCalls)
 	}
 }
 

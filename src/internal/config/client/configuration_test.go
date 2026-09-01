@@ -233,3 +233,73 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		})
 	}
 }
+
+func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
+	tests := []struct {
+		name     string
+		network  settings.Network
+		wantDNS4 []string
+		wantDNS6 []string
+	}{
+		{
+			name:     "IPv4",
+			network:  settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
+			wantDNS4: settings.DefaultClientDNSv4Resolvers,
+		},
+		{
+			name:     "IPv6",
+			network:  settings.Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
+			wantDNS6: settings.DefaultClientDNSv6Resolvers,
+		},
+		{
+			name: "dual stack preserves explicit DNS",
+			network: settings.Network{
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+				DNSv4:      []string{"9.9.9.9"},
+				DNSv6:      []string{"2620:fe::9"},
+			},
+			wantDNS4: []string{"9.9.9.9"},
+			wantDNS6: []string{"2620:fe::9"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := Configuration{
+				Protocol: settings.UDP,
+				UDPSettings: settings.Settings{
+					Network: test.network,
+				},
+			}
+			cfg.applyDefaults()
+
+			if !reflect.DeepEqual(cfg.UDPSettings.DNSv4, test.wantDNS4) {
+				t.Fatalf("DNSv4 = %v, want %v", cfg.UDPSettings.DNSv4, test.wantDNS4)
+			}
+			if !reflect.DeepEqual(cfg.UDPSettings.DNSv6, test.wantDNS6) {
+				t.Fatalf("DNSv6 = %v, want %v", cfg.UDPSettings.DNSv6, test.wantDNS6)
+			}
+		})
+	}
+}
+
+func TestConfiguration_ApplyDefaultsCopiesDNSDefaults(t *testing.T) {
+	wantDNS4 := append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+	wantDNS6 := append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+	cfg := Configuration{
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{Network: settings.Network{
+			IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+		}},
+	}
+	cfg.applyDefaults()
+
+	cfg.UDPSettings.DNSv4[0] = "9.9.9.9"
+	cfg.UDPSettings.DNSv6[0] = "2620:fe::9"
+	if !reflect.DeepEqual(settings.DefaultClientDNSv4Resolvers, wantDNS4) ||
+		!reflect.DeepEqual(settings.DefaultClientDNSv6Resolvers, wantDNS6) {
+		t.Fatal("applyDefaults shared DNS backing arrays with global defaults")
+	}
+}

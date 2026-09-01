@@ -22,18 +22,23 @@ type Control interface {
 	Status() (UnitStatus, error)
 }
 
-type UnitInstaller struct {
-	commander command.Runner
-	config    Config
+type runner interface {
+	CombinedOutput(name string, args ...string) ([]byte, error)
+	Run(name string, args ...string) error
 }
 
-func NewUnitInstaller(commander command.Runner) *UnitInstaller {
-	if commander == nil {
-		commander = command.New()
+type UnitInstaller struct {
+	runner runner
+	config Config
+}
+
+func NewUnitInstaller(runner runner) *UnitInstaller {
+	if runner == nil {
+		runner = command.New()
 	}
 	return &UnitInstaller{
-		commander: commander,
-		config:    DefaultConfig(),
+		runner: runner,
+		config: DefaultConfig(),
 	}
 }
 
@@ -94,10 +99,10 @@ func (i *UnitInstaller) installUnit(args []string) (string, error) {
 	if err := os.WriteFile(i.config.UnitPath, []byte(UnitFileContent(i.config.BinaryPath, args)), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", i.config.UnitPath, err)
 	}
-	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
+	if err := i.runner.Run("systemctl", "daemon-reload"); err != nil {
 		return "", i.rollbackInstallUnit(fmt.Errorf("failed to run systemctl daemon-reload: %w", err))
 	}
-	if err := i.commander.Run("systemctl", "enable", i.config.UnitName); err != nil {
+	if err := i.runner.Run("systemctl", "enable", i.config.UnitName); err != nil {
 		return "", i.rollbackInstallUnit(fmt.Errorf("failed to run systemctl enable %s: %w", i.config.UnitName, err))
 	}
 	return i.config.UnitPath, nil
@@ -108,7 +113,7 @@ func (i *UnitInstaller) rollbackInstallUnit(installErr error) error {
 	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback %s: %w", i.config.UnitPath, err))
 	}
-	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
+	if err := i.runner.Run("systemctl", "daemon-reload"); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback systemctl daemon-reload: %w", err))
 	}
 	if len(rollbackErrs) == 0 {
@@ -123,16 +128,16 @@ func (i *UnitInstaller) RemoveUnit() error {
 		return fmt.Errorf("systemd is not available")
 	}
 
-	if err := i.commander.Run("systemctl", "stop", i.config.UnitName); err != nil && !IsSystemdNotActiveError(err) {
+	if err := i.runner.Run("systemctl", "stop", i.config.UnitName); err != nil && !IsSystemdNotActiveError(err) {
 		return fmt.Errorf("failed to run systemctl stop %s: %w", i.config.UnitName, err)
 	}
-	if err := i.commander.Run("systemctl", "disable", i.config.UnitName); err != nil && !IsSystemdDisabledError(err) {
+	if err := i.runner.Run("systemctl", "disable", i.config.UnitName); err != nil && !IsSystemdDisabledError(err) {
 		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
 	}
 	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to remove %s: %w", i.config.UnitPath, err)
 	}
-	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
+	if err := i.runner.Run("systemctl", "daemon-reload"); err != nil {
 		return fmt.Errorf("failed to run systemctl daemon-reload: %w", err)
 	}
 	return nil
@@ -142,7 +147,7 @@ func (i *UnitInstaller) IsUnitActive() (bool, error) {
 	if !i.Available() {
 		return false, fmt.Errorf("systemd is not available")
 	}
-	activeOutput, err := i.commander.CombinedOutput("systemctl", "is-active", i.config.UnitName)
+	activeOutput, err := i.runner.CombinedOutput("systemctl", "is-active", i.config.UnitName)
 	if err != nil {
 		if IsSystemdNotActiveError(err) {
 			return false, nil
@@ -156,7 +161,7 @@ func (i *UnitInstaller) StopUnit() error {
 	if !i.Available() {
 		return fmt.Errorf("systemd is not available")
 	}
-	if err := i.commander.Run("systemctl", "stop", i.config.UnitName); err != nil {
+	if err := i.runner.Run("systemctl", "stop", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl stop %s: %w", i.config.UnitName, err)
 	}
 	return nil
@@ -166,7 +171,7 @@ func (i *UnitInstaller) StartUnit() error {
 	if !i.Available() {
 		return fmt.Errorf("systemd is not available")
 	}
-	if err := i.commander.Run("systemctl", "start", i.config.UnitName); err != nil {
+	if err := i.runner.Run("systemctl", "start", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl start %s: %w", i.config.UnitName, err)
 	}
 	return nil
@@ -176,7 +181,7 @@ func (i *UnitInstaller) EnableUnit() error {
 	if !i.Available() {
 		return fmt.Errorf("systemd is not available")
 	}
-	if err := i.commander.Run("systemctl", "enable", i.config.UnitName); err != nil {
+	if err := i.runner.Run("systemctl", "enable", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl enable %s: %w", i.config.UnitName, err)
 	}
 	return nil
@@ -186,7 +191,7 @@ func (i *UnitInstaller) DisableUnit() error {
 	if !i.Available() {
 		return fmt.Errorf("systemd is not available")
 	}
-	if err := i.commander.Run("systemctl", "disable", i.config.UnitName); err != nil {
+	if err := i.runner.Run("systemctl", "disable", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
 	}
 	return nil
@@ -209,7 +214,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		FragmentPath:   "unknown",
 	}
 
-	enabledOutput, err := i.commander.CombinedOutput("systemctl", "is-enabled", i.config.UnitName)
+	enabledOutput, err := i.runner.CombinedOutput("systemctl", "is-enabled", i.config.UnitName)
 	if err != nil {
 		if !IsSystemdDisabledError(err) {
 			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-enabled %s: %w", i.config.UnitName, err)
@@ -217,7 +222,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	}
 	status.UnitFileState = ParseUnitFileState(enabledOutput, err)
 
-	activeOutput, activeErr := i.commander.CombinedOutput("systemctl", "is-active", i.config.UnitName)
+	activeOutput, activeErr := i.runner.CombinedOutput("systemctl", "is-active", i.config.UnitName)
 	if activeErr != nil {
 		if !IsSystemdNotActiveError(activeErr) {
 			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-active %s: %w", i.config.UnitName, activeErr)
@@ -225,7 +230,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	}
 	status.ActiveState = ParseUnitActiveState(activeOutput, activeErr)
 
-	showOutput, showErr := i.commander.CombinedOutput(
+	showOutput, showErr := i.runner.CombinedOutput(
 		"systemctl",
 		"show",
 		i.config.UnitName,

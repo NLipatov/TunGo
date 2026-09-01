@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-	"tungo/internal/platform/command"
+
 	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sync/errgroup"
@@ -19,12 +19,16 @@ const (
 	linkLocalPrefixV6   = "fe80:"
 )
 
-type V6 struct {
-	commander command.Runner
+type v6Runner interface {
+	CombinedOutput(name string, args ...string) ([]byte, error)
 }
 
-func NewV6(commander command.Runner) *V6 {
-	return &V6{commander: commander}
+type V6 struct {
+	runner v6Runner
+}
+
+func NewV6(runner v6Runner) *V6 {
+	return &V6{runner: runner}
 }
 
 // Add installs a host route to destIP using its current gateway or interface.
@@ -74,7 +78,7 @@ func (v *V6) isLoop(gateway, iFace string) bool {
 }
 
 func (v *V6) parseRoute(target string) (gw, iFace string, err error) {
-	out, err := v.commander.CombinedOutput("route", "-n", "-inet6", "get", target)
+	out, err := v.runner.CombinedOutput("route", "-n", "-inet6", "get", target)
 	if err != nil {
 		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
 	}
@@ -94,7 +98,7 @@ func (v *V6) parseRoute(target string) (gw, iFace string, err error) {
 }
 
 func (v *V6) Del(destIP string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", "-inet6", destIP)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "delete", "-inet6", destIP)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
 		return fmt.Errorf("route delete %s failed: %v (%s)", destIP, err, out)
 	}
@@ -105,12 +109,12 @@ func (v *V6) AddSplit(dev string) error {
 	_ = v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev)
 	_ = v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev)
 
-	if out, err := v.commander.CombinedOutput(
+	if out, err := v.runner.CombinedOutput(
 		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", dev,
 	); err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6LowerHalf, err, out)
 	}
-	if out, err := v.commander.CombinedOutput(
+	if out, err := v.runner.CombinedOutput(
 		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", dev,
 	); err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6UpperHalf, err, out)
@@ -126,7 +130,7 @@ func (v *V6) DelSplit(dev string) error {
 }
 
 func (v *V6) addOnLink(ip, iface string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, "-interface", iface)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, "-interface", iface)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iface, err, out)
 	}
@@ -134,7 +138,7 @@ func (v *V6) addOnLink(ip, iface string) error {
 }
 
 func (v *V6) addViaGateway(ip, gw string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
 	}
@@ -143,7 +147,7 @@ func (v *V6) addViaGateway(ip, gw string) error {
 
 func (v *V6) runDeleteSplit(args ...string) error {
 	full := append([]string{"-q", "-n", "delete"}, args...)
-	out, err := v.commander.CombinedOutput("route", full...)
+	out, err := v.runner.CombinedOutput("route", full...)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
 		return fmt.Errorf("route delete %v failed: %v (%s)", args, err, out)
 	}
