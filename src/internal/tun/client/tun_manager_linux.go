@@ -57,11 +57,6 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	}
 	serverAddr = serverAddr.Unmap()
 
-	if err := m.configureTunnel(serverAddr); err != nil {
-		openErr := fmt.Errorf("failed to configure client: %w", err)
-		return nil, errors.Join(openErr, m.CloseTunnel())
-	}
-
 	tunFile, openTunErr := m.ioctl.CreateTunInterface(m.settings.TunName)
 	if openTunErr != nil {
 		openErr := fmt.Errorf("failed to open TUN interface: %w", openTunErr)
@@ -74,6 +69,12 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 		return nil, errors.Join(openErr, tunFile.Close(), m.CloseTunnel())
 	}
 	m.tun = tun
+
+	if err := m.configureTunnel(serverAddr); err != nil {
+		openErr := fmt.Errorf("failed to configure client: %w", err)
+		return nil, errors.Join(openErr, m.CloseTunnel())
+	}
+
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.settings.TunName, "err", err)
 	}
@@ -96,12 +97,7 @@ func (m *Manager) setDNS() error {
 }
 
 func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
-	err := m.ip.TunTapAddDevTun(m.settings.TunName)
-	if err != nil {
-		return err
-	}
-
-	err = m.ip.LinkSetDevUp(m.settings.TunName)
+	err := m.ip.LinkSetDevUp(m.settings.TunName)
 	if err != nil {
 		return err
 	}

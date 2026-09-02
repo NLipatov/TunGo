@@ -15,11 +15,19 @@ import (
 // mockCommander implements Commander for testing.
 type mockCommander struct {
 	// override behavior per call
-	IoctlFn func(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno)
+	IoctlFn    func(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno)
+	IoctlIntFn func(fd uintptr, request uintptr, value int) unix.Errno
 }
 
 func (m *mockCommander) Ioctl(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno) {
 	return m.IoctlFn(fd, request, ifr)
+}
+
+func (m *mockCommander) IoctlInt(fd uintptr, request uintptr, value int) unix.Errno {
+	if m.IoctlIntFn == nil {
+		return 0
+	}
+	return m.IoctlIntFn(fd, request, value)
 }
 
 func TestDetectTunNameFromFd_Success(t *testing.T) {
@@ -69,6 +77,7 @@ func TestDetectTunNameFromFd_Error(t *testing.T) {
 }
 
 func TestCreateTunInterface_Success(t *testing.T) {
+	persistenceDisabled := false
 	mock := &mockCommander{
 		IoctlFn: func(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno) {
 			// ensure name and flags were set on req
@@ -77,6 +86,13 @@ func TestCreateTunInterface_Success(t *testing.T) {
 				t.Errorf("expected ioctl to receive a Name starting 'tunTest', got %q", name)
 			}
 			return 0, 0, 0
+		},
+		IoctlIntFn: func(_ uintptr, request uintptr, value int) unix.Errno {
+			if request != uintptr(unix.TUNSETPERSIST) || value != 0 {
+				t.Errorf("IoctlInt() = request %#x, value %d; want TUNSETPERSIST, 0", request, value)
+			}
+			persistenceDisabled = true
+			return 0
 		},
 	}
 	w := New(mock, os.DevNull)
@@ -87,6 +103,9 @@ func TestCreateTunInterface_Success(t *testing.T) {
 	}
 	if f == nil {
 		t.Fatal("expected non-nil *os.File")
+	}
+	if !persistenceDisabled {
+		t.Fatal("CreateTunInterface() did not disable TUN persistence")
 	}
 	_ = f.Close()
 }
@@ -123,6 +142,29 @@ func TestCreateTunInterface_IoctlError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ioctl TUNSETIFF failed") {
 		t.Errorf("error message %q does not mention TUNSETIFF", err.Error())
+	}
+	if f != nil {
+		t.Errorf("expected returned file to be nil on error, got %v", f)
+	}
+}
+
+func TestCreateTunInterface_PersistenceError(t *testing.T) {
+	mock := &mockCommander{
+		IoctlFn: func(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno) {
+			return 0, 0, 0
+		},
+		IoctlIntFn: func(fd uintptr, request uintptr, value int) unix.Errno {
+			return unix.EPERM
+		},
+	}
+	w := New(mock, os.DevNull)
+
+	f, err := w.CreateTunInterface("tunPersistent")
+	if err == nil {
+		t.Fatal("expected TUNSETPERSIST failure")
+	}
+	if !strings.Contains(err.Error(), "ioctl TUNSETPERSIST failed") {
+		t.Errorf("error message %q does not mention TUNSETPERSIST", err.Error())
 	}
 	if f != nil {
 		t.Errorf("expected returned file to be nil on error, got %v", f)

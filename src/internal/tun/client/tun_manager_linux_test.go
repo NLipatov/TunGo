@@ -80,8 +80,9 @@ func (m *clienttunManagerIPGetErr) RouteGet(netip.Addr) (string, error) {
 
 // clienttunManagerIOCTLMock returns a pollable file or an injected error.
 type clienttunManagerIOCTLMock struct {
-	openErr error
-	file    *os.File
+	openErr     error
+	file        *os.File
+	createCalls *int
 }
 
 // clienttunManagerMSSMock simulates mssclamp.Contract.
@@ -164,6 +165,9 @@ func (m clienttunManagerMSSMock) Remove(tunName string) error {
 
 func (clienttunManagerIOCTLMock) DetectTunNameFromFd(*os.File) (string, error) { return "tun0", nil }
 func (m clienttunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) {
+	if m.createCalls != nil {
+		(*m.createCalls)++
+	}
 	if m.openErr != nil {
 		return nil, m.openErr
 	}
@@ -316,7 +320,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	}
 	defer func() { _ = m.CloseTunnel() }()
 
-	want := "add;up;addr;rreplacevia;splitdef;mtu;"
+	want := "up;addr;rreplacevia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -430,7 +434,7 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	}
 	defer func() { _ = m.CloseTunnel() }()
 
-	want := "add;up;addr;rreplace;splitdef;mtu;"
+	want := "up;addr;rreplace;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -493,7 +497,12 @@ func TestOpenTunnel_OpenTunError(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertOpenTunnelRolledBack(t, m, ipMock)
+	if strings.Contains(ipMock.log.String(), "up;") || len(ipMock.routeGetTargets) != 0 {
+		t.Fatalf("TUN configuration started before opening the device: log=%q routes=%v", ipMock.log.String(), ipMock.routeGetTargets)
+	}
+	if len(ipMock.routeDelTargets) != 0 || m.pinnedServerAddr.IsValid() {
+		t.Fatalf("open failure changed pinned route state: pinned=%s deleted=%v", m.pinnedServerAddr, ipMock.routeDelTargets)
+	}
 }
 
 func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
@@ -515,7 +524,30 @@ func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
 	if _, err := tunFile.Stat(); err == nil {
 		t.Fatal("OpenTunnel() left TUN file open after epoll initialization error")
 	}
-	assertOpenTunnelRolledBack(t, m, ipMock)
+	if strings.Contains(ipMock.log.String(), "up;") || len(ipMock.routeGetTargets) != 0 {
+		t.Fatalf("TUN configuration started before initializing I/O: log=%q routes=%v", ipMock.log.String(), ipMock.routeGetTargets)
+	}
+	if len(ipMock.routeDelTargets) != 0 || m.pinnedServerAddr.IsValid() {
+		t.Fatalf("epoll failure changed pinned route state: pinned=%s deleted=%v", m.pinnedServerAddr, ipMock.routeDelTargets)
+	}
+}
+
+func TestOpenTunnelCreatesTunBeforeConfiguringLink(t *testing.T) {
+	ipMock := &clienttunManagerIPMock{failStep: "up"}
+	createCalls := 0
+	m := newMgr(
+		settings.UDP,
+		ipMock,
+		clienttunManagerIOCTLMock{createCalls: &createCalls},
+		clienttunManagerMSSMock{},
+	)
+
+	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+		t.Fatal("expected link configuration error")
+	}
+	if createCalls != 1 {
+		t.Fatalf("CreateTunInterface() calls = %d, want 1 before link configuration", createCalls)
+	}
 }
 
 func TestConfigureTUNErrorRollback(t *testing.T) {
@@ -527,12 +559,12 @@ func TestConfigureTUNErrorRollback(t *testing.T) {
 		{
 			name:       "on-link server",
 			routeReply: "198.51.100.1 dev eth0",
-			steps:      []string{"add", "up", "addr", "rreplace", "splitdef", "mtu"},
+			steps:      []string{"up", "addr", "rreplace", "splitdef", "mtu"},
 		},
 		{
 			name:       "server via gateway",
 			routeReply: "198.51.100.1 via 192.0.2.1 dev eth0",
-			steps:      []string{"add", "up", "addr", "rreplacevia", "splitdef", "mtu"},
+			steps:      []string{"up", "addr", "rreplacevia", "splitdef", "mtu"},
 		},
 	}
 
@@ -660,7 +692,7 @@ func TestOpenTunnel_IPv6Only_FullPath(t *testing.T) {
 	}
 	defer func() { _ = mgr.CloseTunnel() }()
 
-	want := "add;up;addr;rreplacevia;splitdef6;mtu;"
+	want := "up;addr;rreplacevia;splitdef6;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call order = %q, want %q", got, want)
 	}

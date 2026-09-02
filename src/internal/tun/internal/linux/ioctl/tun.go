@@ -60,6 +60,9 @@ func (w *Tun) CreateTunInterface(name string) (*os.File, error) {
 	if errno != 0 {
 		return nil, fmt.Errorf("ioctl TUNSETIFF failed for %s: %v", name, errno)
 	}
+	if errno := w.commander.IoctlInt(tun.Fd(), uintptr(unix.TUNSETPERSIST), 0); errno != 0 {
+		return nil, fmt.Errorf("ioctl TUNSETPERSIST failed for %s: %v", name, errno)
+	}
 
 	shouldCloseTun = false
 	return tun, nil
