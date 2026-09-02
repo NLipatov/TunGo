@@ -23,8 +23,8 @@ func newPair(tb testing.TB) (*clientConn, *net.UDPConn) {
 		tb.Fatalf("dial: %v", err)
 	}
 
-	// 1-second deadlines for tests
-	ad := NewClientConn(client, time.Second, time.Second)
+	// Keep writes bounded; reads are interrupted by closing the connection.
+	ad := NewClientConn(client, time.Second)
 	return ad.(*clientConn), server
 }
 
@@ -88,23 +88,6 @@ func TestWriteAfterClose(t *testing.T) {
 	}
 }
 
-func TestReadTimeout(t *testing.T) {
-	ad, _ := newPair(t)
-	defer func(ad *clientConn) {
-		_ = ad.Close()
-	}(ad)
-
-	ad.readDeadline = 5 * time.Millisecond
-
-	start := time.Now()
-	if _, err := ad.Read(make([]byte, 1)); err == nil {
-		t.Fatalf("expected timeout")
-	}
-	if time.Since(start) < 5*time.Millisecond {
-		t.Fatalf("deadline not respected")
-	}
-}
-
 func TestReadFastPath(t *testing.T) {
 	ad, srv := newPair(t)
 	defer func() { _ = ad.Close() }()
@@ -118,17 +101,6 @@ func TestReadFastPath(t *testing.T) {
 	buffer := make([]byte, len(ad.buf))
 	if n, err := ad.Read(buffer); err != nil || string(buffer[:n]) != string(msg) {
 		t.Fatalf("Read = (%q, %v), want (%q, nil)", buffer[:n], err, msg)
-	}
-}
-
-func TestReadFastPathTimeout(t *testing.T) {
-	ad, srv := newPair(t)
-	defer func() { _ = ad.Close() }()
-	defer func() { _ = srv.Close() }()
-	ad.readDeadline = 5 * time.Millisecond
-
-	if _, err := ad.Read(make([]byte, len(ad.buf))); err == nil {
-		t.Fatal("expected timeout")
 	}
 }
 

@@ -32,6 +32,11 @@ type Client struct {
 	transport *transportHandler
 }
 
+const (
+	livenessCheckInterval = time.Second
+	writeDeadline         = time.Second
+)
+
 // New builds the complete client UDP packet loop.
 func New(
 	ctx context.Context,
@@ -46,8 +51,7 @@ func New(
 		return nil, err
 	}
 
-	const deadline = time.Second
-	udpTransport := udptransport.NewClientConn(udpConn, deadline, deadline)
+	udpTransport := udptransport.NewClientConn(udpConn, writeDeadline)
 	outbound := newPacketSender(udpTransport, crypto)
 	tunHandler := newTunHandler(ctx, tun, outbound, rekey, allowedSources)
 	transportHandler := newTransportHandler(ctx, udpTransport, tun, crypto, rekey, outbound)
@@ -66,11 +70,20 @@ func (c *Client) Run() error {
 	go func() { errCh <- c.tun.HandleTun() }()
 	go func() { errCh <- c.transport.HandleTransport() }()
 
-	select {
-	case <-c.ctx.Done():
-		return c.ctx.Err()
-	case err := <-errCh:
-		return err
+	t := time.NewTicker(livenessCheckInterval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		case err := <-errCh:
+			return err
+		case <-t.C:
+			if err := c.transport.checkLiveness(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
