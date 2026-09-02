@@ -127,7 +127,8 @@ func (c *Configurator) detectBackend() (backend, error) {
 }
 
 func (c *Configurator) detectLinkBackend(target string) (backend, error) {
-	if strings.HasSuffix(target, "/systemd/resolve/stub-resolv.conf") {
+	if strings.HasSuffix(target, "/systemd/resolve/stub-resolv.conf") ||
+		strings.HasSuffix(target, "/systemd/resolve/resolv.conf") {
 		if err := c.run("resolvectl", "status"); err != nil {
 			return unknown, fmt.Errorf("/etc/resolv.conf points to systemd-resolved, but resolvectl is unavailable: %w", err)
 		}

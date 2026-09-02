@@ -74,31 +74,28 @@ func TestConfiguratorIgnoresUnknownResolvConfOwner(t *testing.T) {
 	}
 }
 
-func TestConfiguratorIgnoresSystemdResolvedUplink(t *testing.T) {
-	runner := &runnerMock{}
-	configurator := New(runner)
+func TestConfiguratorDetectsSystemdResolvedLinks(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		target string
+	}{
+		{name: "stub", target: "../run/systemd/resolve/stub-resolv.conf"},
+		{name: "uplink", target: "/run/systemd/resolve/resolv.conf"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &runnerMock{}
+			configurator := New(runner)
 
-	selected, err := configurator.detectLinkBackend("/run/systemd/resolve/resolv.conf")
-	if selected != unknown || err != nil {
-		t.Fatalf("detectLinkBackend() = %d, %v; want no backend", selected, err)
-	}
-	if len(runner.calls) != 0 {
-		t.Fatalf("commands = %v, want no backend probes", runner.calls)
-	}
-}
+			selected, err := configurator.detectLinkBackend(test.target)
+			if selected != resolved || err != nil {
+				t.Fatalf("detectLinkBackend() = %d, %v; want %d, nil", selected, err, resolved)
+			}
 
-func TestConfiguratorDetectsSystemdResolvedStubLink(t *testing.T) {
-	runner := &runnerMock{}
-	configurator := New(runner)
-
-	selected, err := configurator.detectLinkBackend("../run/systemd/resolve/stub-resolv.conf")
-	if selected != resolved || err != nil {
-		t.Fatalf("detectLinkBackend() = %d, %v; want %d, nil", selected, err, resolved)
-	}
-
-	want := []recordedCommand{{name: "resolvectl", args: []string{"status"}}}
-	if !reflect.DeepEqual(runner.calls, want) {
-		t.Fatalf("commands = %#v, want %#v", runner.calls, want)
+			want := []recordedCommand{{name: "resolvectl", args: []string{"status"}}}
+			if !reflect.DeepEqual(runner.calls, want) {
+				t.Fatalf("commands = %#v, want %#v", runner.calls, want)
+			}
+		})
 	}
 }
 
