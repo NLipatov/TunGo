@@ -61,6 +61,18 @@ func TestConfiguratorReportsUnavailableResolvedStubOwner(t *testing.T) {
 	}
 }
 
+func TestConfiguratorReportsUnavailableResolvconfOwner(t *testing.T) {
+	runner := &runnerMock{errorsAt: map[int]error{1: exec.ErrNotFound}}
+	configurator := New(runner)
+
+	selected, err := configurator.detectLinkBackend("/run/resolvconf/resolv.conf")
+	if selected != unknown || err == nil ||
+		!strings.Contains(err.Error(), "/etc/resolv.conf points to resolvconf") ||
+		!strings.Contains(err.Error(), "resolvconf") {
+		t.Fatalf("detectLinkBackend() = %d, %v; want unavailable resolvconf diagnostic", selected, err)
+	}
+}
+
 func TestConfiguratorIgnoresUnknownResolvConfOwner(t *testing.T) {
 	runner := &runnerMock{}
 	configurator := New(runner)
@@ -159,6 +171,17 @@ func TestConfiguratorReportsUnavailableResolvedStub(t *testing.T) {
 	}
 }
 
+func TestConfiguratorIgnoresNonResolvedStub(t *testing.T) {
+	runner := &runnerMock{}
+	selected, err := New(runner).detectStubBackend("nameserver 192.0.2.53\n")
+	if selected != unknown || err != nil {
+		t.Fatalf("detectStubBackend() = %d, %v; want no backend", selected, err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("commands = %v, want no backend probe", runner.calls)
+	}
+}
+
 func TestConfiguratorResolvconfReusesOwnedKeyAfterCrash(t *testing.T) {
 	runner := &runnerMock{}
 	newConfigurator := func() *Configurator {
@@ -212,18 +235,87 @@ func TestConfiguratorRevertReportsStaleResolvconfCleanupFailure(t *testing.T) {
 }
 
 func TestConfiguratorRollsBackFailedResolvedSetup(t *testing.T) {
-	runner := &runnerMock{failAt: 2}
+	tests := []struct {
+		name         string
+		failAt       int
+		wantError    string
+		wantRollback bool
+	}{
+		{name: "routing domain", failAt: 1, wantError: "set DNS routing domain"},
+		{name: "default route", failAt: 2, wantError: "make tun0 the default DNS route", wantRollback: true},
+		{name: "DNS servers", failAt: 3, wantError: "set DNS servers", wantRollback: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &runnerMock{failAt: test.failAt}
+			configurator := New(runner)
+
+			err := configurator.configure(resolved, "tun0", []string{"1.1.1.1"}, nil)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("configure() error = %v, want %q", err, test.wantError)
+			}
+			last := runner.calls[len(runner.calls)-1]
+			rolledBack := last.name == "resolvectl" && reflect.DeepEqual(last.args, []string{"revert", "tun0"})
+			if rolledBack != test.wantRollback {
+				t.Fatalf("rollback = %v, want %v; commands = %#v", rolledBack, test.wantRollback, runner.calls)
+			}
+			if configurator.activeInterface != "" {
+				t.Fatalf("activeInterface = %q after setup failure", configurator.activeInterface)
+			}
+		})
+	}
+}
+
+func TestConfiguratorRollsBackFailedResolvconfSetup(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		wantRollback bool
+	}{
+		{name: "unavailable", err: exec.ErrNotFound},
+		{name: "command failure", err: errors.New("exit status 1"), wantRollback: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &runnerMock{errorsAt: map[int]error{1: test.err}}
+			configurator := New(runner)
+
+			err := configurator.configure(resolvconf, "tun0", []string{"1.1.1.1"}, nil)
+			if !errors.Is(err, test.err) {
+				t.Fatalf("configure() error = %v, want %v", err, test.err)
+			}
+			last := runner.calls[len(runner.calls)-1]
+			rolledBack := last.name == "resolvconf" && reflect.DeepEqual(last.args, []string{"-d", resolvconfKey, "-f"})
+			if rolledBack != test.wantRollback {
+				t.Fatalf("rollback = %v, want %v; commands = %#v", rolledBack, test.wantRollback, runner.calls)
+			}
+			if configurator.activeInterface != "" {
+				t.Fatalf("activeInterface = %q after setup failure", configurator.activeInterface)
+			}
+		})
+	}
+}
+
+func TestConfiguratorRejectsUnknownBackendWithoutCleanup(t *testing.T) {
+	runner := &runnerMock{}
 	configurator := New(runner)
 
-	err := configurator.configure(resolved, "tun0", []string{"1.1.1.1"}, nil)
-	if err == nil || !strings.Contains(err.Error(), "make tun0 the default DNS route") {
-		t.Fatalf("configure() error = %v", err)
+	err := configurator.configure(unknown, "tun0", []string{"1.1.1.1"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "unsupported DNS backend") {
+		t.Fatalf("configure() error = %v, want unsupported backend", err)
 	}
-	if got := runner.calls[len(runner.calls)-1]; got.name != "resolvectl" || !reflect.DeepEqual(got.args, []string{"revert", "tun0"}) {
-		t.Fatalf("rollback command = %#v", got)
+	if len(runner.calls) != 0 || configurator.activeInterface != "" || configurator.activeBackend != unknown {
+		t.Fatalf("unsupported backend changed state: calls=%v interface=%q backend=%d", runner.calls, configurator.activeInterface, configurator.activeBackend)
 	}
-	if configurator.activeInterface != "" {
-		t.Fatalf("activeInterface = %q after successful rollback", configurator.activeInterface)
+}
+
+func TestCommandErrorWithoutOutput(t *testing.T) {
+	commandErr := errors.New("command failed")
+	err := commandError("resolvectl", nil, commandErr)
+	if !errors.Is(err, commandErr) || err.Error() != "resolvectl: command failed" {
+		t.Fatalf("commandError() = %v", err)
 	}
 }
 

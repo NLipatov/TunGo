@@ -304,6 +304,34 @@ func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 // ============================ Tests ===========================
 //
 
+func TestNewLinuxManager(t *testing.T) {
+	configuration := &client.Configuration{
+		ClientID: 1,
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun0",
+				IPv4Subnet: mustPrefix("10.0.0.0/24"),
+			},
+			MTU: settings.DefaultMTU,
+		},
+	}
+
+	manager, err := New(configuration)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if manager.configuration != configuration || manager.settings.Protocol != settings.UDP ||
+		manager.dns == nil || manager.ip == nil || manager.ioctl == nil || manager.mss == nil {
+		t.Fatalf("New() returned incomplete manager: %+v", manager)
+	}
+
+	configuration.Protocol = settings.UNKNOWN
+	if manager, err := New(configuration); err == nil || manager != nil {
+		t.Fatalf("New(invalid configuration) = %v, %v; want nil and error", manager, err)
+	}
+}
+
 func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
 	var installedFamilies []mssclamp.Families

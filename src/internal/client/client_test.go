@@ -93,6 +93,27 @@ func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	}
 }
 
+func TestCloseTunLogsCleanupFailure(t *testing.T) {
+	cleanupErr := errors.New("cleanup failed")
+	manager := &clientTestTunManager{closeErr: cleanupErr}
+	client := &Client{tunManager: manager}
+
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	client.closeTun()
+
+	if !strings.Contains(logs.String(), "failed to close tunnel") ||
+		!strings.Contains(logs.String(), cleanupErr.Error()) {
+		t.Fatalf("cleanup log = %q", logs.String())
+	}
+	if got := manager.disposeCalls.Load(); got != 1 {
+		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
+	}
+}
+
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	manager := &clientTestTunManager{}
 	client := &Client{
