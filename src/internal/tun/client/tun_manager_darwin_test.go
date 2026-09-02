@@ -155,6 +155,24 @@ func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
 	}
 }
 
+func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
+	failure := errors.New("DNS configuration failed")
+	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, false))
+	dnsMock := &darwinDNSMock{setErr: failure}
+	manager.dns = dnsMock
+
+	err := manager.setDNS()
+	if !errors.Is(err, failure) {
+		t.Fatalf("setDNS() error = %v, want %v", err, failure)
+	}
+	if !strings.Contains(err.Error(), "set DNS") {
+		t.Fatalf("setDNS() error = %q, want operation context", err)
+	}
+	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{settings.DefaultClientDNSv4Resolvers}) {
+		t.Fatalf("DNS resolvers = %v, want configured IPv4 resolvers", dnsMock.setResolvers)
+	}
+}
+
 func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 	for _, test := range []struct {
 		name string

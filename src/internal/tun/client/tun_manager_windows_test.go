@@ -310,6 +310,29 @@ func TestWindowsManagerDNSFlushIsBestEffortDuringSetup(t *testing.T) {
 	}
 }
 
+func TestWindowsManagerStopsDNSSetupAfterIPv4Failure(t *testing.T) {
+	failure := errors.New("IPv4 DNS failed")
+	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+	netConfig4.setDNSErr = failure
+
+	err := manager.setDNS()
+	if !errors.Is(err, failure) {
+		t.Fatalf("setDNS() error = %v, want %v", err, failure)
+	}
+	if !strings.Contains(err.Error(), "set IPv4 DNS") {
+		t.Fatalf("setDNS() error = %q, want operation context", err)
+	}
+	if !reflect.DeepEqual(netConfig4.dnsValues, [][]string{{"9.9.9.9"}}) {
+		t.Fatalf("IPv4 DNS calls = %v, want one setup attempt", netConfig4.dnsValues)
+	}
+	if len(netConfig6.dnsValues) != 0 {
+		t.Fatalf("IPv6 DNS calls = %v, want none", netConfig6.dnsValues)
+	}
+	if netConfig4.flushDNSCalls != 0 || netConfig6.flushDNSCalls != 0 {
+		t.Fatalf("FlushDNS() calls = IPv4:%d IPv6:%d, want none", netConfig4.flushDNSCalls, netConfig6.flushDNSCalls)
+	}
+}
+
 func TestWindowsManagerRollsBackPartialDNSSetup(t *testing.T) {
 	setupErr := errors.New("IPv6 DNS failed")
 	cleanupErr := errors.New("IPv4 DNS cleanup failed")
