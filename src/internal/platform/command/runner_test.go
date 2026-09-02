@@ -27,6 +27,17 @@ func TestRunnerCombinedOutputError(t *testing.T) {
 	}
 }
 
+func TestRunnerCombinedOutputWithInput(t *testing.T) {
+	c := New()
+	out, err := c.CombinedOutputWithInput("/bin/sh", strings.NewReader("hello"), "-c", "read value; printf '%s' \"$value\"")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != "hello" {
+		t.Fatalf("unexpected output: %q", string(out))
+	}
+}
+
 func TestRunnerRun(t *testing.T) {
 	c := New()
 	if err := c.Run("/bin/sh", "-c", "exit 0"); err != nil {

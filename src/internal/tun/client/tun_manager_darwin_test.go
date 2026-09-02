@@ -40,6 +40,23 @@ type darwinRouteMock struct {
 	delSplitErr  error
 }
 
+type darwinDNSMock struct {
+	setResolvers [][]string
+	revertCalls  int
+	setErr       error
+	revertErr    error
+}
+
+func (m *darwinDNSMock) Set(resolvers []string) error {
+	m.setResolvers = append(m.setResolvers, append([]string(nil), resolvers...))
+	return m.setErr
+}
+
+func (m *darwinDNSMock) Revert() error {
+	m.revertCalls++
+	return m.revertErr
+}
+
 func (m *darwinRouteMock) Add(destination string) error {
 	m.added = append(m.added, destination)
 	return m.addErr
@@ -79,10 +96,12 @@ func darwinSettings(v4, v6 bool) settings.Settings {
 	if v4 {
 		active.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
 		active.IPv4 = netip.MustParseAddr("10.0.0.2")
+		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
 	}
 	if v6 {
 		active.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 		active.IPv6 = netip.MustParseAddr("fd00::2")
+		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
 	}
 	return active
 }
@@ -95,12 +114,63 @@ func newDarwinTestManager(t *testing.T, active settings.Settings) (*Manager, *da
 	route6 := &darwinRouteMock{}
 	manager := &Manager{
 		settings:  active,
+		dns:       &darwinDNSMock{},
 		ifconfig4: ifconfig4,
 		ifconfig6: ifconfig6,
 		route4:    route4,
 		route6:    route6,
 	}
 	return manager, ifconfig4, ifconfig6, route4, route6
+}
+
+func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		v4   bool
+		v6   bool
+		want []string
+	}{
+		{name: "IPv4", v4: true, want: settings.DefaultClientDNSv4Resolvers},
+		{name: "IPv6", v6: true, want: settings.DefaultClientDNSv6Resolvers},
+		{
+			name: "dual stack",
+			v4:   true,
+			v6:   true,
+			want: append(append([]string(nil), settings.DefaultClientDNSv4Resolvers...), settings.DefaultClientDNSv6Resolvers...),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(test.v4, test.v6))
+			dnsMock := &darwinDNSMock{}
+			manager.dns = dnsMock
+			manager.tun = &tunMock{name: "utun42"}
+
+			if err := manager.setDNS(); err != nil {
+				t.Fatalf("setDNS() error = %v", err)
+			}
+			if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{test.want}) {
+				t.Fatalf("DNS resolvers = %v, want %v", dnsMock.setResolvers, test.want)
+			}
+		})
+	}
+}
+
+func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
+	failure := errors.New("DNS configuration failed")
+	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, false))
+	dnsMock := &darwinDNSMock{setErr: failure}
+	manager.dns = dnsMock
+
+	err := manager.setDNS()
+	if !errors.Is(err, failure) {
+		t.Fatalf("setDNS() error = %v, want %v", err, failure)
+	}
+	if !strings.Contains(err.Error(), "set DNS") {
+		t.Fatalf("setDNS() error = %q, want operation context", err)
+	}
+	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{settings.DefaultClientDNSv4Resolvers}) {
+		t.Fatalf("DNS resolvers = %v, want configured IPv4 resolvers", dnsMock.setResolvers)
+	}
 }
 
 func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
@@ -318,5 +388,31 @@ func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	}
 	if manager.pinnedServerAddr.IsValid() {
 		t.Fatal("successful route cleanup retained retry state")
+	}
+}
+
+func TestDarwinManagerCloseTunnelRetriesDNSRestore(t *testing.T) {
+	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, false))
+	dnsMock := &darwinDNSMock{revertErr: errors.New("DNS restore failed")}
+	manager.dns = dnsMock
+	tun := &tunMock{name: "utun42"}
+	manager.tun = tun
+
+	if err := manager.CloseTunnel(); err == nil || !strings.Contains(err.Error(), "DNS restore failed") {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if manager.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
+		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", manager.tun, tun.closeCalls, dnsMock.revertCalls)
+	}
+
+	dnsMock.revertErr = nil
+	if err := manager.CloseTunnel(); err != nil {
+		t.Fatalf("retry CloseTunnel() error = %v", err)
+	}
+	if dnsMock.revertCalls != 2 {
+		t.Fatalf("DNS Revert() calls = %d, want 2", dnsMock.revertCalls)
+	}
+	if tun.closeCalls != 1 {
+		t.Fatalf("TUN close calls = %d, want 1", tun.closeCalls)
 	}
 }

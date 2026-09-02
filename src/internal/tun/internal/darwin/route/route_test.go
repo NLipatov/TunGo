@@ -13,7 +13,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Mock commander
+// Mock runner
 // ---------------------------------------------------------------------------
 
 type call struct {
@@ -26,9 +26,9 @@ type stubbedResult struct {
 	err error
 }
 
-// mockCommander records every invocation and returns pre-configured results
+// mockRunner records every invocation and returns pre-configured results
 // keyed by the full command string ("route -n get 8.8.8.8").
-type mockCommander struct {
+type mockRunner struct {
 	mu    sync.Mutex
 	calls []call
 	// stubs maps "name arg0 arg1 ..." to a list of results consumed in order.
@@ -37,23 +37,23 @@ type mockCommander struct {
 	defaultResult stubbedResult
 }
 
-func newMockCommander() *mockCommander {
-	return &mockCommander{
+func newMockRunner() *mockRunner {
+	return &mockRunner{
 		stubs: make(map[string][]stubbedResult),
 	}
 }
 
-func (m *mockCommander) key(name string, args ...string) string {
+func (m *mockRunner) key(name string, args ...string) string {
 	parts := append([]string{name}, args...)
 	return strings.Join(parts, " ")
 }
 
-func (m *mockCommander) stub(out []byte, err error, name string, args ...string) {
+func (m *mockRunner) stub(out []byte, err error, name string, args ...string) {
 	k := m.key(name, args...)
 	m.stubs[k] = append(m.stubs[k], stubbedResult{out: out, err: err})
 }
 
-func (m *mockCommander) lookup(name string, args ...string) stubbedResult {
+func (m *mockRunner) lookup(name string, args ...string) stubbedResult {
 	k := m.key(name, args...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -68,31 +68,31 @@ func (m *mockCommander) lookup(name string, args ...string) stubbedResult {
 	return m.defaultResult
 }
 
-func (m *mockCommander) record(name string, args ...string) {
+func (m *mockRunner) record(name string, args ...string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, call{name: name, args: append([]string{}, args...)})
 }
 
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	m.record(name, args...)
 	r := m.lookup(name, args...)
 	return r.out, r.err
 }
 
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
 	m.record(name, args...)
 	r := m.lookup(name, args...)
 	return r.out, r.err
 }
 
-func (m *mockCommander) Run(name string, args ...string) error {
+func (m *mockRunner) Run(name string, args ...string) error {
 	m.record(name, args...)
 	r := m.lookup(name, args...)
 	return r.err
 }
 
-func (m *mockCommander) allCalls() []call {
+func (m *mockRunner) allCalls() []call {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]call, len(m.calls))
@@ -101,7 +101,7 @@ func (m *mockCommander) allCalls() []call {
 }
 
 // callIndex returns the index of the first matching call, or -1 if not found.
-func (m *mockCommander) callIndex(name string, args ...string) int {
+func (m *mockRunner) callIndex(name string, args ...string) int {
 	for i, c := range m.allCalls() {
 		if c.name != name || len(c.args) != len(args) {
 			continue
@@ -121,7 +121,7 @@ func (m *mockCommander) callIndex(name string, args ...string) int {
 }
 
 // hasCall returns true if any recorded call matches exactly.
-func (m *mockCommander) hasCall(name string, args ...string) bool {
+func (m *mockRunner) hasCall(name string, args ...string) bool {
 	for _, c := range m.allCalls() {
 		if c.name != name || len(c.args) != len(args) {
 			continue
@@ -163,7 +163,7 @@ func routeGetOutput(gateway, iface string) []byte {
 // ---------------------------------------------------------------------------
 
 func TestV4_parseRoute_gatewayAndInterface(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutput("192.168.1.1", "en0"), nil, "route", "-n", "get", "8.8.8.8")
 
 	r := NewV4(cmd)
@@ -180,7 +180,7 @@ func TestV4_parseRoute_gatewayAndInterface(t *testing.T) {
 }
 
 func TestV4_parseRoute_interfaceOnly(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutput("", "utun3"), nil, "route", "-n", "get", "10.0.0.1")
 
 	r := NewV4(cmd)
@@ -197,7 +197,7 @@ func TestV4_parseRoute_interfaceOnly(t *testing.T) {
 }
 
 func TestV4_parseRoute_noMatches(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("some unrelated output\n"), nil, "route", "-n", "get", "1.2.3.4")
 
 	r := NewV4(cmd)
@@ -210,8 +210,8 @@ func TestV4_parseRoute_noMatches(t *testing.T) {
 	}
 }
 
-func TestV4_parseRoute_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV4_parseRoute_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("error output"), errors.New("exit 1"), "route", "-n", "get", "8.8.8.8")
 
 	r := NewV4(cmd)
@@ -226,7 +226,7 @@ func TestV4_parseRoute_commanderError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV4_Add_validIPWithGateway(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// route get for the destination returns a real gateway
 	cmd.stub(routeGetOutput("192.168.1.1", "en0"), nil, "route", "-n", "get", "8.8.8.8")
 	// Del removes any existing host route.
@@ -253,7 +253,7 @@ func TestV4_Add_validIPWithGateway(t *testing.T) {
 }
 
 func TestV4_Add_validIPWithLinkInterface(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// "link#" prefix in gateway means on-link — should add via interface instead
 	cmd.stub(routeGetOutput("link#14", "en0"), nil, "route", "-n", "get", "10.0.0.1")
 	cmd.stub(nil, nil, "route", "-q", "-n", "delete", "10.0.0.1")
@@ -269,7 +269,7 @@ func TestV4_Add_validIPWithLinkInterface(t *testing.T) {
 }
 
 func TestV4_Add_loopbackFallsBackToDefault(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// First route get returns loopback
 	cmd.stub(routeGetOutput("127.0.0.1", "lo0"), nil, "route", "-n", "get", "8.8.8.8")
 	// Default route returns a real gateway
@@ -287,7 +287,7 @@ func TestV4_Add_loopbackFallsBackToDefault(t *testing.T) {
 }
 
 func TestV4_Add_defaultAlsoLoopback(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutput("127.0.0.1", "lo0"), nil, "route", "-n", "get", "8.8.8.8")
 	cmd.stub(routeGetOutput("127.0.0.1", "lo0"), nil, "route", "-n", "get", "default")
 
@@ -302,7 +302,7 @@ func TestV4_Add_defaultAlsoLoopback(t *testing.T) {
 }
 
 func TestV4_Add_invalidIP(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV4(cmd)
 	err := r.Add("not-an-ip")
 	if err == nil {
@@ -314,7 +314,7 @@ func TestV4_Add_invalidIP(t *testing.T) {
 }
 
 func TestV4_Add_ipv6PassedToV4(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV4(cmd)
 	err := r.Add("2001:db8::1")
 	if err == nil {
@@ -326,7 +326,7 @@ func TestV4_Add_ipv6PassedToV4(t *testing.T) {
 }
 
 func TestV4_Add_loopbackIP(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV4(cmd)
 	err := r.Add("127.0.0.1")
 	if err == nil {
@@ -337,20 +337,20 @@ func TestV4_Add_loopbackIP(t *testing.T) {
 	}
 }
 
-func TestV4_Add_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV4_Add_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("network unreachable"), errors.New("exit 1"),
 		"route", "-n", "get", "8.8.8.8")
 
 	r := NewV4(cmd)
 	err := r.Add("8.8.8.8")
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 }
 
 func TestV4_Del_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(nil, nil, "route", "-q", "-n", "delete", "10.1.0.0")
 
 	r := NewV4(cmd)
@@ -360,7 +360,7 @@ func TestV4_Del_success(t *testing.T) {
 }
 
 func TestV4_Del_notInTable(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "10.1.0.0")
 
@@ -371,8 +371,8 @@ func TestV4_Del_notInTable(t *testing.T) {
 	}
 }
 
-func TestV4_Del_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV4_Del_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "10.1.0.0")
 
@@ -387,7 +387,7 @@ func TestV4_Del_commanderError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV4_AddSplit_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// Pre-delete stubs (ignored errors)
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
@@ -406,7 +406,7 @@ func TestV4_AddSplit_success(t *testing.T) {
 }
 
 func TestV4_AddSplit_fileExistsIgnored(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
@@ -423,8 +423,8 @@ func TestV4_AddSplit_fileExistsIgnored(t *testing.T) {
 	}
 }
 
-func TestV4_AddSplit_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV4_AddSplit_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
@@ -439,7 +439,7 @@ func TestV4_AddSplit_commanderError(t *testing.T) {
 }
 
 func TestV4_DelSplit_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(nil, nil,
 		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
@@ -451,8 +451,8 @@ func TestV4_DelSplit_success(t *testing.T) {
 	}
 }
 
-func TestV4_DelSplit_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV4_DelSplit_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("kernel error"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-net", splitroute.IPv4LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
@@ -483,7 +483,7 @@ func routeGetOutputV6(gateway, iface string) []byte {
 }
 
 func TestV6_parseRoute_gatewayAndInterface(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutputV6("fe80::1", "en0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 
@@ -500,8 +500,8 @@ func TestV6_parseRoute_gatewayAndInterface(t *testing.T) {
 	}
 }
 
-func TestV6_parseRoute_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV6_parseRoute_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("error"), errors.New("exit 1"),
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 
@@ -517,7 +517,7 @@ func TestV6_parseRoute_commanderError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV6_Add_validIPWithGateway(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutputV6("2001:db8::gw", "en0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 	cmd.stub(nil, nil, "route", "-q", "-n", "delete", "-inet6", "2001:db8::1")
@@ -533,7 +533,7 @@ func TestV6_Add_validIPWithGateway(t *testing.T) {
 }
 
 func TestV6_Add_linkLocalWithoutScope(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// Gateway is link-local without % scope -> should append %en0
 	cmd.stub(routeGetOutputV6("fe80::1", "en0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
@@ -550,7 +550,7 @@ func TestV6_Add_linkLocalWithoutScope(t *testing.T) {
 }
 
 func TestV6_Add_linkLocalWithScope(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// Gateway already has scope -> should not modify
 	cmd.stub(routeGetOutputV6("fe80::1%en0", "en0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
@@ -567,7 +567,7 @@ func TestV6_Add_linkLocalWithScope(t *testing.T) {
 }
 
 func TestV6_Add_loopbackFallsBackToDefault(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutputV6("::1", "lo0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 	cmd.stub(routeGetOutputV6("fe80::gw", "en0"), nil,
@@ -582,7 +582,7 @@ func TestV6_Add_loopbackFallsBackToDefault(t *testing.T) {
 }
 
 func TestV6_Add_defaultAlsoLoopback(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutputV6("::1", "lo0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 	cmd.stub(routeGetOutputV6("::1", "lo0"), nil,
@@ -599,7 +599,7 @@ func TestV6_Add_defaultAlsoLoopback(t *testing.T) {
 }
 
 func TestV6_Add_nonIPv6(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV6(cmd)
 	err := r.Add("8.8.8.8")
 	if err == nil {
@@ -611,7 +611,7 @@ func TestV6_Add_nonIPv6(t *testing.T) {
 }
 
 func TestV6_Add_invalidIP(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV6(cmd)
 	err := r.Add("not-an-ip")
 	if err == nil {
@@ -623,7 +623,7 @@ func TestV6_Add_invalidIP(t *testing.T) {
 }
 
 func TestV6_Add_loopbackIP(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	r := NewV6(cmd)
 	err := r.Add("::1")
 	if err == nil {
@@ -634,20 +634,20 @@ func TestV6_Add_loopbackIP(t *testing.T) {
 	}
 }
 
-func TestV6_Add_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV6_Add_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("error"), errors.New("exit 1"),
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 
 	r := NewV6(cmd)
 	err := r.Add("2001:db8::1")
 	if err == nil {
-		t.Fatal("expected error when commander fails")
+		t.Fatal("expected error when runner fails")
 	}
 }
 
 func TestV6_Add_interfaceOnlyViaLink(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// gateway is link#, so should fall through to add on-link via interface
 	cmd.stub(routeGetOutputV6("link#14", "en0"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
@@ -664,7 +664,7 @@ func TestV6_Add_interfaceOnlyViaLink(t *testing.T) {
 }
 
 func TestV6_Del_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(nil, nil, "route", "-q", "-n", "delete", "-inet6", "2001:db8::1")
 
 	r := NewV6(cmd)
@@ -674,7 +674,7 @@ func TestV6_Del_success(t *testing.T) {
 }
 
 func TestV6_Del_notInTable(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", "2001:db8::1")
 
@@ -684,8 +684,8 @@ func TestV6_Del_notInTable(t *testing.T) {
 	}
 }
 
-func TestV6_Del_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV6_Del_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", "2001:db8::1")
 
@@ -700,7 +700,7 @@ func TestV6_Del_commanderError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV6_AddSplit_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
@@ -717,7 +717,7 @@ func TestV6_AddSplit_success(t *testing.T) {
 }
 
 func TestV6_AddSplit_fileExistsIgnored(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
@@ -733,8 +733,8 @@ func TestV6_AddSplit_fileExistsIgnored(t *testing.T) {
 	}
 }
 
-func TestV6_AddSplit_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV6_AddSplit_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub([]byte("not in table"), errors.New("exit 1"),
@@ -749,7 +749,7 @@ func TestV6_AddSplit_commanderError(t *testing.T) {
 }
 
 func TestV6_DelSplit_success(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(nil, nil,
 		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
@@ -761,8 +761,8 @@ func TestV6_DelSplit_success(t *testing.T) {
 	}
 }
 
-func TestV6_DelSplit_commanderError(t *testing.T) {
-	cmd := newMockCommander()
+func TestV6_DelSplit_runnerError(t *testing.T) {
+	cmd := newMockRunner()
 	cmd.stub([]byte("kernel error"), errors.New("exit 1"),
 		"route", "-q", "-n", "delete", "-inet6", splitroute.IPv6LowerHalf, "-interface", "utun3")
 	cmd.stub(nil, nil,
@@ -793,7 +793,7 @@ func TestV4_Add_tableValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := newMockCommander()
+			cmd := newMockRunner()
 			r := NewV4(cmd)
 			err := r.Add(tt.dest)
 			if err == nil {
@@ -823,7 +823,7 @@ func TestV6_Add_tableValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := newMockCommander()
+			cmd := newMockRunner()
 			r := NewV6(cmd)
 			err := r.Add(tt.dest)
 			if err == nil {
@@ -841,7 +841,7 @@ func TestV6_Add_tableValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV4_Add_noRouteFound(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	// parseRoute returns empty gw and iface
 	cmd.stub([]byte("some output with no gateway or interface lines\n"), nil,
 		"route", "-n", "get", "8.8.8.8")
@@ -866,7 +866,7 @@ func TestV4_Add_noRouteFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV6_Add_noRouteFound(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub([]byte("some output\n"), nil,
 		"route", "-n", "-inet6", "get", "2001:db8::1")
 	cmd.stub([]byte("some output\n"), nil,
@@ -888,7 +888,7 @@ func TestV6_Add_noRouteFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestV4_Add_interfaceOnlyNoGateway(t *testing.T) {
-	cmd := newMockCommander()
+	cmd := newMockRunner()
 	cmd.stub(routeGetOutput("", "en0"), nil, "route", "-n", "get", "10.0.0.5")
 	cmd.stub(nil, nil, "route", "-q", "-n", "delete", "10.0.0.5")
 	cmd.stub(nil, nil, "route", "-q", "-n", "add", "10.0.0.5", "-interface", "en0")

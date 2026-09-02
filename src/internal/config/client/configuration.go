@@ -30,6 +30,12 @@ func (c *Configuration) applyDefaults() {
 	if err != nil {
 		return
 	}
+	if active.IPv4Subnet.IsValid() && active.IPv4Subnet.Addr().Is4() && len(active.DNSv4) == 0 {
+		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+	}
+	if active.IPv6Subnet.IsValid() && active.IPv6Subnet.Addr().Unmap().Is6() && len(active.DNSv6) == 0 {
+		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+	}
 	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
 	if active.MTU != 0 && active.MTU != effectiveMTU {
 		slog.Warn(

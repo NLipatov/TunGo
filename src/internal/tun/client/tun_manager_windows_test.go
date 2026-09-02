@@ -39,6 +39,7 @@ type windowsNetConfigMock struct {
 	addSplitErr      error
 	setMTUErr        error
 	setDNSErr        error
+	setDNSErrAt      int
 	flushDNSErr      error
 
 	addresses     []netip.Prefix
@@ -65,6 +66,9 @@ func (m *windowsNetConfigMock) SetAddressStatic(_ string, prefix netip.Prefix) e
 func (m *windowsNetConfigMock) SetDNS(ifName string, resolvers []string) error {
 	m.dnsNames = append(m.dnsNames, ifName)
 	m.dnsValues = append(m.dnsValues, append([]string(nil), resolvers...))
+	if m.setDNSErrAt > 0 && len(m.dnsNames) != m.setDNSErrAt {
+		return nil
+	}
 	return m.setDNSErr
 }
 
@@ -306,6 +310,59 @@ func TestWindowsManagerDNSFlushIsBestEffortDuringSetup(t *testing.T) {
 	}
 }
 
+func TestWindowsManagerStopsDNSSetupAfterIPv4Failure(t *testing.T) {
+	failure := errors.New("IPv4 DNS failed")
+	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+	netConfig4.setDNSErr = failure
+
+	err := manager.setDNS()
+	if !errors.Is(err, failure) {
+		t.Fatalf("setDNS() error = %v, want %v", err, failure)
+	}
+	if !strings.Contains(err.Error(), "set IPv4 DNS") {
+		t.Fatalf("setDNS() error = %q, want operation context", err)
+	}
+	if !reflect.DeepEqual(netConfig4.dnsValues, [][]string{{"9.9.9.9"}}) {
+		t.Fatalf("IPv4 DNS calls = %v, want one setup attempt", netConfig4.dnsValues)
+	}
+	if len(netConfig6.dnsValues) != 0 {
+		t.Fatalf("IPv6 DNS calls = %v, want none", netConfig6.dnsValues)
+	}
+	if netConfig4.flushDNSCalls != 0 || netConfig6.flushDNSCalls != 0 {
+		t.Fatalf("FlushDNS() calls = IPv4:%d IPv6:%d, want none", netConfig4.flushDNSCalls, netConfig6.flushDNSCalls)
+	}
+}
+
+func TestWindowsManagerRollsBackPartialDNSSetup(t *testing.T) {
+	setupErr := errors.New("IPv6 DNS failed")
+	cleanupErr := errors.New("IPv4 DNS cleanup failed")
+	for _, test := range []struct {
+		name       string
+		cleanupErr error
+	}{
+		{name: "rollback succeeds"},
+		{name: "rollback fails", cleanupErr: cleanupErr},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+			netConfig4.setDNSErr = test.cleanupErr
+			netConfig4.setDNSErrAt = 2
+			netConfig6.setDNSErr = setupErr
+
+			err := manager.setDNS()
+			if !errors.Is(err, setupErr) {
+				t.Fatalf("setDNS() error = %v, want setup cause", err)
+			}
+			if test.cleanupErr != nil && !errors.Is(err, test.cleanupErr) {
+				t.Fatalf("setDNS() error = %v, want cleanup cause", err)
+			}
+			if !reflect.DeepEqual(netConfig4.dnsValues, [][]string{{"9.9.9.9"}, nil}) {
+				t.Fatalf("IPv4 DNS calls = %v, want setup then rollback", netConfig4.dnsValues)
+			}
+		})
+	}
+}
+
 func TestWindowsManagerRejectsInvalidServerAddress(t *testing.T) {
 	manager, _, _ := newWindowsTestManager(t, windowsSettings(true, true))
 	if _, err := manager.OpenTunnel(netip.Addr{}); err == nil {
@@ -432,10 +489,18 @@ func TestWindowsManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("CloseTunnel() error = nil")
 	}
-	for _, want := range []string{"split4 failed", "dns4 failed", "flush4 failed", "split6 failed", "dns6 failed", "flush6 failed", "route6 failed", "TUN close failed"} {
+	for _, want := range []string{"split4 failed", "dns4 failed", "split6 failed", "dns6 failed", "route6 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
 		}
+	}
+	for _, ignored := range []string{"flush4 failed", "flush6 failed"} {
+		if strings.Contains(err.Error(), ignored) {
+			t.Fatalf("CloseTunnel() error = %v, want cache flush failure ignored", err)
+		}
+	}
+	if netConfig4.flushDNSCalls != 1 || netConfig6.flushDNSCalls != 1 {
+		t.Fatalf("FlushDNS() calls = IPv4:%d IPv6:%d, want 1 each", netConfig4.flushDNSCalls, netConfig6.flushDNSCalls)
 	}
 	if manager.tun != nil {
 		t.Fatal("CloseTunnel() retained a closed TUN")

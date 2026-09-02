@@ -17,24 +17,24 @@ type systemdCommandResult struct {
 	err    error
 }
 
-type systemdTestCommander struct {
+type systemdTestRunner struct {
 	runs        []string
 	queries     []string
 	runErrors   map[string]error
 	queryResult map[string]systemdCommandResult
 }
 
-func (c *systemdTestCommander) Run(_ string, args ...string) error {
+func (c *systemdTestRunner) Run(_ string, args ...string) error {
 	operation := firstSystemdArg(args)
 	c.runs = append(c.runs, operation)
 	return c.runErrors[operation]
 }
 
-func (c *systemdTestCommander) Output(_ string, args ...string) ([]byte, error) {
+func (c *systemdTestRunner) Output(_ string, args ...string) ([]byte, error) {
 	return c.CombinedOutput("systemctl", args...)
 }
 
-func (c *systemdTestCommander) CombinedOutput(_ string, args ...string) ([]byte, error) {
+func (c *systemdTestRunner) CombinedOutput(_ string, args ...string) ([]byte, error) {
 	operation := firstSystemdArg(args)
 	c.queries = append(c.queries, operation)
 	result := c.queryResult[operation]
@@ -48,7 +48,7 @@ func firstSystemdArg(args []string) string {
 	return args[0]
 }
 
-func newSystemdTestInstaller(t *testing.T, commander *systemdTestCommander) *UnitInstaller {
+func newSystemdTestInstaller(t *testing.T, runner *systemdTestRunner) *UnitInstaller {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("systemd executable ownership is Unix-specific")
@@ -63,7 +63,7 @@ func newSystemdTestInstaller(t *testing.T, commander *systemdTestCommander) *Uni
 
 	binaryPath := rootOwnedExecutable(t)
 	runtimeDir := t.TempDir()
-	installer := NewUnitInstaller(commander)
+	installer := NewUnitInstaller(runner)
 	installer.config = Config{
 		RuntimeDir: runtimeDir,
 		UnitPath:   filepath.Join(runtimeDir, "tungo.service"),
@@ -86,8 +86,8 @@ func rootOwnedExecutable(t *testing.T) string {
 
 func TestNewUnitInstaller_Defaults(t *testing.T) {
 	installer := NewUnitInstaller(nil)
-	if installer.commander == nil {
-		t.Fatal("NewUnitInstaller(nil) returned a nil commander")
+	if installer.runner == nil {
+		t.Fatal("NewUnitInstaller(nil) returned a nil runner")
 	}
 	if installer.config != DefaultConfig() {
 		t.Fatalf("config = %+v, want %+v", installer.config, DefaultConfig())
@@ -95,10 +95,10 @@ func TestNewUnitInstaller_Defaults(t *testing.T) {
 }
 
 func TestSetup_InactiveUnit(t *testing.T) {
-	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-active": {output: []byte("inactive\n")},
 	}}
-	installer := newSystemdTestInstaller(t, commander)
+	installer := newSystemdTestInstaller(t, runner)
 
 	path, err := installer.Setup(mode.Server)
 	if err != nil {
@@ -114,58 +114,58 @@ func TestSetup_InactiveUnit(t *testing.T) {
 	if !strings.Contains(string(body), " s") {
 		t.Fatalf("server unit body = %q", body)
 	}
-	if want := []string{"daemon-reload", "enable"}; !reflect.DeepEqual(commander.runs, want) {
-		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+	if want := []string{"daemon-reload", "enable"}; !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 	}
 }
 
 func TestSetup_ActiveUnit(t *testing.T) {
-	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-active": {output: []byte("active\n")},
 	}}
-	installer := newSystemdTestInstaller(t, commander)
+	installer := newSystemdTestInstaller(t, runner)
 
 	if _, err := installer.Setup(mode.Client); err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
 	want := []string{"stop", "daemon-reload", "enable", "start"}
-	if !reflect.DeepEqual(commander.runs, want) {
-		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+	if !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 	}
 }
 
 func TestSetup_RejectsInvalidModeBeforeIO(t *testing.T) {
-	commander := &systemdTestCommander{}
-	installer := NewUnitInstaller(commander)
+	runner := &systemdTestRunner{}
+	installer := NewUnitInstaller(runner)
 
 	if _, err := installer.Setup(0); err == nil || !strings.Contains(err.Error(), "invalid daemon mode") {
 		t.Fatalf("Setup() error = %v", err)
 	}
-	if len(commander.runs) != 0 || len(commander.queries) != 0 {
-		t.Fatalf("unexpected systemctl calls: runs=%v queries=%v", commander.runs, commander.queries)
+	if len(runner.runs) != 0 || len(runner.queries) != 0 {
+		t.Fatalf("unexpected systemctl calls: runs=%v queries=%v", runner.runs, runner.queries)
 	}
 }
 
 func TestSetup_RestartsActiveUnitAfterWriteError(t *testing.T) {
-	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-active": {output: []byte("active\n")},
 	}}
-	installer := newSystemdTestInstaller(t, commander)
+	installer := newSystemdTestInstaller(t, runner)
 	installer.config.UnitPath = filepath.Join(t.TempDir(), "missing", "tungo.service")
 
 	if _, err := installer.Setup(mode.Server); err == nil {
 		t.Fatal("Setup() error = nil")
 	}
 	want := []string{"stop", "start"}
-	if !reflect.DeepEqual(commander.runs, want) {
-		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+	if !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 	}
 }
 
 func TestInstallUnit_EnableFailureRollsBackFile(t *testing.T) {
 	enableErr := errors.New("enable failed")
-	commander := &systemdTestCommander{runErrors: map[string]error{"enable": enableErr}}
-	installer := newSystemdTestInstaller(t, commander)
+	runner := &systemdTestRunner{runErrors: map[string]error{"enable": enableErr}}
+	installer := newSystemdTestInstaller(t, runner)
 
 	_, err := installer.installUnit([]string{"c"})
 	if !errors.Is(err, enableErr) {
@@ -175,8 +175,8 @@ func TestInstallUnit_EnableFailureRollsBackFile(t *testing.T) {
 		t.Fatalf("rolled-back unit stat error = %v", statErr)
 	}
 	want := []string{"daemon-reload", "enable", "daemon-reload"}
-	if !reflect.DeepEqual(commander.runs, want) {
-		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+	if !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 	}
 }
 
@@ -192,10 +192,10 @@ func TestIsUnitActive(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(strings.TrimSpace(tt.state), func(t *testing.T) {
-			commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+			runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 				"is-active": {output: []byte(tt.state)},
 			}}
-			installer := newSystemdTestInstaller(t, commander)
+			installer := newSystemdTestInstaller(t, runner)
 			got, err := installer.IsUnitActive()
 			if err != nil || got != tt.want {
 				t.Fatalf("IsUnitActive() = (%v, %v), want (%v, nil)", got, err, tt.want)
@@ -217,21 +217,21 @@ func TestUnitOperations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			commander := &systemdTestCommander{}
-			installer := newSystemdTestInstaller(t, commander)
+			runner := &systemdTestRunner{}
+			installer := newSystemdTestInstaller(t, runner)
 			if err := tt.call(installer); err != nil {
 				t.Fatalf("%s error = %v", tt.name, err)
 			}
-			if want := []string{tt.want}; !reflect.DeepEqual(commander.runs, want) {
-				t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+			if want := []string{tt.want}; !reflect.DeepEqual(runner.runs, want) {
+				t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 			}
 		})
 	}
 }
 
 func TestRemoveUnit(t *testing.T) {
-	commander := &systemdTestCommander{}
-	installer := newSystemdTestInstaller(t, commander)
+	runner := &systemdTestRunner{}
+	installer := newSystemdTestInstaller(t, runner)
 	if err := os.WriteFile(installer.config.UnitPath, []byte("unit"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -243,13 +243,13 @@ func TestRemoveUnit(t *testing.T) {
 		t.Fatalf("unit stat error = %v", err)
 	}
 	want := []string{"stop", "disable", "daemon-reload"}
-	if !reflect.DeepEqual(commander.runs, want) {
-		t.Fatalf("systemctl calls = %v, want %v", commander.runs, want)
+	if !reflect.DeepEqual(runner.runs, want) {
+		t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
 	}
 }
 
 func TestStatus(t *testing.T) {
-	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-enabled": {output: []byte("enabled\n")},
 		"is-active":  {output: []byte("active\n")},
 		"show": {output: []byte(strings.Join([]string{
@@ -262,7 +262,7 @@ func TestStatus(t *testing.T) {
 			"FragmentPath=/etc/systemd/system/tungo.service",
 		}, "\n"))},
 	}}
-	installer := newSystemdTestInstaller(t, commander)
+	installer := newSystemdTestInstaller(t, runner)
 	installer.config.UnitPath = "/etc/systemd/system/tungo.service"
 
 	status, err := installer.Status()
@@ -275,12 +275,12 @@ func TestStatus(t *testing.T) {
 }
 
 func TestStatus_DetectsRoleFromManagedUnitFile(t *testing.T) {
-	commander := &systemdTestCommander{queryResult: map[string]systemdCommandResult{
+	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-enabled": {output: []byte("enabled\n")},
 		"is-active":  {output: []byte("inactive\n")},
 	}}
-	installer := newSystemdTestInstaller(t, commander)
-	commander.queryResult["show"] = systemdCommandResult{output: []byte(
+	installer := newSystemdTestInstaller(t, runner)
+	runner.queryResult["show"] = systemdCommandResult{output: []byte(
 		"LoadState=loaded\nActiveState=inactive\nFragmentPath=" + installer.config.UnitPath + "\n",
 	)}
 	if err := os.WriteFile(

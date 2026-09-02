@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-	"tungo/internal/platform/command"
+
 	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sync/errgroup"
@@ -18,13 +18,17 @@ const (
 	loopbackPrefixV4    = "127."
 )
 
-type V4 struct {
-	commander command.Runner
+type v4Runner interface {
+	CombinedOutput(name string, args ...string) ([]byte, error)
 }
 
-func NewV4(commander command.Runner) *V4 {
+type V4 struct {
+	runner v4Runner
+}
+
+func NewV4(runner v4Runner) *V4 {
 	return &V4{
-		commander: commander,
+		runner: runner,
 	}
 }
 
@@ -71,7 +75,7 @@ func (v *V4) isLoop(gateway, iFace string) bool {
 }
 
 func (v *V4) parseRoute(target string) (gw, iFace string, err error) {
-	out, err := v.commander.CombinedOutput("route", "-n", "get", target)
+	out, err := v.runner.CombinedOutput("route", "-n", "get", target)
 	if err != nil {
 		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
 	}
@@ -91,7 +95,7 @@ func (v *V4) parseRoute(target string) (gw, iFace string, err error) {
 }
 
 func (v *V4) Del(destIP string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", destIP)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "delete", destIP)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
 		return fmt.Errorf("route delete %s failed: %v (%s)", destIP, err, out)
 	}
@@ -102,11 +106,11 @@ func (v *V4) AddSplit(dev string) error {
 	_ = v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev)
 	_ = v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev)
 
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", dev); err != nil &&
+	if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4LowerHalf, err, out)
 	}
-	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", dev); err != nil &&
+	if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", dev); err != nil &&
 		!bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4UpperHalf, err, out)
 	}
@@ -121,7 +125,7 @@ func (v *V4) DelSplit(dev string) error {
 }
 
 func (v *V4) addOnLink(ip, iFace string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", ip, "-interface", iFace)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", ip, "-interface", iFace)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iFace, err, out)
 	}
@@ -129,7 +133,7 @@ func (v *V4) addOnLink(ip, iFace string) error {
 }
 
 func (v *V4) addViaGateway(ip, gw string) error {
-	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", ip, gw)
+	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
 	}
@@ -138,7 +142,7 @@ func (v *V4) addViaGateway(ip, gw string) error {
 
 func (v *V4) runDeleteSplit(args ...string) error {
 	full := append([]string{"-q", "-n", "delete"}, args...)
-	out, err := v.commander.CombinedOutput("route", full...)
+	out, err := v.runner.CombinedOutput("route", full...)
 	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
 		return fmt.Errorf("route delete %v failed: %v (%s)", args, err, out)
 	}

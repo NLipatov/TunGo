@@ -1,28 +1,28 @@
 package sysctl
 
-import (
-	"tungo/internal/platform/command"
-)
-
-type Forwarding struct {
-	commander command.Runner
+type runner interface {
+	CombinedOutput(name string, args ...string) ([]byte, error)
 }
 
-func New(commander command.Runner) *Forwarding {
-	return &Forwarding{commander: commander}
+type Forwarding struct {
+	runner runner
+}
+
+func New(runner runner) *Forwarding {
+	return &Forwarding{runner: runner}
 }
 
 func (w *Forwarding) NetIpv4IpForward() ([]byte, error) {
-	return w.commander.CombinedOutput("sysctl", "net.ipv4.ip_forward")
+	return w.runner.CombinedOutput("sysctl", "net.ipv4.ip_forward")
 }
 func (w *Forwarding) WNetIpv4IpForward() ([]byte, error) {
-	return w.commander.CombinedOutput("sysctl", "-w", "net.ipv4.ip_forward=1")
+	return w.runner.CombinedOutput("sysctl", "-w", "net.ipv4.ip_forward=1")
 }
 
 func (w *Forwarding) NetIpv6ConfAllForwarding() ([]byte, error) {
-	return w.commander.CombinedOutput("sysctl", "net.ipv6.conf.all.forwarding")
+	return w.runner.CombinedOutput("sysctl", "net.ipv6.conf.all.forwarding")
 }
 
 func (w *Forwarding) WNetIpv6ConfAllForwarding() ([]byte, error) {
-	return w.commander.CombinedOutput("sysctl", "-w", "net.ipv6.conf.all.forwarding=1")
+	return w.runner.CombinedOutput("sysctl", "-w", "net.ipv6.conf.all.forwarding=1")
 }

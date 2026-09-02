@@ -8,25 +8,25 @@ import (
 	"testing"
 )
 
-type mockCommander struct {
+type mockRunner struct {
 	OutputFunc         func(name string, args ...string) ([]byte, error)
 	CombinedOutputFunc func(name string, args ...string) ([]byte, error)
 }
 
-func (m *mockCommander) Run(_ string, _ ...string) error {
+func (m *mockRunner) Run(_ string, _ ...string) error {
 	panic("not implemented")
 }
 
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
 	return m.OutputFunc(name, args...)
 }
 
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *mockRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	return m.CombinedOutputFunc(name, args...)
 }
 
 func newConfigurator(success bool, output string, err error) Contract {
-	return New(&mockCommander{
+	return New(&mockRunner{
 		OutputFunc: func(name string, args ...string) ([]byte, error) {
 			if success {
 				return []byte(output), nil
@@ -42,19 +42,19 @@ func newConfigurator(success bool, output string, err error) Contract {
 	})
 }
 
-type recordingCommander struct {
+type recordingRunner struct {
 	combinedCalls [][]string
 	outputCalls   [][]string
 	output        []byte
 	failOnCall    int
 }
 
-func (m *recordingCommander) Run(_ string, _ ...string) error { return nil }
-func (m *recordingCommander) Output(name string, args ...string) ([]byte, error) {
+func (m *recordingRunner) Run(_ string, _ ...string) error { return nil }
+func (m *recordingRunner) Output(name string, args ...string) ([]byte, error) {
 	m.outputCalls = append(m.outputCalls, append([]string{name}, args...))
 	return m.output, nil
 }
-func (m *recordingCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+func (m *recordingRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	call := append([]string{name}, args...)
 	m.combinedCalls = append(m.combinedCalls, call)
 	if m.failOnCall > 0 && len(m.combinedCalls) == m.failOnCall {
@@ -149,7 +149,7 @@ func TestRouteDefault(t *testing.T) {
 
 func TestRouteAddSplitDefaultDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		rec := &recordingCommander{}
+		rec := &recordingRunner{}
 		w := New(rec)
 		if err := w.RouteAddSplitDefaultDev("tun0"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -164,7 +164,7 @@ func TestRouteAddSplitDefaultDev(t *testing.T) {
 	})
 
 	t.Run("error on second route", func(t *testing.T) {
-		rec := &recordingCommander{failOnCall: 2}
+		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
 		err := w.RouteAddSplitDefaultDev("tun0")
 		if err == nil || !strings.Contains(err.Error(), "failed to add split route 128.0.0.0/1") {
@@ -175,7 +175,7 @@ func TestRouteAddSplitDefaultDev(t *testing.T) {
 
 func TestRoute6AddSplitDefaultDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		rec := &recordingCommander{}
+		rec := &recordingRunner{}
 		w := New(rec)
 		if err := w.Route6AddSplitDefaultDev("tun0"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -190,7 +190,7 @@ func TestRoute6AddSplitDefaultDev(t *testing.T) {
 	})
 
 	t.Run("error on second route", func(t *testing.T) {
-		rec := &recordingCommander{failOnCall: 2}
+		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
 		err := w.Route6AddSplitDefaultDev("tun0")
 		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 8000::/1") {
@@ -200,7 +200,7 @@ func TestRoute6AddSplitDefaultDev(t *testing.T) {
 }
 
 func TestRouteDelSplitDefault(t *testing.T) {
-	rec := &recordingCommander{failOnCall: 1}
+	rec := &recordingRunner{failOnCall: 1}
 	w := New(rec)
 
 	if err := w.RouteDelSplitDefault("tun0"); err != nil {
@@ -217,7 +217,7 @@ func TestRouteDelSplitDefault(t *testing.T) {
 }
 
 func TestRoute6DelSplitDefault(t *testing.T) {
-	rec := &recordingCommander{failOnCall: 1}
+	rec := &recordingRunner{failOnCall: 1}
 	w := New(rec)
 
 	if err := w.Route6DelSplitDefault("tun0"); err != nil {
@@ -244,7 +244,7 @@ func TestRouteGet(t *testing.T) {
 		{name: "IPv6", host: netip.MustParseAddr("2001:db8::1"), want: []string{"ip", "-6", "route", "get", "2001:db8::1"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &recordingCommander{output: []byte("route dev eth0")}
+			recorder := &recordingRunner{output: []byte("route dev eth0")}
 			route, err := New(recorder).RouteGet(test.host)
 			if err != nil || route != "route dev eth0" {
 				t.Fatalf("RouteGet() = %q, %v", route, err)
@@ -261,7 +261,7 @@ func TestRouteGet(t *testing.T) {
 		}
 	})
 	t.Run("invalid address", func(t *testing.T) {
-		if _, err := New(&recordingCommander{}).RouteGet(netip.Addr{}); err == nil {
+		if _, err := New(&recordingRunner{}).RouteGet(netip.Addr{}); err == nil {
 			t.Fatal("expected error")
 		}
 	})
@@ -277,7 +277,7 @@ func TestRouteReplaceDev(t *testing.T) {
 		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), want: []string{"ip", "-4", "route", "replace", "192.0.2.1", "dev", "tun0"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &recordingCommander{}
+			recorder := &recordingRunner{}
 			if err := New(recorder).RouteReplaceDev(test.host, "tun0"); err != nil {
 				t.Fatal(err)
 			}
@@ -305,7 +305,7 @@ func TestRouteReplaceViaDev(t *testing.T) {
 		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), gateway: netip.MustParseAddr("::ffff:192.0.2.254"), want: []string{"ip", "-4", "route", "replace", "192.0.2.1", "via", "192.0.2.254", "dev", "tun0"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &recordingCommander{}
+			recorder := &recordingRunner{}
 			if err := New(recorder).RouteReplaceViaDev(test.host, "tun0", test.gateway); err != nil {
 				t.Fatal(err)
 			}
@@ -325,7 +325,7 @@ func TestRouteReplaceViaDev(t *testing.T) {
 		}
 	})
 	t.Run("invalid gateway", func(t *testing.T) {
-		err := New(&recordingCommander{}).RouteReplaceViaDev(netip.MustParseAddr("1.1.1.1"), "tun0", netip.Addr{})
+		err := New(&recordingRunner{}).RouteReplaceViaDev(netip.MustParseAddr("1.1.1.1"), "tun0", netip.Addr{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -342,7 +342,7 @@ func TestRouteDel(t *testing.T) {
 		{name: "IPv4-mapped IPv6", host: netip.MustParseAddr("::ffff:192.0.2.1"), want: []string{"ip", "-4", "route", "del", "192.0.2.1"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &recordingCommander{}
+			recorder := &recordingRunner{}
 			if err := New(recorder).RouteDel(test.host); err != nil {
 				t.Fatal(err)
 			}

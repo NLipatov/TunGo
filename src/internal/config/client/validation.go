@@ -65,10 +65,10 @@ func validate(configuration Configuration) error {
 	if active.MTU < minimumMTU || active.MTU > settings.MaximumMTU {
 		return fmt.Errorf("active settings: invalid MTU %d: expected %d..%d", active.MTU, minimumMTU, settings.MaximumMTU)
 	}
-	if err := validateDNSServers(active.DNSv4, false); err != nil {
+	if err := validateDNSv4Servers(active.DNSv4); err != nil {
 		return fmt.Errorf("active settings: %w", err)
 	}
-	if err := validateDNSServers(active.DNSv6, true); err != nil {
+	if err := validateDNSv6Servers(active.DNSv6); err != nil {
 		return fmt.Errorf("active settings: %w", err)
 	}
 	return nil
@@ -90,22 +90,35 @@ func validateServerHost(host settings.Host) error {
 	return nil
 }
 
-func validateDNSServers(servers []string, wantIPv6 bool) error {
+func validateDNSv4Servers(servers []string) error {
 	for i, raw := range servers {
 		resolver := strings.TrimSpace(raw)
 		if resolver == "" {
-			return fmt.Errorf("DNS[%d] is empty", i)
+			return fmt.Errorf("DNSv4[%d] is empty", i)
 		}
 		addr, err := netip.ParseAddr(resolver)
 		if err != nil {
-			return fmt.Errorf("DNS[%d] %q is not an IP address", i, raw)
+			return fmt.Errorf("DNSv4[%d] %q is not an IP address", i, raw)
 		}
-		isV4 := addr.Unmap().Is4()
-		if wantIPv6 && isV4 {
-			return fmt.Errorf("DNS[%d] %q is IPv4, expected IPv6", i, raw)
+		if !addr.Is4() {
+			return fmt.Errorf("DNSv4[%d] %q is IPv6, expected IPv4", i, raw)
 		}
-		if !wantIPv6 && !isV4 {
-			return fmt.Errorf("DNS[%d] %q is IPv6, expected IPv4", i, raw)
+	}
+	return nil
+}
+
+func validateDNSv6Servers(servers []string) error {
+	for i, raw := range servers {
+		resolver := strings.TrimSpace(raw)
+		if resolver == "" {
+			return fmt.Errorf("DNSv6[%d] is empty", i)
+		}
+		addr, err := netip.ParseAddr(resolver)
+		if err != nil {
+			return fmt.Errorf("DNSv6[%d] %q is not an IP address", i, raw)
+		}
+		if !addr.Is6() || addr.Is4In6() {
+			return fmt.Errorf("DNSv6[%d] %q is IPv4, expected IPv6", i, raw)
 		}
 	}
 	return nil

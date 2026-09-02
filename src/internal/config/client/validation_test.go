@@ -142,12 +142,14 @@ func TestValidate_FailsWhenTunNameContainsUnsupportedCharacters(t *testing.T) {
 }
 
 func TestValidate_FailsWhenDNSv4ContainsIPv6(t *testing.T) {
-	cfg := validClientConfiguration(t)
-	cfg.UDPSettings.DNSv4 = []string{"2001:4860:4860::8888"}
+	for _, resolver := range []string{"2001:4860:4860::8888", "::ffff:192.0.2.1"} {
+		cfg := validClientConfiguration(t)
+		cfg.UDPSettings.DNSv4 = []string{resolver}
 
-	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "is IPv6, expected IPv4") {
-		t.Fatalf("expected DNSv4 family validation error, got %v", err)
+		err := validate(cfg)
+		if err == nil || !strings.Contains(err.Error(), "is IPv6, expected IPv4") {
+			t.Fatalf("DNSv4 resolver %q: expected family validation error, got %v", resolver, err)
+		}
 	}
 }
 
@@ -274,7 +276,7 @@ func TestValidate_FailsOnEmptyDNSString(t *testing.T) {
 	cfg.UDPSettings.DNSv4 = []string{""}
 
 	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
+	if err == nil || !strings.Contains(err.Error(), "DNSv4[0] is empty") {
 		t.Fatalf("expected empty DNS error, got %v", err)
 	}
 }
@@ -284,7 +286,7 @@ func TestValidate_FailsOnWhitespaceDNSString(t *testing.T) {
 	cfg.UDPSettings.DNSv4 = []string{"   "}
 
 	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
+	if err == nil || !strings.Contains(err.Error(), "DNSv4[0] is empty") {
 		t.Fatalf("expected empty DNS error, got %v", err)
 	}
 }
@@ -294,7 +296,7 @@ func TestValidate_FailsOnNonIPDNS(t *testing.T) {
 	cfg.UDPSettings.DNSv4 = []string{"not-an-ip"}
 
 	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "is not an IP address") {
+	if err == nil || !strings.Contains(err.Error(), "DNSv4[0]") || !strings.Contains(err.Error(), "is not an IP address") {
 		t.Fatalf("expected non-IP DNS error, got %v", err)
 	}
 }
@@ -304,7 +306,7 @@ func TestValidate_FailsOnEmptyDNSv6String(t *testing.T) {
 	cfg.UDPSettings.DNSv6 = []string{""}
 
 	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "DNS[0] is empty") {
+	if err == nil || !strings.Contains(err.Error(), "DNSv6[0] is empty") {
 		t.Fatalf("expected empty DNSv6 error, got %v", err)
 	}
 }
@@ -314,7 +316,7 @@ func TestValidate_FailsOnNonIPDNSv6(t *testing.T) {
 	cfg.UDPSettings.DNSv6 = []string{"example.com"}
 
 	err := validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "is not an IP address") {
+	if err == nil || !strings.Contains(err.Error(), "DNSv6[0]") || !strings.Contains(err.Error(), "is not an IP address") {
 		t.Fatalf("expected non-IP DNSv6 error, got %v", err)
 	}
 }

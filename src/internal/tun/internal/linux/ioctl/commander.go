@@ -9,6 +9,7 @@ import (
 
 type Commander interface {
 	Ioctl(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno)
+	IoctlInt(fd uintptr, request uintptr, value int) unix.Errno
 }
 
 type LinuxIoctlCommander struct {
@@ -20,4 +21,9 @@ func NewLinuxIoctlCommander() Commander {
 
 func (d LinuxIoctlCommander) Ioctl(fd uintptr, request uintptr, ifr *IfReq) (uintptr, uintptr, unix.Errno) {
 	return unix.Syscall(unix.SYS_IOCTL, fd, request, uintptr(unsafe.Pointer(ifr)))
+}
+
+func (d LinuxIoctlCommander) IoctlInt(fd uintptr, request uintptr, value int) unix.Errno {
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, fd, request, uintptr(value))
+	return errno
 }

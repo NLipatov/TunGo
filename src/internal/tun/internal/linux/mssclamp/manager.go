@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"tungo/internal/platform/command"
 )
+
+type runner interface {
+	CombinedOutput(name string, args ...string) ([]byte, error)
+	Output(name string, args ...string) ([]byte, error)
+}
 
 type backend int
 
@@ -25,11 +29,11 @@ const (
 // TCPMSS mangle rules keep ClientHello-sized packets from blackholing inside
 // the UDP tunnel by advertising an MSS that fits the effective tunnel PMTU.
 type Manager struct {
-	commander command.Runner
+	runner runner
 }
 
-func NewManager(commander command.Runner) *Manager {
-	return &Manager{commander: commander}
+func NewManager(runner runner) *Manager {
+	return &Manager{runner: runner}
 }
 
 // Install applies MSS clamping for the configured IP families.
@@ -100,7 +104,7 @@ type describedCommand struct {
 
 func (m *Manager) run(commands []describedCommand) error {
 	for _, cmd := range commands {
-		output, err := m.commander.CombinedOutput(cmd.name, cmd.args...)
+		output, err := m.runner.CombinedOutput(cmd.name, cmd.args...)
 		if err != nil {
 			return fmt.Errorf("failed to %s: %v, output: %s", cmd.desc, err, output)
 		}
@@ -111,7 +115,7 @@ func (m *Manager) run(commands []describedCommand) error {
 func (m *Manager) runCleanup(commands []describedCommand) error {
 	var cleanupErrs []error
 	for _, cmd := range commands {
-		output, err := m.commander.CombinedOutput(cmd.name, cmd.args...)
+		output, err := m.runner.CombinedOutput(cmd.name, cmd.args...)
 		if err != nil && !ruleMissing(output, err) {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to %s: %v, output: %s", cmd.desc, err, output))
 		}
@@ -171,25 +175,25 @@ func ipv6Rules(tunName, operation, action string) []describedCommand {
 }
 
 func (m *Manager) iptablesUsable() bool {
-	_, err := m.commander.Output("iptables", "--version")
+	_, err := m.runner.Output("iptables", "--version")
 	return err == nil
 }
 
 func (m *Manager) ip6tablesUsable() bool {
-	_, err := m.commander.CombinedOutput("ip6tables", "-t", "mangle", "-L", "-n")
+	_, err := m.runner.CombinedOutput("ip6tables", "-t", "mangle", "-L", "-n")
 	return err == nil
 }
 
 func (m *Manager) nftUsable() bool {
-	_, err := m.commander.Output("nft", "--version")
+	_, err := m.runner.Output("nft", "--version")
 	return err == nil
 }
 
 func (m *Manager) installNft(tunName string) error {
 	table := nftTableName(tunName)
 	// Clean up stale rules for this TUN and the table used by older versions.
-	_, _ = m.commander.CombinedOutput("nft", "delete", "table", "inet", table)
-	_, _ = m.commander.CombinedOutput("nft", "delete", "table", "inet", legacyNftTable)
+	_, _ = m.runner.CombinedOutput("nft", "delete", "table", "inet", table)
+	_, _ = m.runner.CombinedOutput("nft", "delete", "table", "inet", legacyNftTable)
 
 	commands := []describedCommand{
 		{
@@ -235,7 +239,7 @@ func (m *Manager) removeNft(tunName string) error {
 }
 
 func (m *Manager) deleteNftTable(table string) error {
-	output, err := m.commander.CombinedOutput("nft", "delete", "table", "inet", table)
+	output, err := m.runner.CombinedOutput("nft", "delete", "table", "inet", table)
 	if err != nil {
 		// Treat missing tables as benign; they mean nothing is left to clean up.
 		msg := strings.ToLower(err.Error() + string(output))
