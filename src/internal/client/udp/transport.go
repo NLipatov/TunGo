@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"time"
 
 	"tungo/internal/config/settings"
@@ -67,12 +66,6 @@ func (t *transportHandler) HandleTransport() error {
 		default:
 			n, readErr := t.reader.Read(buffer[:])
 			if readErr != nil {
-				if errors.Is(readErr, os.ErrDeadlineExceeded) {
-					if err := t.checkLiveness(); err != nil {
-						return err
-					}
-					continue
-				}
 				if t.ctx.Err() != nil {
 					return nil
 				}
