@@ -552,8 +552,7 @@ func TestCheckLiveness_PingRestartTimeout(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
 	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	// Set lastRecvAt far in the past to trigger timeout immediately.
-	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
 
 	err := h.checkLiveness()
 	if err == nil {
@@ -568,8 +567,7 @@ func TestCheckLiveness_PingSentOnIdle(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
 	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	// Set lastRecvAt so that PingInterval is exceeded but PingRestartTimeout is not.
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
 	if err := h.checkLiveness(); err != nil {
 		t.Fatalf("checkLiveness() error = %v", err)
 	}
@@ -589,6 +587,20 @@ func TestCheckLiveness_PingSentOnIdle(t *testing.T) {
 	}
 }
 
+func TestCheckLiveness_DoesNotPingWhileActive(t *testing.T) {
+	eg := &capturingEgress{}
+	h := newTestTransportHandler(context.Background(), nil, nil, nil, nil, nil, eg)
+	h.lastPingSentAt = time.Now().Add(-settings.PingInterval - time.Second)
+	h.readActivity.Touch()
+
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("checkLiveness() error = %v", err)
+	}
+	if packets := eg.Packets(); len(packets) != 0 {
+		t.Fatalf("sent %d Ping packets while connection was active, want none", len(packets))
+	}
+}
+
 func TestHandleDatagram_AuthenticatedPacketResetsLiveness(t *testing.T) {
 	encrypted := []byte{0, 42}
 	decrypted := []byte{100}
@@ -596,13 +608,26 @@ func TestHandleDatagram_AuthenticatedPacketResetsLiveness(t *testing.T) {
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := newTestTransportHandler(context.Background(), &thTestReader{}, w, crypto, ctrl, nil, nil)
-	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
 
 	if _, err := h.handleDatagram(encrypted); err != nil {
 		t.Fatalf("handleDatagram() error = %v", err)
 	}
 	if err := h.checkLiveness(); err != nil {
 		t.Fatalf("authenticated packet did not reset liveness: %v", err)
+	}
+}
+
+func TestHandleDatagram_DecryptErrorDoesNotResetLiveness(t *testing.T) {
+	crypto := &thTestCrypto{err: errors.New("decrypt failed")}
+	h := newTestTransportHandler(context.Background(), nil, nil, crypto, nil, nil, nil)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
+
+	if _, err := h.handleDatagram([]byte{0, 42}); err != nil {
+		t.Fatalf("handleDatagram() error = %v", err)
+	}
+	if err := h.checkLiveness(); err == nil {
+		t.Fatal("decrypt error reset liveness, want server unreachable error")
 	}
 }
 
@@ -672,8 +697,7 @@ func TestCheckLiveness_NilEgress_NoIdlePing(t *testing.T) {
 	// With nil egress, idle should not attempt to send Ping.
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, nil)
-	// Set lastRecvAt so PingInterval is exceeded but not PingRestartTimeout.
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
 
 	if err := h.checkLiveness(); err != nil {
 		t.Fatalf("checkLiveness() error = %v", err)
@@ -740,7 +764,7 @@ func TestCheckLiveness_PingSendError_Swallowed(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{sendErr: errors.New("send failed")}
 	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
 
 	if err := h.checkLiveness(); err != nil {
 		t.Fatalf("checkLiveness() error = %v", err)

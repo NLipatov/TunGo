@@ -9,7 +9,7 @@ import (
 	"tungo/internal/config/settings"
 )
 
-func newBlockingTestClient(lastRecvAt time.Time) (*Client, context.CancelFunc) {
+func newBlockingTestClient(readIdleFor time.Duration) (*Client, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	blockedRead := func([]byte) (int, error) {
 		<-ctx.Done()
@@ -31,7 +31,7 @@ func newBlockingTestClient(lastRecvAt time.Time) (*Client, context.CancelFunc) {
 		nil,
 		nil,
 	)
-	transport.lastRecvAt = lastRecvAt
+	setActivityTrackerIdleFor(transport.readActivity, readIdleFor)
 
 	return &Client{ctx: ctx, tun: tun, transport: transport}, cancel
 }
@@ -39,9 +39,7 @@ func newBlockingTestClient(lastRecvAt time.Time) (*Client, context.CancelFunc) {
 func TestClientRun_ChecksLivenessWhileReadsAreBlocked(t *testing.T) {
 	t.Parallel()
 
-	client, cancel := newBlockingTestClient(
-		time.Now().Add(-settings.PingRestartTimeout - time.Second),
-	)
+	client, cancel := newBlockingTestClient(settings.PingRestartTimeout + time.Second)
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -60,7 +58,7 @@ func TestClientRun_ChecksLivenessWhileReadsAreBlocked(t *testing.T) {
 func TestClientRun_ContinuesAfterHealthyLivenessTick(t *testing.T) {
 	t.Parallel()
 
-	client, cancel := newBlockingTestClient(time.Now())
+	client, cancel := newBlockingTestClient(0)
 	done := make(chan error, 1)
 	go func() { done <- client.Run() }()
 
