@@ -125,8 +125,8 @@ func TestNewStateMachine_InitialStateAndKeyCopies(t *testing.T) {
 	if !sm.ReadyForRekey() {
 		t.Fatal("expected a new state machine to be ready for rekey")
 	}
-	if sm.state.current.epoch != 0 {
-		t.Fatalf("expected sendEpoch=0, got %d", sm.state.current.epoch)
+	if got := sm.state.current.epoch.Load(); got != 0 {
+		t.Fatalf("expected sendEpoch=0, got %d", got)
 	}
 
 	// Ensure keys are copied on construction.
@@ -156,16 +156,16 @@ func TestStartRekey_StagesEpochAndDoesNotSwitchSendUntilAck(t *testing.T) {
 	if sm.ReadyForRekey() {
 		t.Fatal("expected staged epoch to block another rekey")
 	}
-	if sm.state.staged.epoch != 10 {
-		t.Fatalf("expected staged epoch=10, got %+v", sm.state.staged)
+	if got := sm.state.staged.epoch.Load(); got != 10 {
+		t.Fatalf("expected staged epoch=10, got %d", got)
 	}
-	if sm.state.phase != phaseStaged {
-		t.Fatalf("expected staged phase, got %v", sm.state.phase)
+	if got := sm.state.phase.Load(); got != phaseStaged {
+		t.Fatalf("expected staged phase, got %v", got)
 	}
 
 	// Must not switch send epoch until confirmed.
-	if sm.state.current.epoch != 0 {
-		t.Fatalf("expected sendEpoch still 0, got %d", sm.state.current.epoch)
+	if got := sm.state.current.epoch.Load(); got != 0 {
+		t.Fatalf("expected sendEpoch still 0, got %d", got)
 	}
 
 	_, _, _, setCalls := mock.Snapshot()
@@ -188,8 +188,10 @@ func TestStartRekey_RejectsInvalidKeySize(t *testing.T) {
 			if installCalls != 0 {
 				t.Fatalf("expected StageEpoch not to be called, got %d calls", installCalls)
 			}
-			if !sm.ReadyForRekey() || sm.state.phase != phaseIdle {
-				t.Fatalf("expected idle machine, got %+v", sm.state)
+			ready := sm.ReadyForRekey()
+			phase := sm.state.phase.Load()
+			if !ready || phase != phaseIdle {
+				t.Fatalf("expected idle machine: ready=%t phase=%d", ready, phase)
 			}
 		})
 	}
@@ -232,11 +234,11 @@ func TestActivateSendEpoch_PromotesKeysAndWaitsForPeerObservation(t *testing.T) 
 
 	sm.ActivateSendEpoch(epoch)
 
-	if sm.state.current.epoch != epoch {
-		t.Fatalf("expected sendEpoch=%d, got %d", epoch, sm.state.current.epoch)
+	if got := sm.state.current.epoch.Load(); got != uint32(epoch) {
+		t.Fatalf("expected sendEpoch=%d, got %d", epoch, got)
 	}
-	if sm.state.phase != phaseRetiring {
-		t.Fatalf("expected retiring phase, got %v", sm.state.phase)
+	if got := sm.state.phase.Load(); got != phaseRetiring {
+		t.Fatalf("expected retiring phase, got %v", got)
 	}
 	if sm.ReadyForRekey() {
 		t.Fatal("expected previous epoch retirement to block another rekey")
@@ -277,8 +279,8 @@ func TestActivateSendEpoch_DoesNotActivateIfEpochNotConfirmed(t *testing.T) {
 	if sm.ReadyForRekey() {
 		t.Fatal("expected staged epoch to remain")
 	}
-	if sm.state.current.epoch != 0 {
-		t.Fatalf("expected sendEpoch still 0, got %d", sm.state.current.epoch)
+	if got := sm.state.current.epoch.Load(); got != 0 {
+		t.Fatalf("expected sendEpoch still 0, got %d", got)
 	}
 
 	_, _, _, setCalls := mock.Snapshot()
@@ -339,11 +341,11 @@ func TestActivateSendEpoch_WaitsForRekeyAndActivatesStaged(t *testing.T) {
 	if startEpoch != 42 {
 		t.Fatalf("expected epoch=42, got %d", startEpoch)
 	}
-	if sm.state.current.epoch != 42 {
-		t.Fatalf("expected sendEpoch=42, got %d", sm.state.current.epoch)
+	if got := sm.state.current.epoch.Load(); got != 42 {
+		t.Fatalf("expected sendEpoch=42, got %d", got)
 	}
-	if sm.state.phase != phaseRetiring {
-		t.Fatalf("expected retiring phase, got %v", sm.state.phase)
+	if got := sm.state.phase.Load(); got != phaseRetiring {
+		t.Fatalf("expected retiring phase, got %v", got)
 	}
 	gotC2S, gotS2C := sm.CurrentKeys()
 	if !reflect.DeepEqual(gotC2S, stateMachineTestKey("new-c2s")) ||
@@ -404,8 +406,10 @@ func TestStartRekey_ConcurrentCallWaitsThenFailsWhenStaged(t *testing.T) {
 		t.Fatalf("timeout waiting for second StartRekey to finish")
 	}
 
-	if sm.ReadyForRekey() || sm.state.phase != phaseStaged {
-		t.Fatalf("expected first epoch to remain staged, got %+v", sm.state)
+	ready := sm.ReadyForRekey()
+	phase := sm.state.phase.Load()
+	if ready || phase != phaseStaged {
+		t.Fatalf("expected first epoch to remain staged: ready=%t phase=%d", ready, phase)
 	}
 }
 
@@ -463,8 +467,8 @@ func TestObservePeerEpoch_TracksMaxAuthenticatedEpoch(t *testing.T) {
 	sm.ObservePeerEpoch(7)
 	sm.ObservePeerEpoch(11)
 
-	if sm.state.maxObservedPeerEpoch != 11 {
-		t.Fatalf("expected maxObservedPeerEpoch=11, got %d", sm.state.maxObservedPeerEpoch)
+	if got := sm.state.maxObservedPeerEpoch.Load(); got != 11 {
+		t.Fatalf("expected maxObservedPeerEpoch=11, got %d", got)
 	}
 }
 
@@ -477,8 +481,16 @@ func TestObservePeerEpoch_DoesNotActivateStagedEpoch(t *testing.T) {
 
 	sm.ObservePeerEpoch(4)
 
-	if sm.state.current.epoch != 0 || sm.state.phase != phaseStaged || sm.state.staged.epoch != 4 {
-		t.Fatalf("observation must not activate send: send=%d staged=%+v", sm.state.current.epoch, sm.state.staged)
+	currentEpoch := sm.state.current.epoch.Load()
+	phase := sm.state.phase.Load()
+	stagedEpoch := sm.state.staged.epoch.Load()
+	if currentEpoch != 0 || phase != phaseStaged || stagedEpoch != 4 {
+		t.Fatalf(
+			"observation must not activate send: current=%d staged=%d phase=%d",
+			currentEpoch,
+			stagedEpoch,
+			phase,
+		)
 	}
 	if sm.ReadyForRekey() {
 		t.Fatal("expected staged epoch to block another rekey")
@@ -506,8 +518,8 @@ func TestEpochRetiresAfterSendActivationAndPeerObservation(t *testing.T) {
 	if calls := mock.RetireCalls(); calls != 1 {
 		t.Fatalf("expected one RetirePreviousEpoch call, got %d", calls)
 	}
-	if sm.state.phase != phaseIdle {
-		t.Fatalf("expected completed retirement to be cleared, got %+v", sm.state)
+	if got := sm.state.phase.Load(); got != phaseIdle {
+		t.Fatalf("expected completed retirement to be cleared, got phase=%d", got)
 	}
 }
 
@@ -572,7 +584,7 @@ func TestEpochRetirementRetriesAfterCryptoRefusal(t *testing.T) {
 	}
 	sm.ActivateSendEpoch(epoch)
 	sm.ObservePeerEpoch(epoch)
-	if sm.state.phase != phaseRetiring {
+	if sm.state.phase.Load() != phaseRetiring {
 		t.Fatal("expected refused retirement to remain pending")
 	}
 
@@ -581,8 +593,8 @@ func TestEpochRetirementRetriesAfterCryptoRefusal(t *testing.T) {
 	mock.mu.Unlock()
 	sm.ObservePeerEpoch(epoch)
 
-	if sm.state.phase != phaseIdle {
-		t.Fatalf("expected retirement to clear after retry, got %+v", sm.state)
+	if got := sm.state.phase.Load(); got != phaseIdle {
+		t.Fatalf("expected retirement to clear after retry, got phase=%d", got)
 	}
 	if calls := mock.RetireCalls(); calls != 2 {
 		t.Fatalf("expected two retirement attempts, got %d", calls)

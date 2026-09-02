@@ -3,6 +3,7 @@ package rekey
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"tungo/internal/protocol/securemem"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -23,13 +24,11 @@ type EpochManager interface {
 type keys struct {
 	c2s   []byte
 	s2c   []byte
-	epoch uint16
+	epoch atomic.Uint32
 }
 
-type transitionPhase uint8
-
 const (
-	phaseIdle transitionPhase = iota
+	phaseIdle uint32 = iota
 	phaseStaged
 	phaseRetiring
 )
@@ -37,8 +36,8 @@ const (
 type state struct {
 	current              keys
 	staged               keys
-	maxObservedPeerEpoch uint16
-	phase                transitionPhase
+	maxObservedPeerEpoch atomic.Uint32
+	phase                atomic.Uint32
 }
 
 // StateMachine holds canonical control-plane keys and coordinates epoch lifecycle.
@@ -81,7 +80,7 @@ func (c *StateMachine) CurrentKeys() (clientToServer, serverToClient []byte) {
 func (c *StateMachine) ReadyForRekey() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.state.phase == phaseIdle
+	return c.state.phase.Load() == phaseIdle
 }
 
 // SendEpoch returns the epoch currently used for outbound packets. Control-plane
@@ -89,7 +88,7 @@ func (c *StateMachine) ReadyForRekey() bool {
 func (c *StateMachine) SendEpoch() uint16 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.state.current.epoch
+	return uint16(c.state.current.epoch.Load())
 }
 
 // StartRekey performs an atomic control-plane update:
@@ -108,7 +107,7 @@ func (c *StateMachine) StartRekey(c2s, s2c []byte) (uint16, error) {
 			chacha20poly1305.KeySize,
 		)
 	}
-	if c.state.phase != phaseIdle {
+	if c.state.phase.Load() != phaseIdle {
 		return 0, fmt.Errorf("rekey already in progress")
 	}
 	staged := &c.state.staged
@@ -118,8 +117,8 @@ func (c *StateMachine) StartRekey(c2s, s2c []byte) (uint16, error) {
 	}
 	copy(staged.c2s, c2s)
 	copy(staged.s2c, s2c)
-	staged.epoch = epoch
-	c.state.phase = phaseStaged
+	staged.epoch.Store(uint32(epoch))
+	c.state.phase.Store(phaseStaged)
 	return epoch, nil
 }
 
@@ -127,22 +126,24 @@ func (c *StateMachine) StartRekey(c2s, s2c []byte) (uint16, error) {
 // The caller owns the protocol decision to activate; authenticated inbound
 // observations are reported separately through ObservePeerEpoch.
 func (c *StateMachine) ActivateSendEpoch(epoch uint16) {
+	if uint16(c.state.current.epoch.Load()) >= epoch {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.activateStagedLocked(epoch) {
 		return
 	}
-	c.epochManager.PromoteSendEpoch(epoch)
 	c.retirePreviousEpochLocked()
 }
 
 func (c *StateMachine) retirePreviousEpochLocked() {
 	state := &c.state
-	if state.phase != phaseRetiring || state.maxObservedPeerEpoch < state.current.epoch {
+	if state.phase.Load() != phaseRetiring || state.maxObservedPeerEpoch.Load() < state.current.epoch.Load() {
 		return
 	}
 	if c.epochManager.RetirePreviousEpoch() {
-		state.phase = phaseIdle
+		state.phase.Store(phaseIdle)
 	}
 }
 
@@ -150,19 +151,35 @@ func (c *StateMachine) retirePreviousEpochLocked() {
 // authenticated. Once local send and peer receive have both moved forward,
 // the previous epoch can be retired by the crypto implementation.
 func (c *StateMachine) ObservePeerEpoch(epoch uint16) {
+	u32Epoch := uint32(epoch)
+	if c.state.maxObservedPeerEpoch.Load() >= u32Epoch &&
+		c.state.phase.Load() != phaseRetiring {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.state.maxObservedPeerEpoch = max(c.state.maxObservedPeerEpoch, epoch)
+	if c.state.maxObservedPeerEpoch.Load() < u32Epoch {
+		c.state.maxObservedPeerEpoch.Store(u32Epoch)
+	}
 	c.retirePreviousEpochLocked()
 }
 
 func (c *StateMachine) activateStagedLocked(epoch uint16) bool {
-	if c.state.phase != phaseStaged || epoch != c.state.staged.epoch {
+	if c.state.phase.Load() != phaseStaged || epoch != uint16(c.state.staged.epoch.Load()) {
 		return false
 	}
-	c.state.current, c.state.staged = c.state.staged, c.state.current
+	c.epochManager.PromoteSendEpoch(epoch)
+	stagedEpoch := c.state.staged.epoch.Load()
+	oldCurrentEpoch := c.state.current.epoch.Swap(stagedEpoch)
+	c.state.staged.epoch.Store(oldCurrentEpoch)
+
+	c.state.current.c2s, c.state.staged.c2s =
+		c.state.staged.c2s, c.state.current.c2s
+	c.state.current.s2c, c.state.staged.s2c =
+		c.state.staged.s2c, c.state.current.s2c
+
 	c.clearStagedLocked()
-	c.state.phase = phaseRetiring
+	c.state.phase.Store(phaseRetiring)
 	return true
 }
 
