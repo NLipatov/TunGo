@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"tungo/internal/config/settings"
@@ -549,49 +550,53 @@ func (e *capturingEgress) Packets() [][]byte {
 }
 
 func TestCheckLiveness_PingRestartTimeout(t *testing.T) {
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	eg := &capturingEgress{}
-	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+		eg := &capturingEgress{}
+		h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+		time.Sleep(settings.PingRestartTimeout + time.Second)
 
-	err := h.checkLiveness()
-	if err == nil {
-		t.Fatal("expected error for unreachable server, got nil")
-	}
-	if !bytes.Contains([]byte(err.Error()), []byte("server unreachable")) {
-		t.Fatalf("expected 'server unreachable' error, got: %v", err)
-	}
+		err := h.checkLiveness()
+		if err == nil {
+			t.Fatal("expected error for unreachable server, got nil")
+		}
+		if !bytes.Contains([]byte(err.Error()), []byte("server unreachable")) {
+			t.Fatalf("expected 'server unreachable' error, got: %v", err)
+		}
+	})
 }
 
 func TestCheckLiveness_PingSentOnIdle(t *testing.T) {
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	eg := &capturingEgress{}
-	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
-	if err := h.checkLiveness(); err != nil {
-		t.Fatalf("checkLiveness() error = %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+		eg := &capturingEgress{}
+		h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+		time.Sleep(settings.PingInterval + time.Second)
+		if err := h.checkLiveness(); err != nil {
+			t.Fatalf("checkLiveness() error = %v", err)
+		}
 
-	pkts := eg.Packets()
-	if len(pkts) == 0 {
-		t.Fatal("expected at least one Ping sent via egress")
-	}
-	// Verify the captured packet contains a valid Ping V1 header.
-	pkt := pkts[0]
-	payload := pkt[udpPayloadOffset:]
-	if len(payload) < 3 {
-		t.Fatalf("ping packet payload too short: %d", len(payload))
-	}
-	if payload[0] != servicepacket.Prefix || payload[1] != servicepacket.VersionV1 || payload[2] != byte(servicepacket.Ping) {
-		t.Fatalf("unexpected ping payload: %v", payload[:3])
-	}
+		pkts := eg.Packets()
+		if len(pkts) == 0 {
+			t.Fatal("expected at least one Ping sent via egress")
+		}
+		// Verify the captured packet contains a valid Ping V1 header.
+		pkt := pkts[0]
+		payload := pkt[udpPayloadOffset:]
+		if len(payload) < 3 {
+			t.Fatalf("ping packet payload too short: %d", len(payload))
+		}
+		if payload[0] != servicepacket.Prefix || payload[1] != servicepacket.VersionV1 || payload[2] != byte(servicepacket.Ping) {
+			t.Fatalf("unexpected ping payload: %v", payload[:3])
+		}
+	})
 }
 
 func TestCheckLiveness_DoesNotPingWhileActive(t *testing.T) {
 	eg := &capturingEgress{}
 	h := newTestTransportHandler(context.Background(), nil, nil, nil, nil, nil, eg)
 	h.lastPingSentAt = time.Now().Add(-settings.PingInterval - time.Second)
-	h.readActivity.Touch()
+	h.readActivity.Reset()
 
 	if err := h.checkLiveness(); err != nil {
 		t.Fatalf("checkLiveness() error = %v", err)
@@ -602,33 +607,37 @@ func TestCheckLiveness_DoesNotPingWhileActive(t *testing.T) {
 }
 
 func TestHandleDatagram_AuthenticatedPacketResetsLiveness(t *testing.T) {
-	encrypted := []byte{0, 42}
-	decrypted := []byte{100}
-	w := &thTestWriter{}
-	crypto := &thTestCrypto{output: decrypted}
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTestTransportHandler(context.Background(), &thTestReader{}, w, crypto, ctrl, nil, nil)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		encrypted := []byte{0, 42}
+		decrypted := []byte{100}
+		w := &thTestWriter{}
+		crypto := &thTestCrypto{output: decrypted}
+		ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+		h := newTestTransportHandler(context.Background(), &thTestReader{}, w, crypto, ctrl, nil, nil)
+		time.Sleep(settings.PingRestartTimeout + time.Second)
 
-	if _, err := h.handleDatagram(encrypted); err != nil {
-		t.Fatalf("handleDatagram() error = %v", err)
-	}
-	if err := h.checkLiveness(); err != nil {
-		t.Fatalf("authenticated packet did not reset liveness: %v", err)
-	}
+		if _, err := h.handleDatagram(encrypted); err != nil {
+			t.Fatalf("handleDatagram() error = %v", err)
+		}
+		if err := h.checkLiveness(); err != nil {
+			t.Fatalf("authenticated packet did not reset liveness: %v", err)
+		}
+	})
 }
 
 func TestHandleDatagram_DecryptErrorDoesNotResetLiveness(t *testing.T) {
-	crypto := &thTestCrypto{err: errors.New("decrypt failed")}
-	h := newTestTransportHandler(context.Background(), nil, nil, crypto, nil, nil, nil)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		crypto := &thTestCrypto{err: errors.New("decrypt failed")}
+		h := newTestTransportHandler(context.Background(), nil, nil, crypto, nil, nil, nil)
+		time.Sleep(settings.PingRestartTimeout + time.Second)
 
-	if _, err := h.handleDatagram([]byte{0, 42}); err != nil {
-		t.Fatalf("handleDatagram() error = %v", err)
-	}
-	if err := h.checkLiveness(); err == nil {
-		t.Fatal("decrypt error reset liveness, want server unreachable error")
-	}
+		if _, err := h.handleDatagram([]byte{0, 42}); err != nil {
+			t.Fatalf("handleDatagram() error = %v", err)
+		}
+		if err := h.checkLiveness(); err == nil {
+			t.Fatal("decrypt error reset liveness, want server unreachable error")
+		}
+	})
 }
 
 func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
@@ -694,15 +703,17 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 }
 
 func TestCheckLiveness_NilEgress_NoIdlePing(t *testing.T) {
-	// With nil egress, idle should not attempt to send Ping.
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, nil)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		// With nil egress, idle should not attempt to send Ping.
+		ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+		h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, nil)
+		time.Sleep(settings.PingInterval + time.Second)
 
-	if err := h.checkLiveness(); err != nil {
-		t.Fatalf("checkLiveness() error = %v", err)
-	}
-	// No panic = success (nil egress handled gracefully).
+		if err := h.checkLiveness(); err != nil {
+			t.Fatalf("checkLiveness() error = %v", err)
+		}
+		// No panic = success (nil egress handled gracefully).
+	})
 }
 
 func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
@@ -760,15 +771,17 @@ func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
 }
 
 func TestCheckLiveness_PingSendError_Swallowed(t *testing.T) {
-	// When egress.Send returns an error during Ping, sendPing returns early without panic.
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	eg := &capturingEgress{sendErr: errors.New("send failed")}
-	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
-	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		// When egress.Send returns an error during Ping, sendPing returns early without panic.
+		ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+		eg := &capturingEgress{sendErr: errors.New("send failed")}
+		h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+		time.Sleep(settings.PingInterval + time.Second)
 
-	if err := h.checkLiveness(); err != nil {
-		t.Fatalf("checkLiveness() error = %v", err)
-	}
+		if err := h.checkLiveness(); err != nil {
+			t.Fatalf("checkLiveness() error = %v", err)
+		}
+	})
 }
 
 func TestHandleDatagram_TooShortPacket_Ignored(t *testing.T) {
