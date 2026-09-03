@@ -10,7 +10,7 @@ import (
 
 const (
 	interval = time.Second
-	maxGap   = time.Second
+	maxGap   = 2 * time.Second
 )
 
 func Watch(ctx context.Context) <-chan struct{} {
