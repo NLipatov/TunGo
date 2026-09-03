@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -238,28 +237,6 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
-	}
-}
-
-func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
-	}}
-	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
-
-	done := make(chan error)
-	go func() { done <- h.HandleTransport() }()
-
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Errorf("expected nil after skip and cancel, got %v", err)
 	}
 }
 
@@ -571,24 +548,13 @@ func (e *capturingEgress) Packets() [][]byte {
 	return out
 }
 
-func TestHandleTransport_PingRestartTimeout(t *testing.T) {
-	// Reader returns only deadline-exceeded errors; after PingRestartTimeout
-	// the handler must return an error indicating unreachable server.
-	r := &thTestReader{reads: make([]func(p []byte) (int, error), 0)}
-	// Fill enough reads to outlast the timeout. Each deadline-exceeded wakes ~immediately in test.
-	for i := 0; i < 200; i++ {
-		r.reads = append(r.reads, func(p []byte) (int, error) {
-			return 0, os.ErrDeadlineExceeded
-		})
-	}
-	w := &thTestWriter{}
+func TestCheckLiveness_PingRestartTimeout(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := newTestTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, eg)
-	// Set lastRecvAt far in the past to trigger timeout immediately.
-	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
 
-	err := h.HandleTransport()
+	err := h.checkLiveness()
 	if err == nil {
 		t.Fatal("expected error for unreachable server, got nil")
 	}
@@ -597,29 +563,14 @@ func TestHandleTransport_PingRestartTimeout(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_PingSentOnIdle(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// First read: deadline exceeded (triggers Ping send).
-	// Second read: blocks until cancel.
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
-	}}
-	w := &thTestWriter{}
+func TestCheckLiveness_PingSentOnIdle(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
-	// Set lastRecvAt so that PingInterval is exceeded but PingRestartTimeout is not.
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
-
-	done := make(chan error)
-	go func() { done <- h.HandleTransport() }()
-
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	<-done
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("checkLiveness() error = %v", err)
+	}
 
 	pkts := eg.Packets()
 	if len(pkts) == 0 {
@@ -636,36 +587,47 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_RecvResetsPingTimer(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func TestCheckLiveness_DoesNotPingWhileActive(t *testing.T) {
+	eg := &capturingEgress{}
+	h := newTestTransportHandler(context.Background(), nil, nil, nil, nil, nil, eg)
+	h.lastPingSentAt = time.Now().Add(-settings.PingInterval - time.Second)
+	h.readActivity.Touch()
 
-	// Sequence:
-	// 1. Read deadline exceeded (idle, but within PingRestartTimeout)
-	// 2. Read data (successful decrypt resets lastRecvAt)
-	// 3. Read deadline exceeded again — should NOT timeout
-	// 4. Block until cancel
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("checkLiveness() error = %v", err)
+	}
+	if packets := eg.Packets(); len(packets) != 0 {
+		t.Fatalf("sent %d Ping packets while connection was active, want none", len(packets))
+	}
+}
+
+func TestHandleDatagram_AuthenticatedPacketResetsLiveness(t *testing.T) {
 	encrypted := []byte{0, 42}
 	decrypted := []byte{100}
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { copy(p, encrypted); return len(encrypted), nil },
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
-	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTestTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, w, crypto, ctrl, nil, nil)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
 
-	done := make(chan error)
-	go func() { done <- h.HandleTransport() }()
+	if _, err := h.handleDatagram(encrypted); err != nil {
+		t.Fatalf("handleDatagram() error = %v", err)
+	}
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("authenticated packet did not reset liveness: %v", err)
+	}
+}
 
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	err := <-done
-	if err != nil {
-		t.Fatalf("expected nil (recv should have reset timer), got %v", err)
+func TestHandleDatagram_DecryptErrorDoesNotResetLiveness(t *testing.T) {
+	crypto := &thTestCrypto{err: errors.New("decrypt failed")}
+	h := newTestTransportHandler(context.Background(), nil, nil, crypto, nil, nil, nil)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingRestartTimeout+time.Second)
+
+	if _, err := h.handleDatagram([]byte{0, 42}); err != nil {
+		t.Fatalf("handleDatagram() error = %v", err)
+	}
+	if err := h.checkLiveness(); err == nil {
+		t.Fatal("decrypt error reset liveness, want server unreachable error")
 	}
 }
 
@@ -731,28 +693,14 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_NilEgress_NoIdlePing(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestCheckLiveness_NilEgress_NoIdlePing(t *testing.T) {
 	// With nil egress, idle should not attempt to send Ping.
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
-	}}
-	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
-	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
-	// Set lastRecvAt so PingInterval is exceeded but not PingRestartTimeout.
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, nil)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
 
-	done := make(chan error)
-	go func() { done <- h.HandleTransport() }()
-
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("expected nil, got %v", err)
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("checkLiveness() error = %v", err)
 	}
 	// No panic = success (nil egress handled gracefully).
 }
@@ -811,28 +759,15 @@ func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
+func TestCheckLiveness_PingSendError_Swallowed(t *testing.T) {
 	// When egress.Send returns an error during Ping, sendPing returns early without panic.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
-		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
-	}}
-	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{sendErr: errors.New("send failed")}
-	h := newTestTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg)
-	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+	h := newTestTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, ctrl, nil, eg)
+	setActivityTrackerIdleFor(h.readActivity, settings.PingInterval+time.Second)
 
-	done := make(chan error)
-	go func() { done <- h.HandleTransport() }()
-
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("expected nil, got %v", err)
+	if err := h.checkLiveness(); err != nil {
+		t.Fatalf("checkLiveness() error = %v", err)
 	}
 }
 

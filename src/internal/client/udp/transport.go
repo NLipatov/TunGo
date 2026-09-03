@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"time"
 
 	"tungo/internal/config/settings"
@@ -31,9 +30,9 @@ type transportHandler struct {
 	cryptographyService crypto
 	rekey               transportRekey
 	egress              sender
-	lastRecvAt          time.Time
 	lastPingSentAt      time.Time
 	pingBuf             []byte
+	readActivity        *activityTracker
 }
 
 func newTransportHandler(
@@ -52,8 +51,8 @@ func newTransportHandler(
 		cryptographyService: cryptographyService,
 		rekey:               rekey,
 		egress:              egress,
-		lastRecvAt:          time.Now(),
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
+		readActivity:        newActivityTracker(),
 	}
 }
 
@@ -67,12 +66,6 @@ func (t *transportHandler) HandleTransport() error {
 		default:
 			n, readErr := t.reader.Read(buffer[:])
 			if readErr != nil {
-				if errors.Is(readErr, os.ErrDeadlineExceeded) {
-					if err := t.checkLiveness(); err != nil {
-						return err
-					}
-					continue
-				}
 				if t.ctx.Err() != nil {
 					return nil
 				}
@@ -98,7 +91,7 @@ func (t *transportHandler) handleDatagram(pkt []byte) (int, error) {
 		// This makes client resilient to packet corruption and garbage injection.
 		return 0, nil
 	}
-	t.lastRecvAt = time.Now()
+	t.readActivity.Touch()
 	var carrierEpoch uint16
 	if len(pkt) >= udp.EpochOffset+2 {
 		carrierEpoch = binary.BigEndian.Uint16(pkt[udp.EpochOffset : udp.EpochOffset+2])
@@ -160,10 +153,13 @@ func (t *transportHandler) handleControlplane(
 }
 
 func (t *transportHandler) checkLiveness() error {
-	if time.Since(t.lastRecvAt) > settings.PingRestartTimeout {
+	idleFor := t.readActivity.IdleFor()
+	if idleFor > settings.PingRestartTimeout {
 		return fmt.Errorf("server unreachable (no data for %s)", settings.PingRestartTimeout)
 	}
-	if t.egress != nil && time.Since(t.lastPingSentAt) > settings.PingInterval {
+	if t.egress != nil &&
+		idleFor > settings.PingInterval &&
+		time.Since(t.lastPingSentAt) > settings.PingInterval {
 		t.sendPing()
 	}
 	return nil

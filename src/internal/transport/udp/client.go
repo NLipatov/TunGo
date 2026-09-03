@@ -9,18 +9,17 @@ import (
 
 // clientConn - single goroutine only client UDP adapter
 type clientConn struct {
-	conn                        *net.UDPConn
-	buf                         [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	readDeadline, writeDeadline time.Duration
+	conn          *net.UDPConn
+	buf           [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	writeDeadline time.Duration
 }
 
 func NewClientConn(
 	conn *net.UDPConn,
-	readDeadline, writeDeadline time.Duration) io.ReadWriteCloser {
+	writeDeadline time.Duration) io.ReadWriteCloser {
 	return &clientConn{
 		conn:          conn,
 		writeDeadline: writeDeadline,
-		readDeadline:  readDeadline,
 	}
 }
 
@@ -37,14 +36,6 @@ func (c *clientConn) Write(buffer []byte) (int, error) {
 }
 
 func (c *clientConn) Read(buffer []byte) (int, error) {
-	deadline := time.Time{}
-	if c.readDeadline > 0 {
-		deadline = time.Now().Add(c.readDeadline)
-	}
-	if err := c.conn.SetReadDeadline(deadline); err != nil {
-		return 0, err
-	}
-
 	// Fast path: packet-loop buffers are already max-sized, so read directly
 	// into caller memory and avoid an extra copy.
 	if len(buffer) >= len(c.buf) {
