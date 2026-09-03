@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"tungo/internal/client/stopwatch"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/udp"
@@ -32,7 +33,7 @@ type transportHandler struct {
 	egress              sender
 	lastPingSentAt      time.Time
 	pingBuf             []byte
-	readActivity        *activityTracker
+	readActivity        *stopwatch.Stopwatch
 }
 
 func newTransportHandler(
@@ -52,7 +53,7 @@ func newTransportHandler(
 		rekey:               rekey,
 		egress:              egress,
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
-		readActivity:        newActivityTracker(),
+		readActivity:        stopwatch.New(),
 	}
 }
 
@@ -91,7 +92,7 @@ func (t *transportHandler) handleDatagram(pkt []byte) (int, error) {
 		// This makes client resilient to packet corruption and garbage injection.
 		return 0, nil
 	}
-	t.readActivity.Touch()
+	t.readActivity.Reset()
 	var carrierEpoch uint16
 	if len(pkt) >= udp.EpochOffset+2 {
 		carrierEpoch = binary.BigEndian.Uint16(pkt[udp.EpochOffset : udp.EpochOffset+2])
@@ -153,7 +154,7 @@ func (t *transportHandler) handleControlplane(
 }
 
 func (t *transportHandler) checkLiveness() error {
-	idleFor := t.readActivity.IdleFor()
+	idleFor := t.readActivity.Elapsed()
 	if idleFor > settings.PingRestartTimeout {
 		return fmt.Errorf("server unreachable (no data for %s)", settings.PingRestartTimeout)
 	}
