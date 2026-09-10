@@ -23,8 +23,10 @@ func TestDrainRejectsNewIO(t *testing.T) {
 
 func TestDrainUnblocksAndWaitsForActiveIO(t *testing.T) {
 	gate := New()
-	if !gate.TryAcquire() || !gate.TryAcquire() {
-		t.Fatal("TryAcquire failed on an open gate")
+	for range 2 {
+		if !gate.TryAcquire() {
+			t.Fatal("TryAcquire failed on an open gate")
+		}
 	}
 
 	unblockCalled := make(chan struct{})
