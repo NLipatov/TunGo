@@ -85,7 +85,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 
 func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 	ctx, cancel := context.WithCancel(context.Background())
-	changed, err := defaultroute.Watch(ctx)
+	errCh, err := defaultroute.Watch(ctx)
 	if err != nil {
 		cancel()
 		return err
@@ -94,7 +94,10 @@ func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 		select {
 		case <-ctx.Done():
 			return
-		case <-changed:
+		case err := <-errCh:
+			if err != nil {
+				slog.Warn("default route watcher failed", "err", err)
+			}
 			_ = tun.Close()
 		}
 	}()

@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Watch(ctx context.Context) (<-chan struct{}, error) {
+func Watch(ctx context.Context) (<-chan error, error) {
 	fd, err := unix.Socket(
 		unix.AF_NETLINK,
 		unix.SOCK_RAW|unix.SOCK_CLOEXEC|unix.SOCK_NONBLOCK,
@@ -29,7 +29,7 @@ func Watch(ctx context.Context) (<-chan struct{}, error) {
 		return nil, err
 	}
 
-	changed := make(chan struct{})
+	errCh := make(chan error, 1)
 	go func() {
 		defer func() {
 			_ = unix.Close(fd)
@@ -47,31 +47,40 @@ func Watch(ctx context.Context) (<-chan struct{}, error) {
 				continue
 			}
 			if err != nil {
+				if ctx.Err() == nil {
+					errCh <- err
+				}
 				return
 			}
 
 			n, _, err = unix.Recvfrom(fd, buffer, 0)
-			if errors.Is(err, unix.EAGAIN) {
+			if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
 				continue
 			}
 			if err != nil {
+				if ctx.Err() == nil {
+					errCh <- err
+				}
 				return
 			}
 
 			messages, err := syscall.ParseNetlinkMessage(buffer[:n])
 			if err != nil {
-				continue
+				if ctx.Err() == nil {
+					errCh <- err
+				}
+				return
 			}
 			for _, message := range messages {
 				if isDefaultRouteChange(message) {
-					close(changed)
+					errCh <- nil
 					return
 				}
 			}
 		}
 	}()
 
-	return changed, nil
+	return errCh, nil
 }
 
 func isDefaultRouteChange(message syscall.NetlinkMessage) bool {
