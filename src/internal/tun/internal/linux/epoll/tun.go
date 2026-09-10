@@ -31,6 +31,9 @@ type tun struct {
 	closed atomic.Bool
 }
 
+// A finite timeout lets Close stop idle operations without a separate wake-up fd.
+const epollWaitTimeoutMillis = 250
+
 // New takes ownership of f on success (it closes f before returning).
 // On error, ownership remains with the caller (f is not closed).
 func New(f *os.File) (io.ReadWriteCloser, error) {
@@ -104,6 +107,9 @@ func (w *tun) Read(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	}
 	for {
+		if w.closed.Load() {
+			return 0, io.ErrClosedPipe
+		}
 		n, err := unix.Read(w.fd, p)
 		if err == nil {
 			if n == 0 {
@@ -140,6 +146,9 @@ func (w *tun) Write(p []byte) (int, error) {
 	}
 	total := 0
 	for total < len(p) {
+		if w.closed.Load() {
+			return total, io.ErrClosedPipe
+		}
 		n, err := unix.Write(w.fd, p[total:])
 		if err == nil {
 			if n == 0 {
@@ -172,14 +181,14 @@ func (w *tun) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// Close closes the epoll instances first (to wake any waiters), then the data fd.
+// Close marks the wrapper closed and closes all descriptors.
+// Active epoll waits observe the closed state after at most epollWaitTimeoutMillis.
 // It is safe to call multiple times.
 func (w *tun) Close() error {
 	if !w.closed.CompareAndSwap(false, true) {
 		return nil
 	}
 	var firstErr error
-	// Close epolls first so blocked epoll_wait calls return.
 	if err := unix.Close(w.epIn); err != nil {
 		firstErr = err
 	}
@@ -195,7 +204,7 @@ func (w *tun) Close() error {
 func (w *tun) waitRead() error {
 	var evs [1]unix.EpollEvent
 	for {
-		n, err := unix.EpollWait(w.epIn, evs[:], -1)
+		n, err := unix.EpollWait(w.epIn, evs[:], epollWaitTimeoutMillis)
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}
@@ -205,8 +214,11 @@ func (w *tun) waitRead() error {
 			}
 			return err
 		}
-		if n <= 0 {
-			continue // should not happen with -1 timeout
+		if w.closed.Load() {
+			return io.ErrClosedPipe
+		}
+		if n == 0 {
+			continue
 		}
 		ev := evs[0].Events
 		if (ev & (unix.EPOLLERR | unix.EPOLLHUP)) != 0 {
@@ -221,7 +233,7 @@ func (w *tun) waitRead() error {
 func (w *tun) waitWrite() error {
 	var evs [1]unix.EpollEvent
 	for {
-		n, err := unix.EpollWait(w.epOut, evs[:], -1)
+		n, err := unix.EpollWait(w.epOut, evs[:], epollWaitTimeoutMillis)
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}
@@ -231,8 +243,11 @@ func (w *tun) waitWrite() error {
 			}
 			return err
 		}
-		if n <= 0 {
-			continue // should not happen with -1 timeout
+		if w.closed.Load() {
+			return io.ErrClosedPipe
+		}
+		if n == 0 {
+			continue
 		}
 		ev := evs[0].Events
 		if (ev & (unix.EPOLLERR | unix.EPOLLHUP)) != 0 {

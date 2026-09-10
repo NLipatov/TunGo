@@ -51,6 +51,74 @@ func TestCloseMakesFutureOpsFail(t *testing.T) {
 	}
 }
 
+func TestCloseUnblocksRead(t *testing.T) {
+	left, rightFD := makeSocketpair(t)
+	defer func(fd int) {
+		_ = unix.Close(fd)
+	}(rightFD)
+
+	dev, err := New(left)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := dev.Read(make([]byte, 1))
+		readDone <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	if err := dev.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case err := <-readDone:
+		if !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("Read after Close: got %v, want io.ErrClosedPipe", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Read did not unblock after Close")
+	}
+}
+
+func TestCloseUnblocksWrite(t *testing.T) {
+	left, rightFD := makeSocketpair(t)
+	defer func(fd int) {
+		_ = unix.Close(fd)
+	}(rightFD)
+
+	if err := unix.SetsockoptInt(int(left.Fd()), unix.SOL_SOCKET, unix.SO_SNDBUF, 4096); err != nil {
+		t.Fatalf("set send buffer size: %v", err)
+	}
+
+	dev, err := New(left)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := dev.Write(make([]byte, 1<<20))
+		writeDone <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	if err := dev.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case err := <-writeDone:
+		if !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("Write after Close: got %v, want io.ErrClosedPipe", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Write did not unblock after Close")
+	}
+}
+
 func TestReadBlocksUntilDataThenReturns(t *testing.T) {
 	left, rightFD := makeSocketpair(t)
 	defer func(fd int) {
