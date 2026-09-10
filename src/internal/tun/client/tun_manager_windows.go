@@ -3,6 +3,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
+	"tungo/internal/tun/internal/windows/defaultroute"
 	"tungo/internal/tun/internal/windows/ipcfg"
 	"tungo/internal/tun/internal/windows/wtun"
 
@@ -36,13 +38,14 @@ type networkConfigurator interface {
 }
 
 type Manager struct {
-	configuration    *client.Configuration
-	settings         settings.Settings
-	tun              io.ReadWriteCloser
-	netConfig4       networkConfigurator
-	netConfig6       networkConfigurator
-	pinnedServerAddr netip.Addr
-	pinnedServerIf   string
+	configuration             *client.Configuration
+	settings                  settings.Settings
+	tun                       io.ReadWriteCloser
+	netConfig4                networkConfigurator
+	netConfig6                networkConfigurator
+	pinnedServerAddr          netip.Addr
+	pinnedServerIf            string
+	defaultRouteWatcherCancel context.CancelFunc
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -64,9 +67,12 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-	tun, err := createWindowsTun(m.settings.TunName)
+	tun, err := m.createTun()
 	if err != nil {
 		return nil, err
+	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
 	}
 	m.tun = tun
 	if err := m.pinServerRoute(serverAddr); err != nil {
@@ -87,10 +93,10 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	return m.tun, nil
 }
 
-func createWindowsTun(ifName string) (io.ReadWriteCloser, error) {
-	adapter, err := wintun.CreateAdapter(ifName, windowsTunnelType, nil)
+func (m *Manager) createTun() (io.ReadWriteCloser, error) {
+	adapter, err := wintun.CreateAdapter(m.settings.TunName, windowsTunnelType, nil)
 	if err != nil {
-		existing, openErr := wintun.OpenAdapter(ifName)
+		existing, openErr := wintun.OpenAdapter(m.settings.TunName)
 		if openErr != nil {
 			return nil, fmt.Errorf("create/open adapter: %w", err)
 		}
@@ -107,6 +113,30 @@ func createWindowsTun(ifName string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 	return tun, nil
+}
+
+func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh, err := defaultroute.Watch(ctx)
+	if err != nil {
+		cancel()
+		return err
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case err := <-errCh:
+			if err != nil {
+				slog.Warn("default route watcher failed", "err", err)
+			} else {
+				slog.Info("default route change detected")
+			}
+			_ = tun.Close()
+		}
+	}()
+	m.defaultRouteWatcherCancel = cancel
+	return nil
 }
 
 func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
@@ -245,6 +275,9 @@ func (m *Manager) CloseTunnel() error {
 }
 
 func (m *Manager) closeActiveTunnel() error {
+	if m.defaultRouteWatcherCancel != nil {
+		m.defaultRouteWatcherCancel()
+	}
 	cleanupErrs := m.cleanupSettings(m.settings)
 	if m.pinnedServerAddr.IsValid() {
 		netConfig := m.netConfig6

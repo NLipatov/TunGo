@@ -15,6 +15,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/flynn/noise v1.1.0
 	github.com/fsnotify/fsnotify v1.10.1
+	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	golang.zx2c4.com/wireguard/windows v1.0.1
 )

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/linux/defaultroute"
 	"tungo/internal/tun/internal/linux/dns"
 	"tungo/internal/tun/internal/linux/epoll"
 	"tungo/internal/tun/internal/linux/ioctl"
@@ -24,14 +26,15 @@ type dnsConfigurator interface {
 }
 
 type Manager struct {
-	configuration    *client.Configuration
-	settings         settings.Settings
-	dns              dnsConfigurator
-	ip               ip.Contract
-	ioctl            ioctl.Contract
-	mss              mssclamp.Contract
-	pinnedServerAddr netip.Addr
-	tun              io.ReadWriteCloser
+	configuration             *client.Configuration
+	settings                  settings.Settings
+	dns                       dnsConfigurator
+	ip                        ip.Contract
+	ioctl                     ioctl.Contract
+	mss                       mssclamp.Contract
+	pinnedServerAddr          netip.Addr
+	tun                       io.ReadWriteCloser
+	defaultRouteWatcherCancel context.CancelFunc
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -56,43 +59,51 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-
 	tunFile, openTunErr := m.ioctl.CreateTunInterface(m.settings.TunName)
 	if openTunErr != nil {
 		openErr := fmt.Errorf("failed to open TUN interface: %w", openTunErr)
 		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
-
 	tun, err := epoll.New(tunFile)
 	if err != nil {
 		openErr := fmt.Errorf("failed to initialize TUN I/O: %w", err)
 		return nil, errors.Join(openErr, tunFile.Close(), m.CloseTunnel())
 	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
+	}
 	m.tun = tun
-
 	if err := m.configureTunnel(serverAddr); err != nil {
 		openErr := fmt.Errorf("failed to configure client: %w", err)
 		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
-
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.settings.TunName, "err", err)
 	}
 	return m.tun, nil
 }
 
-func (m *Manager) setDNS() error {
-	var ipv4Resolvers, ipv6Resolvers []string
-	if m.settings.HasIPv4() {
-		ipv4Resolvers = m.settings.DNSv4
+func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh, err := defaultroute.Watch(ctx)
+	if err != nil {
+		cancel()
+		return err
 	}
-	if m.settings.HasIPv6() {
-		ipv6Resolvers = m.settings.DNSv6
-	}
-
-	if err := m.dns.Set(m.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
-		return fmt.Errorf("set DNS on %s: %w", m.settings.TunName, err)
-	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case err := <-errCh:
+			if err != nil {
+				slog.Warn("default route watcher failed", "err", err)
+			} else {
+				slog.Info("default route change detected")
+			}
+			_ = tun.Close()
+		}
+	}()
+	m.defaultRouteWatcherCancel = cancel
 	return nil
 }
 
@@ -186,7 +197,25 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 	return nil
 }
 
+func (m *Manager) setDNS() error {
+	var ipv4Resolvers, ipv6Resolvers []string
+	if m.settings.HasIPv4() {
+		ipv4Resolvers = m.settings.DNSv4
+	}
+	if m.settings.HasIPv6() {
+		ipv6Resolvers = m.settings.DNSv6
+	}
+
+	if err := m.dns.Set(m.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
+		return fmt.Errorf("set DNS on %s: %w", m.settings.TunName, err)
+	}
+	return nil
+}
+
 func (m *Manager) CloseTunnel() error {
+	if m.defaultRouteWatcherCancel != nil {
+		m.defaultRouteWatcherCancel()
+	}
 	var cleanupErrs []error
 	if err := m.dns.Revert(); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))

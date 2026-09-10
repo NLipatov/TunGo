@@ -5,6 +5,9 @@ package utun
 import (
 	"encoding/binary"
 	"errors"
+	"sync"
+
+	"tungo/internal/tun/internal/iolifecycle"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,6 +30,10 @@ type tun struct {
 	readIOV  [2][]byte
 	writeHdr [headerLen]byte
 	writeIOV [2][]byte
+
+	io        iolifecycle.Gate
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func New() (*tun, error) {
@@ -53,7 +60,7 @@ func New() (*tun, error) {
 		return nil, err
 	}
 
-	return &tun{fd: fd, name: name}, nil
+	return &tun{fd: fd, name: name, io: iolifecycle.New()}, nil
 }
 
 func (t *tun) Name() string { return t.name }
@@ -66,7 +73,11 @@ func (t *tun) Read(p []byte) (int, error) {
 
 	t.readIOV[0] = t.readHdr[:]
 	t.readIOV[1] = p
+	if !t.io.TryAcquire() {
+		return 0, unix.EBADF
+	}
 	n, err := unix.Readv(t.fd, t.readIOV[:])
+	t.io.Release()
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +101,11 @@ func (t *tun) Write(p []byte) (int, error) {
 
 	t.writeIOV[0] = t.writeHdr[:]
 	t.writeIOV[1] = p
+	if !t.io.TryAcquire() {
+		return 0, unix.EBADF
+	}
 	n, err := unix.Writev(t.fd, t.writeIOV[:])
+	t.io.Release()
 	if err != nil {
 		return 0, err
 	}
@@ -101,9 +116,12 @@ func (t *tun) Write(p []byte) (int, error) {
 }
 
 func (t *tun) Close() error {
-	if err := unix.Close(t.fd); err != nil {
-		return err
-	}
-	t.fd = -1
-	return nil
+	t.closeOnce.Do(func() {
+		t.io.Drain(func() {
+			// Unblock active I/O while keeping the descriptor valid until Drain returns.
+			_ = unix.Shutdown(t.fd, unix.SHUT_RDWR)
+		})
+		t.closeErr = unix.Close(t.fd)
+	})
+	return t.closeErr
 }

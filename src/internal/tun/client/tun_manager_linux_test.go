@@ -801,6 +801,24 @@ func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
 	}
 }
 
+func TestCloseTunnelCancelsDefaultRouteWatcher(t *testing.T) {
+	mgr := newMgr(
+		settings.UDP,
+		&clienttunManagerIPMock{},
+		clienttunManagerIOCTLMock{},
+		clienttunManagerMSSMock{},
+	)
+	cancelled := false
+	mgr.defaultRouteWatcherCancel = func() { cancelled = true }
+
+	if err := mgr.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if !cancelled {
+		t.Fatal("CloseTunnel() did not cancel the default route watcher")
+	}
+}
+
 func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
 	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
 	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
