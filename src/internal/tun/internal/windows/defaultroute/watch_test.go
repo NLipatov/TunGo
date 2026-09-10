@@ -10,13 +10,23 @@ import (
 )
 
 func TestIsDefaultRouteChange(t *testing.T) {
+	if isDefaultRouteChange(nil) {
+		t.Fatal("isDefaultRouteChange(nil) = true")
+	}
+
+	if isDefaultRouteChange(&winipcfg.MibIPforwardRow2{}) {
+		t.Fatal("isDefaultRouteChange() = true for invalid prefix")
+	}
+
 	tests := []struct {
 		name   string
 		prefix netip.Prefix
 		want   bool
 	}{
-		{name: "default route", prefix: netip.MustParsePrefix("0.0.0.0/0"), want: true},
-		{name: "split route", prefix: netip.MustParsePrefix("0.0.0.0/1"), want: false},
+		{name: "IPv4 default route", prefix: netip.MustParsePrefix("0.0.0.0/0"), want: true},
+		{name: "IPv6 default route", prefix: netip.MustParsePrefix("::/0"), want: true},
+		{name: "IPv4 split route", prefix: netip.MustParsePrefix("0.0.0.0/1")},
+		{name: "IPv6 split route", prefix: netip.MustParsePrefix("::/1")},
 	}
 
 	for _, tt := range tests {

@@ -11,24 +11,34 @@ import (
 
 func TestIsDefaultRouteChange(t *testing.T) {
 	tests := []struct {
-		name    string
-		kind    uint16
-		dstLen  byte
-		tableID byte
-		want    bool
+		name      string
+		kind      uint16
+		family    byte
+		dstLen    byte
+		tableID   byte
+		shortData bool
+		want      bool
 	}{
-		{name: "default route", kind: unix.RTM_NEWROUTE, tableID: unix.RT_TABLE_MAIN, want: true},
-		{name: "deleted default route", kind: unix.RTM_DELROUTE, tableID: unix.RT_TABLE_MAIN, want: true},
-		{name: "custom table default route", kind: unix.RTM_NEWROUTE, tableID: 100, want: false},
-		{name: "split route", kind: unix.RTM_NEWROUTE, dstLen: 1, tableID: unix.RT_TABLE_MAIN, want: false},
-		{name: "address event", kind: unix.RTM_NEWADDR, want: false},
+		{name: "added IPv4 default route", kind: unix.RTM_NEWROUTE, family: unix.AF_INET, tableID: unix.RT_TABLE_MAIN, want: true},
+		{name: "deleted IPv6 default route", kind: unix.RTM_DELROUTE, family: unix.AF_INET6, tableID: unix.RT_TABLE_MAIN, want: true},
+		{name: "custom table default route", kind: unix.RTM_NEWROUTE, family: unix.AF_INET, tableID: 100},
+		{name: "split route", kind: unix.RTM_NEWROUTE, family: unix.AF_INET, dstLen: 1, tableID: unix.RT_TABLE_MAIN},
+		{name: "address event", kind: unix.RTM_NEWADDR, family: unix.AF_INET, tableID: unix.RT_TABLE_MAIN},
+		{name: "short route message", kind: unix.RTM_NEWROUTE, shortData: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := make([]byte, unix.SizeofRtMsg)
-			data[1] = tt.dstLen
-			data[4] = tt.tableID
+			dataLen := unix.SizeofRtMsg
+			if tt.shortData {
+				dataLen--
+			}
+			data := make([]byte, dataLen)
+			if !tt.shortData {
+				data[0] = tt.family
+				data[1] = tt.dstLen
+				data[4] = tt.tableID
+			}
 			message := syscall.NetlinkMessage{
 				Header: syscall.NlMsghdr{Type: tt.kind},
 				Data:   data,
