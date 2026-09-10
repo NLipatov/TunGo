@@ -75,8 +75,13 @@ func Watch(ctx context.Context) (<-chan struct{}, error) {
 }
 
 func isDefaultRouteChange(message syscall.NetlinkMessage) bool {
+	const (
+		destinationPrefixLengthOffset = 1
+		routingTableOffset            = 4
+	)
 	return (message.Header.Type == unix.RTM_NEWROUTE ||
 		message.Header.Type == unix.RTM_DELROUTE) &&
 		len(message.Data) >= unix.SizeofRtMsg &&
-		message.Data[1] == 0
+		message.Data[destinationPrefixLengthOffset] == 0 &&
+		message.Data[routingTableOffset] == unix.RT_TABLE_MAIN
 }
