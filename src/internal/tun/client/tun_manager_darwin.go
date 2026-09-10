@@ -80,6 +80,9 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
+	}
 	m.tun = tun
 	if err := m.setMTU(); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
@@ -96,25 +99,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.tun.Name(), "err", err)
 	}
-	if err := m.watchDefaultRoute(tun); err != nil {
-		slog.Warn("failed to configure default route watcher", "err", err)
-	}
 	return m.tun, nil
-}
-
-func (m *Manager) setDNS() error {
-	resolvers := make([]string, 0, 4)
-	if m.settings.HasIPv4() {
-		resolvers = append(resolvers, m.settings.DNSv4...)
-	}
-	if m.settings.HasIPv6() {
-		resolvers = append(resolvers, m.settings.DNSv6...)
-	}
-
-	if err := m.dns.Set(resolvers); err != nil {
-		return fmt.Errorf("set DNS: %w", err)
-	}
-	return nil
 }
 
 func (m *Manager) watchDefaultRoute(tun io.Closer) error {
@@ -133,6 +118,21 @@ func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 		}
 	}()
 	m.defaultRouteWatcherCancel = cancel
+	return nil
+}
+
+func (m *Manager) setDNS() error {
+	resolvers := make([]string, 0, 4)
+	if m.settings.HasIPv4() {
+		resolvers = append(resolvers, m.settings.DNSv4...)
+	}
+	if m.settings.HasIPv6() {
+		resolvers = append(resolvers, m.settings.DNSv6...)
+	}
+
+	if err := m.dns.Set(resolvers); err != nil {
+		return fmt.Errorf("set DNS: %w", err)
+	}
 	return nil
 }
 

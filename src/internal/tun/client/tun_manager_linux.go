@@ -59,47 +59,28 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-
 	tunFile, openTunErr := m.ioctl.CreateTunInterface(m.settings.TunName)
 	if openTunErr != nil {
 		openErr := fmt.Errorf("failed to open TUN interface: %w", openTunErr)
 		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
-
 	tun, err := epoll.New(tunFile)
 	if err != nil {
 		openErr := fmt.Errorf("failed to initialize TUN I/O: %w", err)
 		return nil, errors.Join(openErr, tunFile.Close(), m.CloseTunnel())
 	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
+	}
 	m.tun = tun
-
 	if err := m.configureTunnel(serverAddr); err != nil {
 		openErr := fmt.Errorf("failed to configure client: %w", err)
 		return nil, errors.Join(openErr, m.CloseTunnel())
 	}
-
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.settings.TunName, "err", err)
 	}
-	if err := m.watchDefaultRoute(tun); err != nil {
-		slog.Warn("failed to configure default route watcher", "err", err)
-	}
 	return m.tun, nil
-}
-
-func (m *Manager) setDNS() error {
-	var ipv4Resolvers, ipv6Resolvers []string
-	if m.settings.HasIPv4() {
-		ipv4Resolvers = m.settings.DNSv4
-	}
-	if m.settings.HasIPv6() {
-		ipv6Resolvers = m.settings.DNSv6
-	}
-
-	if err := m.dns.Set(m.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
-		return fmt.Errorf("set DNS on %s: %w", m.settings.TunName, err)
-	}
-	return nil
 }
 
 func (m *Manager) watchDefaultRoute(tun io.Closer) error {
@@ -208,6 +189,21 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", m.settings.TunName, err)
 	}
 
+	return nil
+}
+
+func (m *Manager) setDNS() error {
+	var ipv4Resolvers, ipv6Resolvers []string
+	if m.settings.HasIPv4() {
+		ipv4Resolvers = m.settings.DNSv4
+	}
+	if m.settings.HasIPv6() {
+		ipv6Resolvers = m.settings.DNSv6
+	}
+
+	if err := m.dns.Set(m.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
+		return fmt.Errorf("set DNS on %s: %w", m.settings.TunName, err)
+	}
 	return nil
 }
 
