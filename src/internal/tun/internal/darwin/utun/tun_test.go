@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"runtime"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -18,12 +20,34 @@ func newSocketTun(t *testing.T) (*tun, int) {
 	if err != nil {
 		t.Fatalf("create socket pair: %v", err)
 	}
-	socketTun := &tun{fd: fds[0]}
+	socketTun := &tun{fd: fds[0], ioDrained: make(chan struct{})}
 	t.Cleanup(func() {
 		_ = socketTun.Close()
 		_ = unix.Close(fds[1])
 	})
 	return socketTun, fds[1]
+}
+
+func reuseDescriptor(t *testing.T, fd int) int {
+	t.Helper()
+
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		t.Fatalf("create replacement socket pair: %v", err)
+	}
+	if err := unix.Dup2(fds[0], fd); err != nil {
+		_ = unix.Close(fds[0])
+		_ = unix.Close(fds[1])
+		t.Fatalf("reuse descriptor %d: %v", fd, err)
+	}
+	t.Cleanup(func() {
+		_ = unix.Close(fd)
+		if fds[0] != fd {
+			_ = unix.Close(fds[0])
+		}
+		_ = unix.Close(fds[1])
+	})
+	return fds[1]
 }
 
 func TestRead(t *testing.T) {
@@ -62,17 +86,6 @@ func TestReadRejectsMissingHeader(t *testing.T) {
 
 	if _, err := tun.Read(make([]byte, 1)); err == nil || err.Error() != "short read (no UTUN header)" {
 		t.Fatalf("Read error = %v, want short UTUN header", err)
-	}
-}
-
-func TestReadReturnsSocketError(t *testing.T) {
-	tun, _ := newSocketTun(t)
-	if err := tun.Close(); err != nil {
-		t.Fatalf("close tun: %v", err)
-	}
-
-	if _, err := tun.Read(make([]byte, 1)); !errors.Is(err, unix.EBADF) {
-		t.Fatalf("Read error = %v, want EBADF", err)
 	}
 }
 
@@ -122,14 +135,74 @@ func TestWriteRejectsEmptyPacket(t *testing.T) {
 	}
 }
 
-func TestWriteReturnsSocketError(t *testing.T) {
+func TestReadRejectsReusedDescriptor(t *testing.T) {
 	tun, _ := newSocketTun(t)
+	fd := tun.fd
 	if err := tun.Close(); err != nil {
 		t.Fatalf("close tun: %v", err)
 	}
 
+	peer := reuseDescriptor(t, fd)
+	packet := []byte{0, 0, 0, unix.AF_INET, 0x45}
+	if _, err := unix.Write(peer, packet); err != nil {
+		t.Fatalf("write replacement socket: %v", err)
+	}
+
+	if _, err := tun.Read(make([]byte, 1)); !errors.Is(err, unix.EBADF) {
+		t.Fatalf("Read error = %v, want EBADF", err)
+	}
+}
+
+func TestWriteRejectsReusedDescriptor(t *testing.T) {
+	tun, _ := newSocketTun(t)
+	fd := tun.fd
+	if err := tun.Close(); err != nil {
+		t.Fatalf("close tun: %v", err)
+	}
+
+	reuseDescriptor(t, fd)
 	if _, err := tun.Write([]byte{0x45}); !errors.Is(err, unix.EBADF) {
 		t.Fatalf("Write error = %v, want EBADF", err)
+	}
+}
+
+func TestCloseUnblocksRead(t *testing.T) {
+	tun, _ := newSocketTun(t)
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := tun.Read(make([]byte, 1))
+		readDone <- err
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for tun.ioState.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("Read did not start")
+		}
+		runtime.Gosched()
+	}
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- tun.Close()
+	}()
+
+	select {
+	case err := <-readDone:
+		if err == nil {
+			t.Fatal("Read error = nil after Close")
+		}
+	case <-time.After(time.Second):
+		_ = unix.Close(tun.fd)
+		t.Fatal("Close did not unblock Read")
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not return after Read stopped")
 	}
 }
 
