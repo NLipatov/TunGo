@@ -55,6 +55,19 @@ func reuseDescriptor(t *testing.T, fd int) int {
 	return peer
 }
 
+func newTestTun(t *testing.T) *tun {
+	t.Helper()
+	left, rightFD := makeSocketpair(t)
+	t.Cleanup(func() { _ = unix.Close(rightFD) })
+
+	dev, err := New(left)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = dev.Close() })
+	return dev.(*tun)
+}
+
 func TestCloseMakesFutureOpsFail(t *testing.T) {
 	left, rightFD := makeSocketpair(t)
 	defer func(fd int) {
@@ -151,6 +164,76 @@ func TestCloseDrainsActiveIOBeforeClosingDescriptors(t *testing.T) {
 	}
 }
 
+func TestCloseCachesDescriptorErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		fd   func(*tun) int
+	}{
+		{name: "read epoll", fd: func(w *tun) int { return w.epIn }},
+		{name: "write epoll", fd: func(w *tun) int { return w.epOut }},
+		{name: "TUN", fd: func(w *tun) int { return w.fd }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newTestTun(t)
+			if err := unix.Close(tt.fd(w)); err != nil {
+				t.Fatalf("close descriptor: %v", err)
+			}
+
+			firstErr := w.Close()
+			if !errors.Is(firstErr, unix.EBADF) {
+				t.Fatalf("first Close error = %v, want EBADF", firstErr)
+			}
+			if secondErr := w.Close(); !errors.Is(secondErr, firstErr) {
+				t.Fatalf("second Close error = %v, want cached %v", secondErr, firstErr)
+			}
+		})
+	}
+}
+
+func TestWaitReadReturnsClosedPipeForClosedEpoll(t *testing.T) {
+	w := newTestTun(t)
+	if err := unix.Close(w.epIn); err != nil {
+		t.Fatalf("close read epoll: %v", err)
+	}
+	if err := w.waitRead(); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("waitRead error = %v, want io.ErrClosedPipe", err)
+	}
+}
+
+func TestWaitWriteReturnsClosedPipeForClosedEpoll(t *testing.T) {
+	w := newTestTun(t)
+	if err := unix.Close(w.epOut); err != nil {
+		t.Fatalf("close write epoll: %v", err)
+	}
+	if err := w.waitWrite(); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("waitWrite error = %v, want io.ErrClosedPipe", err)
+	}
+}
+
+func TestWaitReadReturnsUnexpectedEpollError(t *testing.T) {
+	w := newTestTun(t)
+	epIn := w.epIn
+	w.epIn = w.fd
+	defer func() { w.epIn = epIn }()
+
+	if err := w.waitRead(); !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("waitRead error = %v, want EINVAL", err)
+	}
+}
+
+func TestWaitWriteReturnsUnexpectedEpollError(t *testing.T) {
+	w := newTestTun(t)
+	epOut := w.epOut
+	w.epOut = w.fd
+	defer func() { w.epOut = epOut }()
+
+	if err := w.waitWrite(); !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("waitWrite error = %v, want EINVAL", err)
+	}
+}
+
 func TestCloseUnblocksRead(t *testing.T) {
 	left, rightFD := makeSocketpair(t)
 	defer func(fd int) {
@@ -243,11 +326,11 @@ func TestReadBlocksUntilDataThenReturns(t *testing.T) {
 		close(readDone)
 	}()
 
-	// Ensure it blocks for a bit
+	// Ensure it stays blocked across an epoll timeout.
 	select {
 	case <-readDone:
 		t.Fatal("Read returned before any data was written (should block)")
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(time.Duration(epollWaitTimeoutMillis+50) * time.Millisecond):
 	}
 
 	// Write data from peer
@@ -304,7 +387,11 @@ func TestWriteBackpressureWaitsAndCompletes(t *testing.T) {
 		writeErrCh <- err
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case err := <-writeErrCh:
+		t.Fatalf("Write returned while the peer was not reading: %v", err)
+	case <-time.After(time.Duration(epollWaitTimeoutMillis+50) * time.Millisecond):
+	}
 
 	total := 0
 	tmp := make([]byte, 8192)
