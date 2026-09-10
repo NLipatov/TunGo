@@ -3,6 +3,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
+	"tungo/internal/tun/internal/windows/defaultroute"
 	"tungo/internal/tun/internal/windows/ipcfg"
 	"tungo/internal/tun/internal/windows/wtun"
 
@@ -36,13 +38,14 @@ type networkConfigurator interface {
 }
 
 type Manager struct {
-	configuration    *client.Configuration
-	settings         settings.Settings
-	tun              io.ReadWriteCloser
-	netConfig4       networkConfigurator
-	netConfig6       networkConfigurator
-	pinnedServerAddr netip.Addr
-	pinnedServerIf   string
+	configuration             *client.Configuration
+	settings                  settings.Settings
+	tun                       io.ReadWriteCloser
+	netConfig4                networkConfigurator
+	netConfig6                networkConfigurator
+	pinnedServerAddr          netip.Addr
+	pinnedServerIf            string
+	defaultRouteWatcherCancel context.CancelFunc
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -83,6 +86,9 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	}
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.settings.TunName, "err", err)
+	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
 	}
 	return m.tun, nil
 }
@@ -223,7 +229,29 @@ func (m *Manager) setDNS() error {
 	return nil
 }
 
+func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	changed, err := defaultroute.Watch(ctx)
+	if err != nil {
+		cancel()
+		return err
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+			_ = tun.Close()
+		}
+	}()
+	m.defaultRouteWatcherCancel = cancel
+	return nil
+}
+
 func (m *Manager) CloseTunnel() error {
+	if m.defaultRouteWatcherCancel != nil {
+		m.defaultRouteWatcherCancel()
+	}
 	cleanupErrs := []error{m.closeActiveTunnel()}
 	activeTunName := m.settings.TunName
 	for _, stale := range []settings.Settings{
