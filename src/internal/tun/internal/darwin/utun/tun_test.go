@@ -6,9 +6,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"runtime"
 	"testing"
 	"time"
+
+	"tungo/internal/tun/internal/iolifecycle"
 
 	"golang.org/x/sys/unix"
 )
@@ -20,7 +21,7 @@ func newSocketTun(t *testing.T) (*tun, int) {
 	if err != nil {
 		t.Fatalf("create socket pair: %v", err)
 	}
-	socketTun := &tun{fd: fds[0], ioDrained: make(chan struct{})}
+	socketTun := &tun{fd: fds[0], io: iolifecycle.New()}
 	t.Cleanup(func() {
 		_ = socketTun.Close()
 		_ = unix.Close(fds[1])
@@ -169,18 +170,15 @@ func TestWriteRejectsReusedDescriptor(t *testing.T) {
 func TestCloseUnblocksRead(t *testing.T) {
 	tun, _ := newSocketTun(t)
 	readDone := make(chan error, 1)
+	readStarted := make(chan struct{})
 	go func() {
+		close(readStarted)
 		_, err := tun.Read(make([]byte, 1))
 		readDone <- err
 	}()
 
-	deadline := time.Now().Add(time.Second)
-	for tun.ioState.Load() == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("Read did not start")
-		}
-		runtime.Gosched()
-	}
+	<-readStarted
+	time.Sleep(10 * time.Millisecond)
 
 	closeDone := make(chan error, 1)
 	go func() {
@@ -203,6 +201,67 @@ func TestCloseUnblocksRead(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Close did not return after Read stopped")
+	}
+}
+
+func TestCloseUnblocksWrite(t *testing.T) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("create socket pair: %v", err)
+	}
+	tun := &tun{fd: fds[0], io: iolifecycle.New()}
+	t.Cleanup(func() {
+		_ = tun.Close()
+		_ = unix.Close(fds[1])
+	})
+
+	if err := unix.SetNonblock(tun.fd, true); err != nil {
+		t.Fatalf("make tun socket non-blocking: %v", err)
+	}
+	for {
+		if _, err := unix.Write(tun.fd, []byte{0}); err != nil {
+			if errors.Is(err, unix.EAGAIN) {
+				break
+			}
+			t.Fatalf("fill tun socket send buffer: %v", err)
+		}
+	}
+	if err := unix.SetNonblock(tun.fd, false); err != nil {
+		t.Fatalf("make tun socket blocking: %v", err)
+	}
+
+	writeDone := make(chan error, 1)
+	writeStarted := make(chan struct{})
+	go func() {
+		close(writeStarted)
+		_, err := tun.Write([]byte{0x45})
+		writeDone <- err
+	}()
+
+	<-writeStarted
+	time.Sleep(10 * time.Millisecond)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- tun.Close()
+	}()
+
+	select {
+	case err := <-writeDone:
+		if err == nil {
+			t.Fatal("Write error = nil after Close")
+		}
+	case <-time.After(time.Second):
+		_ = unix.Close(tun.fd)
+		t.Fatal("Close did not unblock Write")
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not return after Write stopped")
 	}
 }
 

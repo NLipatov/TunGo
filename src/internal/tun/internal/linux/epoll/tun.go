@@ -12,7 +12,9 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"sync/atomic"
+	"sync"
+
+	"tungo/internal/tun/internal/iolifecycle"
 
 	"golang.org/x/sys/unix"
 )
@@ -25,10 +27,13 @@ import (
 // - Read and Write may be called concurrently from different goroutines.
 // - Multiple concurrent Reads (or multiple concurrent Writes) on the same instance are NOT supported.
 type tun struct {
-	fd     int
-	epIn   int
-	epOut  int
-	closed atomic.Bool
+	fd    int
+	epIn  int
+	epOut int
+
+	io        iolifecycle.Gate
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // A finite timeout lets Close stop idle operations without a separate wake-up fd.
@@ -98,16 +103,23 @@ func New(f *os.File) (io.ReadWriteCloser, error) {
 	_ = f.Close()
 	runtime.KeepAlive(f) // ensure f is alive across syscalls above
 
-	return &tun{fd: dup, epIn: epIn, epOut: epOut}, nil
+	return &tun{
+		fd:    dup,
+		epIn:  epIn,
+		epOut: epOut,
+		io:    iolifecycle.New(),
+	}, nil
 }
 
 // Read is NOT safe to call concurrently with another Read on the same instance.
 func (w *tun) Read(p []byte) (int, error) {
-	if w.closed.Load() {
+	if !w.io.TryAcquire() {
 		return 0, io.ErrClosedPipe
 	}
+	defer w.io.Release()
+
 	for {
-		if w.closed.Load() {
+		if w.io.Closing() {
 			return 0, io.ErrClosedPipe
 		}
 		n, err := unix.Read(w.fd, p)
@@ -138,15 +150,17 @@ func (w *tun) Read(p []byte) (int, error) {
 
 // Write is NOT safe to call concurrently with another Write on the same instance.
 func (w *tun) Write(p []byte) (int, error) {
-	if w.closed.Load() {
+	if !w.io.TryAcquire() {
 		return 0, io.ErrClosedPipe
 	}
+	defer w.io.Release()
+
 	if len(p) == 0 {
 		return 0, nil
 	}
 	total := 0
 	for total < len(p) {
-		if w.closed.Load() {
+		if w.io.Closing() {
 			return total, io.ErrClosedPipe
 		}
 		n, err := unix.Write(w.fd, p[total:])
@@ -181,24 +195,24 @@ func (w *tun) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// Close marks the wrapper closed and closes all descriptors.
-// Active epoll waits observe the closed state after at most epollWaitTimeoutMillis.
+// Close marks the wrapper closed, drains active I/O, and closes all descriptors.
+// Active epoll waits observe the closing state after at most epollWaitTimeoutMillis.
 // It is safe to call multiple times.
 func (w *tun) Close() error {
-	if !w.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	var firstErr error
-	if err := unix.Close(w.epIn); err != nil {
-		firstErr = err
-	}
-	if err := unix.Close(w.epOut); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	if err := unix.Close(w.fd); err != nil && firstErr == nil {
-		firstErr = err
-	}
-	return firstErr
+	w.closeOnce.Do(func() {
+		w.io.Drain(nil)
+
+		if err := unix.Close(w.epIn); err != nil {
+			w.closeErr = err
+		}
+		if err := unix.Close(w.epOut); err != nil && w.closeErr == nil {
+			w.closeErr = err
+		}
+		if err := unix.Close(w.fd); err != nil && w.closeErr == nil {
+			w.closeErr = err
+		}
+	})
+	return w.closeErr
 }
 
 func (w *tun) waitRead() error {
@@ -206,15 +220,18 @@ func (w *tun) waitRead() error {
 	for {
 		n, err := unix.EpollWait(w.epIn, evs[:], epollWaitTimeoutMillis)
 		if errors.Is(err, unix.EINTR) {
+			if w.io.Closing() {
+				return io.ErrClosedPipe
+			}
 			continue
 		}
 		if err != nil {
-			if errors.Is(err, unix.EBADF) || w.closed.Load() {
+			if errors.Is(err, unix.EBADF) || w.io.Closing() {
 				return io.ErrClosedPipe
 			}
 			return err
 		}
-		if w.closed.Load() {
+		if w.io.Closing() {
 			return io.ErrClosedPipe
 		}
 		if n == 0 {
@@ -235,15 +252,18 @@ func (w *tun) waitWrite() error {
 	for {
 		n, err := unix.EpollWait(w.epOut, evs[:], epollWaitTimeoutMillis)
 		if errors.Is(err, unix.EINTR) {
+			if w.io.Closing() {
+				return io.ErrClosedPipe
+			}
 			continue
 		}
 		if err != nil {
-			if errors.Is(err, unix.EBADF) || w.closed.Load() {
+			if errors.Is(err, unix.EBADF) || w.io.Closing() {
 				return io.ErrClosedPipe
 			}
 			return err
 		}
-		if w.closed.Load() {
+		if w.io.Closing() {
 			return io.ErrClosedPipe
 		}
 		if n == 0 {

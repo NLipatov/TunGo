@@ -6,16 +6,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"sync"
-	"sync/atomic"
+
+	"tungo/internal/tun/internal/iolifecycle"
 
 	"golang.org/x/sys/unix"
 )
 
 const (
-	controlName   = "com.apple.net.utun_control"
-	headerLen     = 4
-	optIfName     = 2
-	ioClosingMask = int64(-1 << 63)
+	controlName = "com.apple.net.utun_control"
+	headerLen   = 4
+	optIfName   = 2
 
 	// Darwin's SYSPROTO_CONTROL numeric value. Some Go builds don't export it;
 	// the ABI value is stable on Darwin.
@@ -31,10 +31,7 @@ type tun struct {
 	writeHdr [headerLen]byte
 	writeIOV [2][]byte
 
-	// ioState stores ioClosingMask in the high bit and the number of active
-	// I/O operations in the remaining bits.
-	ioState   atomic.Int64
-	ioDrained chan struct{}
+	io        iolifecycle.Gate
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -63,7 +60,7 @@ func New() (*tun, error) {
 		return nil, err
 	}
 
-	return &tun{fd: fd, name: name, ioDrained: make(chan struct{})}, nil
+	return &tun{fd: fd, name: name, io: iolifecycle.New()}, nil
 }
 
 func (t *tun) Name() string { return t.name }
@@ -76,11 +73,11 @@ func (t *tun) Read(p []byte) (int, error) {
 
 	t.readIOV[0] = t.readHdr[:]
 	t.readIOV[1] = p
-	if !t.tryAcquireIO() {
+	if !t.io.TryAcquire() {
 		return 0, unix.EBADF
 	}
 	n, err := unix.Readv(t.fd, t.readIOV[:])
-	t.releaseIO()
+	t.io.Release()
 	if err != nil {
 		return 0, err
 	}
@@ -104,11 +101,11 @@ func (t *tun) Write(p []byte) (int, error) {
 
 	t.writeIOV[0] = t.writeHdr[:]
 	t.writeIOV[1] = p
-	if !t.tryAcquireIO() {
+	if !t.io.TryAcquire() {
 		return 0, unix.EBADF
 	}
 	n, err := unix.Writev(t.fd, t.writeIOV[:])
-	t.releaseIO()
+	t.io.Release()
 	if err != nil {
 		return 0, err
 	}
@@ -120,33 +117,11 @@ func (t *tun) Write(p []byte) (int, error) {
 
 func (t *tun) Close() error {
 	t.closeOnce.Do(func() {
-		activeIO := t.ioState.Or(ioClosingMask)
-		if activeIO > 0 {
-			// Wake a blocked Readv without releasing the descriptor. Closing it
-			// before active operations drain would allow its number to be reused.
-			_ = unix.Shutdown(t.fd, unix.SHUT_RD)
-			<-t.ioDrained
-		}
+		t.io.Drain(func() {
+			// Unblock active I/O while keeping the descriptor valid until Drain returns.
+			_ = unix.Shutdown(t.fd, unix.SHUT_RDWR)
+		})
 		t.closeErr = unix.Close(t.fd)
 	})
 	return t.closeErr
-}
-
-func (t *tun) tryAcquireIO() bool {
-	for {
-		state := t.ioState.Load()
-		if state&ioClosingMask != 0 {
-			return false
-		}
-		if t.ioState.CompareAndSwap(state, state+1) {
-			return true
-		}
-	}
-}
-
-func (t *tun) releaseIO() {
-	shouldNotifyDrained := t.ioState.Add(-1) == ioClosingMask
-	if shouldNotifyDrained {
-		close(t.ioDrained)
-	}
 }
