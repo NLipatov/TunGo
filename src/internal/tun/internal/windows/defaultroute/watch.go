@@ -9,8 +9,9 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-func Watch(ctx context.Context) (<-chan struct{}, error) {
+func Watch(ctx context.Context) (<-chan error, error) {
 	changed := make(chan struct{})
+	errCh := make(chan error, 1)
 
 	var once sync.Once
 	callback, err := winipcfg.RegisterRouteChangeCallback(
@@ -29,12 +30,13 @@ func Watch(ctx context.Context) (<-chan struct{}, error) {
 	go func() {
 		select {
 		case <-ctx.Done():
+			_ = callback.Unregister()
 		case <-changed:
+			errCh <- callback.Unregister()
 		}
-		_ = callback.Unregister()
 	}()
 
-	return changed, nil
+	return errCh, nil
 }
 
 func isDefaultRouteChange(route *winipcfg.MibIPforwardRow2) bool {
