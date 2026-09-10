@@ -129,6 +129,8 @@ func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 		case err := <-errCh:
 			if err != nil {
 				slog.Warn("default route watcher failed", "err", err)
+			} else {
+				slog.Info("default route change detected")
 			}
 			_ = tun.Close()
 		}
