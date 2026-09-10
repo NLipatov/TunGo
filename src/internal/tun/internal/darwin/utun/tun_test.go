@@ -20,9 +20,7 @@ func newSocketTun(t *testing.T) (*tun, int) {
 	}
 	socketTun := &tun{fd: fds[0]}
 	t.Cleanup(func() {
-		if socketTun.fd >= 0 {
-			_ = unix.Close(socketTun.fd)
-		}
+		_ = socketTun.Close()
 		_ = unix.Close(fds[1])
 	})
 	return socketTun, fds[1]
@@ -135,17 +133,20 @@ func TestWriteReturnsSocketError(t *testing.T) {
 	}
 }
 
-func TestClose(t *testing.T) {
+func TestCloseIsIdempotent(t *testing.T) {
 	tun, _ := newSocketTun(t)
 	if err := tun.Close(); err != nil {
-		t.Fatalf("Close error = %v, want nil", err)
+		t.Fatalf("first Close error = %v, want nil", err)
+	}
+	if err := tun.Close(); err != nil {
+		t.Fatalf("second Close error = %v, want nil", err)
 	}
 }
 
-func TestCloseReturnsSocketError(t *testing.T) {
-	tun, _ := newSocketTun(t)
-	if err := tun.Close(); err != nil {
-		t.Fatalf("first Close error = %v", err)
+func TestCloseCachesError(t *testing.T) {
+	tun := &tun{fd: -1}
+	if err := tun.Close(); !errors.Is(err, unix.EBADF) {
+		t.Fatalf("first Close error = %v, want EBADF", err)
 	}
 	if err := tun.Close(); !errors.Is(err, unix.EBADF) {
 		t.Fatalf("second Close error = %v, want EBADF", err)

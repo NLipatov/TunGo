@@ -3,6 +3,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/platform/command"
+	"tungo/internal/tun/internal/darwin/defaultroute"
 	"tungo/internal/tun/internal/darwin/dns"
 	"tungo/internal/tun/internal/darwin/ifconfig"
 	"tungo/internal/tun/internal/darwin/route"
@@ -41,14 +43,15 @@ type dnsConfigurator interface {
 }
 
 type Manager struct {
-	settings         settings.Settings
-	tun              tun
-	dns              dnsConfigurator
-	ifconfig4        interfaceConfigurator
-	ifconfig6        interfaceConfigurator
-	route4           routeConfigurator
-	route6           routeConfigurator
-	pinnedServerAddr netip.Addr
+	settings                  settings.Settings
+	tun                       tun
+	dns                       dnsConfigurator
+	ifconfig4                 interfaceConfigurator
+	ifconfig6                 interfaceConfigurator
+	route4                    routeConfigurator
+	route6                    routeConfigurator
+	pinnedServerAddr          netip.Addr
+	defaultRouteWatcherCancel context.CancelFunc
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -93,6 +96,9 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.setDNS(); err != nil {
 		slog.Warn("failed to configure DNS", "interface", m.tun.Name(), "err", err)
 	}
+	if err := m.watchDefaultRoute(tun); err != nil {
+		slog.Warn("failed to configure default route watcher", "err", err)
+	}
 	return m.tun, nil
 }
 
@@ -108,6 +114,25 @@ func (m *Manager) setDNS() error {
 	if err := m.dns.Set(resolvers); err != nil {
 		return fmt.Errorf("set DNS: %w", err)
 	}
+	return nil
+}
+
+func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	changed, err := defaultroute.Watch(ctx)
+	if err != nil {
+		cancel()
+		return err
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+			_ = tun.Close()
+		}
+	}()
+	m.defaultRouteWatcherCancel = cancel
 	return nil
 }
 
@@ -172,6 +197,9 @@ func (m *Manager) addSplitRoutes() error {
 }
 
 func (m *Manager) CloseTunnel() error {
+	if m.defaultRouteWatcherCancel != nil {
+		m.defaultRouteWatcherCancel()
+	}
 	var cleanupErrs []error
 	if err := m.dns.Revert(); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))

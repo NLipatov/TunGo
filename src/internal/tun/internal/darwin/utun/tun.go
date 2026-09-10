@@ -5,6 +5,7 @@ package utun
 import (
 	"encoding/binary"
 	"errors"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,6 +28,9 @@ type tun struct {
 	readIOV  [2][]byte
 	writeHdr [headerLen]byte
 	writeIOV [2][]byte
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func New() (*tun, error) {
@@ -101,9 +105,8 @@ func (t *tun) Write(p []byte) (int, error) {
 }
 
 func (t *tun) Close() error {
-	if err := unix.Close(t.fd); err != nil {
-		return err
-	}
-	t.fd = -1
-	return nil
+	t.closeOnce.Do(func() {
+		t.closeErr = unix.Close(t.fd)
+	})
+	return t.closeErr
 }
