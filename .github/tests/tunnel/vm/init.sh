@@ -28,6 +28,6 @@ iptables -P FORWARD DROP
 # A host route via the guest must never bypass TunGo's TUN interface.
 iptables -A FORWARD -i eth0 -o backend0 -j DROP
 ip netns exec target python3 /opt/tungo-e2e/http_server.py >/tmp/target.log 2>&1 &
-python3 /opt/tungo-e2e/guest.py >/tmp/controller.log 2>&1 &
+python3 /opt/tungo-e2e/guest.py >/dev/console 2>&1 &
 echo 'TUNGO_E2E_VM_BOOTED'
 while true; do sleep 3600; done

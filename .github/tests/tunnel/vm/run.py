@@ -233,8 +233,7 @@ def main():
         with (args.artifacts / 'vm.log').open('w') as log:
             vm = subprocess.Popen(command, stdout=log, stderr=log)
         def ready():
-            if vm.poll() is not None:
-                raise RuntimeError(f'VM exited: {vm.returncode}')
+            assert vm.poll() is None, f'VM exited: {vm.returncode}'
             return control_call('/status')
         info = wait_until('Linux guest boot', ready, timeout=240)
         expected_guest = 'x86_64' if args.server_arch == 'amd64' else 'aarch64'
@@ -275,6 +274,17 @@ def main():
         assert control_call('/stop', {})['restored']
         no_bypass()
         print('PASS: TUN, routes, 4 MiB checksum, NAT, client restart, graceful cleanup', flush=True)
+    except BaseException:
+        # Include diagnostics in job logs as well as downloadable artifacts.
+        # Neither runtime logs nor these snapshots contain generated private keys.
+        try:
+            print('Client failure state:', json.dumps(save_state('client-failure')), flush=True)
+            print('Server diagnostics:', json.dumps(control_call('/diagnostics')), flush=True)
+        except Exception as error:
+            print(f'Failure snapshot error: {error}', flush=True)
+        for path in sorted(args.artifacts.glob('*.log')):
+            print(f'{path.name}:\n{path.read_text(errors="replace")[-20000:]}', flush=True)
+        raise
     finally:
         if client is not None and client.poll() is None:
             try:

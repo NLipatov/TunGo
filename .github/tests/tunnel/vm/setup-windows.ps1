@@ -8,7 +8,9 @@ $prefix = if ($Architecture -eq 'arm64') { 'qemu-arm' } else { 'qemu-w64' }
 $base = "https://qemu.weilnetz.de/$directory/$prefix-setup-$release"
 $installer = Join-Path $env:RUNNER_TEMP 'qemu-setup.exe'
 Invoke-WebRequest "$base.exe" -OutFile $installer
-$checksum = (Invoke-WebRequest "$base.sha512").Content.Trim().Split()[0]
+$checksumFile = Join-Path $env:RUNNER_TEMP 'qemu.sha512'
+Invoke-WebRequest "$base.sha512" -OutFile $checksumFile
+$checksum = (Get-Content $checksumFile -Raw).Trim().Split()[0]
 if ((Get-FileHash $installer -Algorithm SHA512).Hash -ne $checksum) {
     throw 'QEMU installer checksum mismatch'
 }
