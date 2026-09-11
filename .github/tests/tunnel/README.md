@@ -1,4 +1,10 @@
-# Linux tunnel E2E
+# Tunnel E2E
+
+CI runs 36 compatibility cases plus six fully native Linux container tests.
+All binaries are built from the checked-out commit. Tests require real TUN
+devices and administrative privileges; cross-compilation alone does not pass.
+
+## Native Linux container tests
 
 Run from a Linux host with Docker access and `/dev/net/tun`:
 
@@ -50,8 +56,64 @@ generated key material is never included. Locally, `ARTIFACT_DIR` selects the
 output directory, otherwise a temporary directory is created and printed.
 Containers, networks and temporary image tags are removed on exit.
 
-The eventual full matrix is six native clients (Linux/macOS/Windows on amd64 and
-arm64) against two Linux server architectures over three transports: 36 cases.
-That requires a network-accessible server fixture for the macOS/Windows jobs and
-mixed-architecture pairs. These six tests are the first stage, not that full
-compatibility matrix.
+## Full compatibility matrix
+
+`tunnel-compatibility` expands every row below against both Linux server
+architectures and all three transports, UDP/TCP/WS: **6 x 2 x 3 = 36 cases**.
+
+| Native client | Architecture | Runner |
+| --- | --- | --- |
+| Linux | amd64 | ubuntu-24.04 |
+| Linux | arm64 | ubuntu-24.04-arm |
+| macOS | amd64 | macos-15-intel |
+| macOS | arm64 | macos-15 |
+| Windows | amd64 | windows-2025 |
+| Windows | arm64 | windows-11-arm |
+
+Two native Linux build jobs produce a kernel and an Alpine initramfs containing
+the server binary. Each compatibility job boots the selected architecture using
+QEMU TCG, then builds and runs the native client directly on its runner OS.
+Both the native client build architecture and running guest kernel architecture
+are asserted. **Servers in this matrix are CPU-emulated**, including pairs of
+matching architectures. The original six container jobs retain native server
+execution. This is functional compatibility coverage, not a performance test.
+
+The guest contains the server and an HTTP target in a separate network namespace:
+
+| Address | Purpose |
+| --- | --- |
+| 192.0.2.15 | Guest transport and fixture controller |
+| 198.18.0.1 | Server backend interface / expected NAT source |
+| 198.18.0.2 | Isolated HTTP target |
+| 198.19.0.1 | Server TUN address |
+
+macOS uses QEMU's host-only vmnet network because TunGo rejects loopback server
+addresses on macOS. Linux/Windows forward only the controller and VPN listener
+ports through QEMU's restricted user network, bound to host loopback addresses.
+The HTTP target is never port-forwarded. Guest firewall rules also prohibit
+direct forwarding from the transport interface into the target network.
+
+Before starting the client, the harness installs more-specific routes for the
+complement of `198.18.0.0/15` through the original runner gateway. This preserves
+GitHub runner communication while leaving **both test networks exclusively to
+TunGo's routes**. It asserts the split default routes and target's TUN interface
+after connection. No test-target routes are injected by the harness. These jobs
+do not test tunneling the runner's entire public-internet traffic.
+
+Each case verifies no connectivity before startup, live target health, real TUN
+ping, a 4 MiB download with SHA-256, target-observed NAT source, and two complete
+client start/stop cycles. After each stop it compares routes and interfaces to
+the baseline; Linux also compares firewall rules. Windows uses Ctrl+Break to
+exercise graceful shutdown rather than TerminateProcess. The server receives
+SIGTERM and must restore routes/firewall and remove its TUN before the VM exits.
+
+`vm/run.py` is restricted to disposable Actions runners because it changes host
+routing. Its finally block stops processes, removes the generated configuration,
+and removes fixture routes. Diagnostic artifacts contain logs and network
+snapshots. VM images are built before keys are generated and contain no client
+or server key material. The fixture needs no repository secrets or external
+server. Version tagging waits for both test suites.
+
+Neither suite asserts DNS configuration/restoration, IPv6, WSS/TLS, automatic
+network-loss recovery, or throughput. A second client launch is a fresh
+connection test, not a simulated network outage.
