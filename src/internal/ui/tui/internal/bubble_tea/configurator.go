@@ -45,7 +45,9 @@ const (
 	configuratorScreenClientSelect
 	configuratorScreenClientRemove
 	configuratorScreenClientAddName
+	configuratorScreenClientNameError
 	configuratorScreenClientAddJSON
+	configuratorScreenClientJSONError
 	configuratorScreenClientInvalid
 	configuratorScreenServerSelect
 	configuratorScreenServerManage
@@ -321,7 +323,10 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 			return m, tea.Quit
 		case "tab":
-			if m.screen != configuratorScreenClientAddName && m.screen != configuratorScreenClientAddJSON {
+			switch m.screen {
+			case configuratorScreenClientAddName, configuratorScreenClientNameError,
+				configuratorScreenClientAddJSON, configuratorScreenClientJSONError:
+			default:
 				return m.cycleTab()
 			}
 		}
@@ -342,6 +347,8 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateClientRemoveScreen(msg)
 		case configuratorScreenClientAddName:
 			return m.updateClientAddNameScreen(msg)
+		case configuratorScreenClientNameError, configuratorScreenClientJSONError:
+			return m.updateClientInputErrorScreen(msg)
 		case configuratorScreenClientAddJSON:
 			return m.updateClientAddJSONScreen(msg)
 		case configuratorScreenClientInvalid:

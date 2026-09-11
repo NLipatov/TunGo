@@ -17,6 +17,21 @@ type Configurations struct {
 	activePath string
 }
 
+// MaxNameLength is the maximum length of a new configuration name.
+const MaxNameLength = 16
+
+// ValidateName checks new configuration names. Existing names remain usable
+// through List, Activate, and Delete under the original path restrictions.
+func ValidateName(name string) error {
+	if len(name) == 0 || len(name) > MaxNameLength || strings.IndexFunc(name, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-')
+	}) >= 0 {
+		return fmt.Errorf("configuration name must be 1-%d characters using only A-Z, a-z, 0-9, _ or -", MaxNameLength)
+	}
+	return nil
+}
+
 // Files returns the client configurations stored at the platform-specific system path.
 func Files() *Configurations {
 	return &Configurations{
@@ -66,6 +81,9 @@ func (c *Configurations) List() ([]string, error) {
 
 // Import validates and stores a named client configuration.
 func (c *Configurations) Import(name, rawJSON string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
 	path, err := c.alternativePath(name)
 	if err != nil {
 		return err

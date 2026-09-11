@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	clientconfig "tungo/internal/config/client"
 	"tungo/internal/mode"
 
 	"charm.land/bubbles/v2/textarea"
@@ -117,9 +118,11 @@ func (m Configurator) updateClientAddNameScreen(msg tea.KeyPressMsg) (tea.Model,
 		m.screen = configuratorScreenClientSelect
 		return m, nil
 	case "enter":
-		name := strings.TrimSpace(m.client.addNameInput.Value())
-		if name == "" {
-			m.notice = "Configuration name cannot be empty."
+		name := m.client.addNameInput.Value()
+		if err := clientconfig.ValidateName(name); err != nil {
+			m.notice = err.Error()
+			m.client.addNameInput.SetValue("")
+			m.screen = configuratorScreenClientNameError
 			return m, nil
 		}
 		m.client.addName = name
@@ -135,6 +138,20 @@ func (m Configurator) updateClientAddNameScreen(msg tea.KeyPressMsg) (tea.Model,
 	var cmd tea.Cmd
 	m.client.addNameInput, cmd = m.client.addNameInput.Update(msg)
 	return m, cmd
+}
+
+func (m Configurator) updateClientInputErrorScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "esc":
+		m.notice = ""
+		if m.screen == configuratorScreenClientNameError {
+			m.screen = configuratorScreenClientAddName
+			return m, textinput.Blink
+		}
+		m.screen = configuratorScreenClientAddJSON
+		return m, textarea.Blink
+	}
+	return m, nil
 }
 
 const pasteDebounce = 300 * time.Millisecond
@@ -161,16 +178,13 @@ func (m Configurator) updateClientAddJSONScreen(msg tea.KeyPressMsg) (tea.Model,
 
 		if err := m.options.ClientConfigurations.Import(m.client.addName, m.client.addJSONInput.Value()); err != nil {
 			if isInvalidClientConfigurationError(err) {
-				m.client.invalidErr = err
-				m.client.invalidConfig = ""
-				m.client.invalidAllowDelete = false
-				m.cursor = 0
-				m.screen = configuratorScreenClientInvalid
-				return m, nil
+				m.client.addJSONInput.SetValue("")
 			}
-			m.resultErr = err
-			m.done = true
-			return m, tea.Quit
+			m.client.lastInputAt = time.Time{}
+			m.client.pasteSeq++
+			m.notice = err.Error()
+			m.screen = configuratorScreenClientJSONError
+			return m, nil
 		}
 		if err := m.reloadClientConfigs(); err != nil {
 			m.resultErr = err
@@ -268,7 +282,8 @@ func (m *Configurator) initNameInput() {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Placeholder = "Give it a name"
-	ti.CharLimit = 256
+	// Validate on confirmation so pasted text is never silently truncated.
+	ti.CharLimit = 0
 	ti.SetWidth(40)
 	ti.SetValue("")
 	ti.Focus()
