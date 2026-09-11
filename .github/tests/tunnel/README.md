@@ -59,7 +59,8 @@ Containers, networks and temporary image tags are removed on exit.
 ## Full compatibility matrix
 
 `tunnel-compatibility` expands every row below against both Linux server
-architectures and all three transports, UDP/TCP/WS: **6 x 2 x 3 = 36 cases**.
+architectures and all three transports, UDP/TCP/WS: **6 x 2 x 3 = 36 cases**. Each case configures dual stack and requires both
+IPv4 and IPv6 traffic to pass in the same tunnel connection.
 
 | Native client | Architecture | Runner |
 | --- | --- | --- |
@@ -82,14 +83,18 @@ The guest contains the server and an HTTP target in a separate network namespace
 
 | Address | Purpose |
 | --- | --- |
-| 192.0.2.15 | Guest transport and fixture controller |
+| 192.168.250.15 | Guest transport and fixture controller |
 | 198.18.0.1 | Server backend interface / expected NAT source |
 | 198.18.0.2 | Isolated HTTP target |
-| 198.19.0.1 | Server TUN address |
+| 198.19.0.1 | Server IPv4 TUN address |
+| fd73:7467:6f::1 | Server IPv6 backend / expected NAT66 source |
+| fd73:7467:6f::2 | Isolated IPv6 HTTP target |
+| fd73:7467:6f:1::1 | Server IPv6 TUN address |
 
 macOS uses QEMU's host-only vmnet network because TunGo rejects loopback server
-addresses on macOS. Linux/Windows forward only the controller and VPN listener
-ports through QEMU's restricted user network, bound to host loopback addresses.
+addresses on macOS. Linux uses a dedicated TAP device connecting the runner to
+the guest. Windows forwards only the controller and VPN listener ports through
+QEMU's restricted user network, bound to host loopback addresses.
 The HTTP target is never port-forwarded. Guest firewall rules also prohibit
 direct forwarding from the transport interface into the target network.
 
@@ -97,13 +102,16 @@ Before starting the client, the harness installs more-specific routes for the
 complement of `198.18.0.0/15` through the original runner gateway. This preserves
 GitHub runner communication while leaving **both test networks exclusively to
 TunGo's routes**. It asserts the split default routes and target's TUN interface
-after connection. No test-target routes are injected by the harness. These jobs
+after connection for both IP families. If the runner has an IPv6 default
+route, `2000::/3` preserves its public IPv6 connectivity; test ULA subnets
+remain exclusively routed by TunGo. No test-target routes are injected by the harness. These jobs
 do not test tunneling the runner's entire public-internet traffic.
 
 Each case verifies no connectivity before startup, live target health, real TUN
-ping, a 4 MiB download with SHA-256, target-observed NAT source, and two complete
-client start/stop cycles. After each stop it compares routes and interfaces to
-the baseline; Linux also compares firewall rules. Windows uses Ctrl+Break to
+ping, a 4 MiB download with SHA-256 and target-observed NAT source separately
+over IPv4 and IPv6. Both families must pass on each of two complete client
+start/stop cycles. After each stop it compares routes and interfaces to
+the baseline for both families; Linux also compares iptables and ip6tables rules. Windows uses Ctrl+Break to
 exercise graceful shutdown rather than TerminateProcess. The server receives
 SIGTERM and must restore routes/firewall and remove its TUN before the VM exits.
 
@@ -114,6 +122,8 @@ snapshots. VM images are built before keys are generated and contain no client
 or server key material. The fixture needs no repository secrets or external
 server. Version tagging waits for both test suites.
 
-Neither suite asserts DNS configuration/restoration, IPv6, WSS/TLS, automatic
+The compatibility matrix tests IPv4 and IPv6 payloads over an IPv4 VPN
+transport endpoint. IPv6-only transport reachability is a separate dimension
+and is not covered. Neither suite asserts DNS configuration/restoration, WSS/TLS, automatic
 network-loss recovery, or throughput. A second client launch is a fresh
 connection test, not a simulated network outage.

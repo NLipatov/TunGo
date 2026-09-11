@@ -24,14 +24,17 @@ def run(*args):
 def snapshot():
     return {
         'routes': sorted(run('ip', '-4', 'route', 'show').splitlines()),
+        'routes6': sorted(run('ip', '-6', 'route', 'show').splitlines()),
         'firewall': [run('iptables', '-t', table, '-S') for table in ('filter', 'nat', 'mangle')],
+        'firewall6': [run('ip6tables', '-t', table, '-S') for table in ('filter', 'nat', 'mangle')],
     }
 
 
 def status():
     # Test the actual target, not just this management service.
-    with HTTP.open('http://198.18.0.2:8080/sha256', timeout=5) as response:
-        assert response.read() == CHECKSUM, 'HTTP target is not healthy'
+    for host in ('198.18.0.2', '[fd73:7467:6f::2]'):
+        with HTTP.open(f'http://{host}:8080/sha256', timeout=5) as response:
+            assert response.read() == CHECKSUM, f'HTTP target {host} is not healthy'
     return {'arch': platform.machine(), 'sha256': CHECKSUM.decode().strip(),
             'server_exit': SERVER.poll() if SERVER else None}
 
@@ -54,9 +57,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/status':
                 self.reply(status())
             elif self.path == '/diagnostics':
-                self.reply({'network': snapshot(), 'links': run('ip', '-details', 'link'),
+                self.reply({'network': snapshot(), 'links': run('ip', '-details', '-statistics', 'link'),
+                            'counters': run('iptables-save', '-c'), 'counters6': run('ip6tables-save', '-c'),
                             'server_log': LOG.read_text() if LOG.exists() else '',
-                            'target_log': Path('/tmp/target.log').read_text()})
+                            'target_log': Path('/tmp/target.log').read_text(),
+                            'target6_log': Path('/tmp/target6.log').read_text()})
             else:
                 self.reply({'error': 'unknown endpoint'}, 404)
         except Exception as error:
@@ -76,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
                 if PROTOCOL not in ('UDP', 'TCP', 'WS'):
                     raise ValueError('invalid protocol')
                 # Only fixture-owned transport addresses are accepted.
-                if data['host'] not in ('127.77.0.1', '192.0.2.15'):
+                if data['host'] not in ('127.0.0.1', '192.168.250.15'):
                     raise ValueError('invalid transport host')
                 env = dict(os.environ, Host=data['host'])
                 env.update({f'Enable{p}': str(p == PROTOCOL).lower() for p in ('UDP', 'TCP', 'WS')})
@@ -84,7 +89,8 @@ class Handler(BaseHTTPRequestHandler):
                 directory = Path('/etc/tungo')
                 directory.mkdir(mode=0o700, exist_ok=True)
                 # Reserved benchmarking ranges avoid runner-private-network collisions.
-                settings = {f'{p}Settings': {'IPv4Subnet': '198.19.0.0/24'} for p in ('UDP', 'TCP', 'WS')}
+                settings = {f'{p}Settings': {'IPv4Subnet': '198.19.0.0/24', 'IPv6Subnet': 'fd73:7467:6f:1::/64'}
+                            for p in ('UDP', 'TCP', 'WS')}
                 (directory / 'server_configuration.json').write_text(json.dumps(settings))
                 # Generate keys only after boot, so uploaded VM artifacts contain none.
                 subprocess.run(['tungo', 's', 'gen'], env=env, check=True,
@@ -114,4 +120,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    HTTPServer(('192.0.2.15', 18080), Handler).serve_forever()
+    HTTPServer(('192.168.250.15', 18080), Handler).serve_forever()

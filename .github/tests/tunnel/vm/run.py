@@ -20,7 +20,11 @@ from pathlib import Path
 
 SYSTEM = platform.system()
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-TARGET = 'http://198.18.0.2:8080'
+FAMILIES = {
+    4: {'target': '198.18.0.2', 'url': 'http://198.18.0.2:8080', 'server': '198.19.0.1', 'nat': '198.18.0.1'},
+    6: {'target': 'fd73:7467:6f::2', 'url': 'http://[fd73:7467:6f::2]:8080',
+        'server': 'fd73:7467:6f:1::1', 'nat': 'fd73:7467:6f::1'},
+}
 
 
 def run(*args, check=True):
@@ -60,24 +64,28 @@ def wait_until(description, action, timeout=90):
 
 
 def snapshot():
-    """Capture stable routing fields; omit lifetimes, counters, and ARP caches."""
+    """Capture stable routing fields; omit lifetimes, counters, and neighbor caches."""
     state = {'interfaces': sorted(name for _, name in socket.if_nameindex())}
     if SYSTEM == 'Linux':
         fields = ('dst', 'gateway', 'dev', 'table', 'metric', 'prefsrc', 'type', 'scope')
-        rows = json.loads(run('ip', '-j', '-4', 'route', 'show', 'table', 'main'))
-        state['routes'] = sorted(json.dumps({k: row[k] for k in fields if k in row}, sort_keys=True) for row in rows)
-        state['firewall'] = [run('iptables', '-t', table, '-S') for table in ('filter', 'nat', 'mangle')]
+        for family in (4, 6):
+            rows = json.loads(run('ip', '-j', f'-{family}', 'route', 'show', 'table', 'main'))
+            state[f'routes{family}'] = sorted(
+                json.dumps({k: row[k] for k in fields if k in row}, sort_keys=True) for row in rows)
+            firewall = 'iptables' if family == 4 else 'ip6tables'
+            state[f'firewall{family}'] = [run(firewall, '-t', table, '-S') for table in ('filter', 'nat', 'mangle')]
     elif SYSTEM == 'Darwin':
-        rows = []
-        for line in run('netstat', '-rn', '-f', 'inet').splitlines():
-            parts = line.split()
-            if len(parts) >= 4 and (parts[0] == 'default' or parts[0][0].isdigit()):
-                if 'L' not in parts[2] and 'W' not in parts[2]:
-                    rows.append(' '.join(parts[:4]))
-        state['routes'] = sorted(rows)
+        for family in ('inet', 'inet6'):
+            rows = []
+            for line in run('netstat', '-rn', '-f', family).splitlines():
+                parts = line.split()
+                if len(parts) >= 4 and (parts[0] == 'default' or re.match(r'[0-9a-f]', parts[0])):
+                    if 'L' not in parts[2] and 'W' not in parts[2]:
+                        rows.append(' '.join(parts[:4]))
+            state[family] = sorted(rows)
     else:
         rows = json.loads(powershell(
-            '@(Get-NetRoute -AddressFamily IPv4 | Select-Object DestinationPrefix,NextHop,InterfaceIndex,RouteMetric) '
+            '@(Get-NetRoute | Select-Object DestinationPrefix,NextHop,InterfaceIndex,RouteMetric) '
             '| ConvertTo-Json -Compress'))
         state['routes'] = sorted(json.dumps(row, sort_keys=True) for row in rows)
     return state
@@ -90,6 +98,7 @@ class RunnerRoutes:
         self.added = []
         self.gateway = None
         self.interface = None
+        self.delete6 = None
 
     def install(self):
         if SYSTEM == 'Linux':
@@ -116,8 +125,39 @@ class RunnerRoutes:
                     powershell(f"New-NetRoute -DestinationPrefix '{prefix}' -NextHop '{self.gateway}' "
                                f'-InterfaceIndex {self.interface} -PolicyStore ActiveStore | Out-Null')
                 self.added.append(prefix)
+        # Preserve public IPv6 where the runner already has IPv6 connectivity.
+        # The fixture's ULA prefixes remain exclusively routed by TunGo.
+        if SYSTEM == 'Linux':
+            defaults = json.loads(run('ip', '-j', '-6', 'route', 'show', 'default'))
+            if defaults:
+                route = min(defaults, key=lambda r: r.get('metric', 0))
+                suffix = ['2000::/3', 'via', route['gateway'], 'dev', route['dev']]
+                run('ip', '-6', 'route', 'add', *suffix)
+                self.delete6 = ['ip', '-6', 'route', 'del', *suffix]
+        elif SYSTEM == 'Darwin':
+            output = run('route', '-n', 'get', '-inet6', 'default', check=False)
+            gateway = re.search(r'gateway:\s+(\S+)', output)
+            if gateway:
+                suffix = ['-inet6', '2000::/3', gateway[1]]
+                run('route', '-n', 'add', *suffix)
+                self.delete6 = ['route', '-n', 'delete', *suffix]
+        else:
+            route = powershell(
+                'Get-NetRoute -DestinationPrefix ::/0 -ErrorAction SilentlyContinue | Sort-Object RouteMetric '
+                '| Select-Object -First 1 -Property NextHop,InterfaceIndex | ConvertTo-Json -Compress')
+            if route:
+                route = json.loads(route)
+                powershell(f"New-NetRoute -DestinationPrefix '2000::/3' -NextHop '{route['NextHop']}' "
+                           f"-InterfaceIndex {route['InterfaceIndex']} -PolicyStore ActiveStore | Out-Null")
+                self.delete6 = (f"Get-NetRoute -DestinationPrefix '2000::/3' -InterfaceIndex {route['InterfaceIndex']} "
+                                '| Remove-NetRoute -Confirm:$false')
 
     def remove(self):
+        if self.delete6:
+            if SYSTEM == 'Windows':
+                powershell(self.delete6)
+            else:
+                run(*self.delete6, check=False)
         for prefix in reversed(self.added):
             if SYSTEM == 'Linux':
                 run('ip', 'route', 'del', prefix, 'via', self.gateway, 'dev', self.interface, check=False)
@@ -128,26 +168,28 @@ class RunnerRoutes:
                            '-ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false')
 
 
-def assert_tunnel_route():
+def assert_tunnel_route(family):
+    address = FAMILIES[family]['target']
+    prefixes = ('0.0.0.0/1', '128.0.0.0/1') if family == 4 else ('::/1', '8000::/1')
     if SYSTEM == 'Linux':
-        routes = json.loads(run('ip', '-j', '-4', 'route', 'show'))
-        lower = [r for r in routes if r.get('dst') == '0.0.0.0/1']
-        upper = [r for r in routes if r.get('dst') == '128.0.0.0/1']
-        target = json.loads(run('ip', '-j', '-4', 'route', 'get', '198.18.0.2'))[0]
-        assert lower and upper and lower[0]['dev'] == upper[0]['dev'] == target['dev']
-        assert target['dev'].startswith('c_')
+        routes = json.loads(run('ip', '-j', f'-{family}', 'route', 'show'))
+        target = json.loads(run('ip', '-j', f'-{family}', 'route', 'get', address))[0]
+        assert target['dev'].startswith('c_'), target
+        for prefix in prefixes:
+            assert any(r.get('dst') == prefix and r.get('dev') == target['dev'] for r in routes), routes
     elif SYSTEM == 'Darwin':
-        interface = re.search(r'interface:\s+(\S+)', run('route', '-n', 'get', '198.18.0.2'))[1]
+        family_arg = ['-inet6'] if family == 6 else []
+        interface = re.search(r'interface:\s+(\S+)', run('route', '-n', 'get', *family_arg, address))[1]
         assert interface.startswith('utun'), interface
-        routes = run('netstat', '-rn', '-f', 'inet').splitlines()
-        for prefix in ('0/1', '128.0/1'):
+        routes = run('netstat', '-rn', '-f', 'inet6' if family == 6 else 'inet').splitlines()
+        for prefix in (('0/1', '128.0/1') if family == 4 else prefixes):
             assert any(line.split()[0] == prefix and interface in line.split() for line in routes if line.split()), routes
     else:
         interface = powershell(
-            "(Find-NetRoute -RemoteIPAddress 198.18.0.2 | Where-Object { $_.PSObject.Properties['InterfaceAlias'] } "
+            f"(Find-NetRoute -RemoteIPAddress '{address}' | Where-Object {{ $_.PSObject.Properties['InterfaceAlias'] }} "
             '| Select-Object -First 1).InterfaceAlias')
         assert interface.startswith('c_'), interface
-        for prefix in ('0.0.0.0/1', '128.0.0.0/1'):
+        for prefix in prefixes:
             aliases = powershell(f"(Get-NetRoute -DestinationPrefix '{prefix}').InterfaceAlias")
             assert interface in aliases.splitlines(), aliases
 
@@ -186,8 +228,8 @@ def main():
     else:
         assert os.geteuid() == 0, 'Root required'
     args.artifacts.mkdir(parents=True, exist_ok=True)
-    endpoint = '192.0.2.15' if SYSTEM == 'Darwin' else '127.77.0.1'
-    control = 'http://' + ('192.0.2.15' if SYSTEM == 'Darwin' else '127.0.0.1') + ':18080'
+    endpoint = '127.0.0.1' if SYSTEM == 'Windows' else '192.168.250.15'
+    control = 'http://' + ('127.0.0.1' if SYSTEM == 'Windows' else '192.168.250.15') + ':18080'
     qemu_arch = 'x86_64' if args.server_arch == 'amd64' else 'aarch64'
     qemu = shutil.which(f'qemu-system-{qemu_arch}')
     assert qemu, f'Missing QEMU for {args.server_arch}'
@@ -199,30 +241,34 @@ def main():
     command += ['-machine', 'q35' if args.server_arch == 'amd64' else 'virt',
                 '-cpu', 'max' if args.server_arch == 'amd64' else 'cortex-a72']
     if SYSTEM == 'Darwin':
-        network = 'vmnet-host,id=transport,start-address=192.0.2.1,end-address=192.0.2.254,subnet-mask=255.255.255.0'
+        network = 'vmnet-host,id=transport,start-address=192.168.250.1,end-address=192.168.250.254,subnet-mask=255.255.255.0'
+    elif SYSTEM == 'Linux':
+        network = 'tap,id=transport,ifname=tungo-vm0,script=no,downscript=no'
     else:
-        network = ('user,id=transport,net=192.0.2.0/24,restrict=on,'
-                   'hostfwd=tcp:127.0.0.1:18080-192.0.2.15:18080,'
-                   'hostfwd=tcp:127.77.0.1:8080-192.0.2.15:8080,'
-                   'hostfwd=udp:127.77.0.1:9090-192.0.2.15:9090,'
-                   'hostfwd=tcp:127.77.0.1:1010-192.0.2.15:1010')
+        network = ('user,id=transport,net=192.168.250.0/24,restrict=on,'
+                   'hostfwd=tcp:127.0.0.1:18080-192.168.250.15:18080,'
+                   'hostfwd=tcp:127.0.0.1:8080-192.168.250.15:8080,'
+                   'hostfwd=udp:127.0.0.1:9090-192.168.250.15:9090,'
+                   'hostfwd=tcp:127.0.0.1:1010-192.168.250.15:1010')
     command += ['-netdev', network, '-device', 'virtio-net-pci,netdev=transport']
     routes = RunnerRoutes()
     vm = client = None
     config_path = Path(os.environ.get('ProgramData', 'C:/ProgramData')) / 'TunGo/client_configuration.json' if SYSTEM == 'Windows' else Path('/etc/tungo/client_configuration.json')
     assert not config_path.exists(), 'Refusing to overwrite existing TunGo configuration'
     config_written = False
+    tap_created = False
 
     def control_call(path, data=None):
         return json.loads(request(control + path, data, timeout=45))
 
     def no_bypass():
         control_call('/status')
-        try:
-            request(TARGET + '/sha256', timeout=2)
-        except (OSError, RuntimeError):
-            return
-        raise AssertionError('Target reachable without TunGo')
+        for family, addresses in FAMILIES.items():
+            try:
+                request(addresses['url'] + '/sha256', timeout=2)
+            except (OSError, RuntimeError):
+                continue
+            raise AssertionError(f'IPv{family} target reachable without TunGo')
 
     def save_state(name):
         state = snapshot()
@@ -230,6 +276,11 @@ def main():
         return state
 
     try:
+        if SYSTEM == 'Linux':
+            run('ip', 'tuntap', 'add', 'dev', 'tungo-vm0', 'mode', 'tap')
+            tap_created = True
+            run('ip', 'addr', 'add', '192.168.250.1/24', 'dev', 'tungo-vm0')
+            run('ip', 'link', 'set', 'tungo-vm0', 'up')
         with (args.artifacts / 'vm.log').open('w') as log:
             vm = subprocess.Popen(command, stdout=log, stderr=log)
         def ready():
@@ -254,17 +305,23 @@ def main():
             with (args.artifacts / f'client-{cycle}.log').open('w') as log:
                 options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if SYSTEM == 'Windows' else {}
                 client = subprocess.Popen([str(args.binary.resolve()), 'c'], stdout=log, stderr=log, **options)
-            def connected():
-                assert client.poll() is None, f'Client exited: {client.returncode}'
-                return request(TARGET + '/sha256', timeout=2)
-            wait_until('tunneled HTTP', connected)
-            assert_tunnel_route()
-            ping_args = ['-n', '3', '-w', '2000'] if SYSTEM == 'Windows' else ['-n', '-c', '3']
-            run('ping', *ping_args, '198.19.0.1')
-            payload = request(TARGET + '/payload', timeout=60)
-            assert len(payload) == 4 * 1024 * 1024, 'Payload truncated'
-            assert hashlib.sha256(payload).hexdigest() == info['sha256'], 'Checksum mismatch'
-            assert request(TARGET + '/peer').decode().strip() == '198.18.0.1', 'MASQUERADE missing'
+            for family, addresses in FAMILIES.items():
+                print(f'Checking IPv{family} traffic', flush=True)
+                def connected():
+                    assert client.poll() is None, f'Client exited: {client.returncode}'
+                    return request(addresses['url'] + '/sha256', timeout=2)
+                wait_until(f'tunneled IPv{family} HTTP', connected)
+                assert_tunnel_route(family)
+                if SYSTEM == 'Windows':
+                    run('ping', f'-{family}', '-n', '3', '-w', '2000', addresses['server'])
+                elif SYSTEM == 'Darwin':
+                    run('ping6' if family == 6 else 'ping', '-n', '-c', '3', addresses['server'])
+                else:
+                    run('ping', f'-{family}', '-n', '-c', '3', addresses['server'])
+                payload = request(addresses['url'] + '/payload', timeout=60)
+                assert len(payload) == 4 * 1024 * 1024, f'IPv{family} payload truncated'
+                assert hashlib.sha256(payload).hexdigest() == info['sha256'], f'IPv{family} checksum mismatch'
+                assert request(addresses['url'] + '/peer').decode().strip() == addresses['nat'], f'IPv{family} MASQUERADE missing'
             save_state(f'client-connected-{cycle}')
             stop_client(client)
             client = None
@@ -273,7 +330,7 @@ def main():
             no_bypass()
         assert control_call('/stop', {})['restored']
         no_bypass()
-        print('PASS: TUN, routes, 4 MiB checksum, NAT, client restart, graceful cleanup', flush=True)
+        print('PASS: dual-stack IPv4/IPv6 TUN, routes, 4 MiB checksum, NAT, client restart, graceful cleanup', flush=True)
     except BaseException:
         # Include diagnostics in job logs as well as downloadable artifacts.
         # Neither runtime logs nor these snapshots contain generated private keys.
@@ -307,6 +364,8 @@ def main():
         if config_written:
             config_path.unlink(missing_ok=True)
         routes.remove()
+        if tap_created:
+            run('ip', 'link', 'delete', 'tungo-vm0')
 
 
 if __name__ == '__main__':

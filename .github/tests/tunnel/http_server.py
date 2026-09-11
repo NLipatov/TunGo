@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import argparse
 import hashlib
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -31,4 +33,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--bind', default='0.0.0.0')
+    args = parser.parse_args()
+    class Server(ThreadingHTTPServer):
+        address_family = socket.AF_INET6 if ':' in args.bind else socket.AF_INET
+    Server((args.bind, 8080), Handler).serve_forever()
