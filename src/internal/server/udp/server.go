@@ -21,8 +21,6 @@ import (
 	transport "tungo/internal/transport/udp"
 )
 
-const udpPayloadOffset = udpcrypto.PayloadOffset
-
 // Server moves packets between a TUN device and UDP client transports.
 type Server struct {
 	ctx       context.Context
@@ -184,7 +182,7 @@ func (s *Server) handleDecrypted(
 
 func (s *Server) runTun() error {
 	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	plaintext := frame[udpPayloadOffset : udpPayloadOffset+settings.DefaultEthernetMTU]
+	plaintext := frame[udpcrypto.PayloadOffset : udpcrypto.PayloadOffset+settings.DefaultEthernetMTU]
 
 	for {
 		if s.ctx.Err() != nil {
@@ -208,7 +206,7 @@ func (s *Server) runTun() error {
 		if err != nil {
 			continue
 		}
-		if err := peer.Send(frame[:udpPayloadOffset+n]); err != nil {
+		if err := peer.Send(frame[:udpcrypto.PayloadOffset+n]); err != nil {
 			slog.Warn("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
 			s.peers.Delete(peer)
 			continue
@@ -249,12 +247,12 @@ func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, 
 	if payloadLen > settings.DefaultEthernetMTU {
 		return io.ErrShortBuffer
 	}
-	payload := frame[udpPayloadOffset : udpPayloadOffset+payloadLen]
+	payload := frame[udpcrypto.PayloadOffset : udpcrypto.PayloadOffset+payloadLen]
 	copy(payload[3:], body)
 	if err := servicepacket.Encode(kind, payload); err != nil {
 		return err
 	}
-	return peer.Send(frame[:udpPayloadOffset+payloadLen])
+	return peer.Send(frame[:udpcrypto.PayloadOffset+payloadLen])
 }
 
 func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
@@ -262,6 +260,6 @@ func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
 		return io.ErrShortBuffer
 	}
 	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	copy(frame[udpPayloadOffset:], payload)
-	return peer.Send(frame[:udpPayloadOffset+len(payload)])
+	copy(frame[udpcrypto.PayloadOffset:], payload)
+	return peer.Send(frame[:udpcrypto.PayloadOffset+len(payload)])
 }

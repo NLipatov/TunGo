@@ -15,8 +15,8 @@ import (
 	"tungo/internal/platform"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/server/session"
-	tcpserver "tungo/internal/server/tcp"
-	udpserver "tungo/internal/server/udp"
+	"tungo/internal/server/tcp"
+	"tungo/internal/server/udp"
 	"tungo/internal/trafficstats"
 	"tungo/internal/transport/ws"
 	servertun "tungo/internal/tun/server"
@@ -184,7 +184,7 @@ func (s *Server) newTCPTunnel(
 
 	s.register(sessionManager)
 
-	server := tcpserver.New(
+	server := tcp.New(
 		ctx, tun, listener, sessionManager,
 		func() *noise.IKHandshake {
 			return noise.NewIKHandshakeServer(
@@ -226,7 +226,7 @@ func (s *Server) newWSTunnel(
 
 	s.register(sessionManager)
 
-	server := tcpserver.New(
+	server := tcp.New(
 		ctx, tun, wsListener, sessionManager,
 		func() *noise.IKHandshake {
 			return noise.NewIKHandshakeServer(
@@ -262,7 +262,7 @@ func (s *Server) newUDPTunnel(
 
 	s.register(sessionManager)
 
-	server := udpserver.New(
+	server := udp.New(
 		ctx, tun, conn, sessionManager,
 		func() *noise.IKHandshake {
 			return noise.NewIKHandshakeServer(

@@ -151,10 +151,10 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	if err := server.runTun(); err != io.EOF {
 		t.Fatalf("RunTun error = %v, want EOF", err)
 	}
-	if len(writer.packet) != udpPayloadOffset+len(tun.packet) {
-		t.Fatalf("sent length = %d, want %d", len(writer.packet), udpPayloadOffset+len(tun.packet))
+	if len(writer.packet) != udpcrypto.PayloadOffset+len(tun.packet) {
+		t.Fatalf("sent length = %d, want %d", len(writer.packet), udpcrypto.PayloadOffset+len(tun.packet))
 	}
-	if string(writer.packet[udpPayloadOffset:]) != string(tun.packet) {
+	if string(writer.packet[udpcrypto.PayloadOffset:]) != string(tun.packet) {
 		t.Fatal("sent payload differs from TUN packet")
 	}
 }
@@ -172,7 +172,7 @@ func TestServer_PingDoesNotRequireRekey(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	kind, ok := servicepacket.Parse(writer.packet[udpPayloadOffset:])
+	kind, ok := servicepacket.Parse(writer.packet[udpcrypto.PayloadOffset:])
 	if !ok || kind != servicepacket.Pong {
 		t.Fatalf("response kind=%v ok=%v", kind, ok)
 	}
@@ -199,7 +199,7 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	kind, ok := servicepacket.Parse(writer.packet[udpPayloadOffset:])
+	kind, ok := servicepacket.Parse(writer.packet[udpcrypto.PayloadOffset:])
 	if !ok || kind != servicepacket.RekeyAck {
 		t.Fatalf("response kind=%v ok=%v", kind, ok)
 	}
@@ -223,7 +223,7 @@ func TestServer_RekeyV2SendsNoiseAckWithoutPrematureUDPActivation(t *testing.T) 
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	response := writer.packet[udpPayloadOffset:]
+	response := writer.packet[udpcrypto.PayloadOffset:]
 	kind, ok := servicepacket.Parse(response)
 	if !ok || kind != servicepacket.RekeyAckV2 || string(response[3:]) != "noise-msg2" {
 		t.Fatalf("unexpected response: kind=%v ok=%v body=%q", kind, ok, response[3:])
