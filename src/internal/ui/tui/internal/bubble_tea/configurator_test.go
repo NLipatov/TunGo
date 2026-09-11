@@ -840,8 +840,8 @@ func TestUpdateClientAddNameScreen_EnterEmptyName(t *testing.T) {
 
 	result, _ := m.updateClientAddNameScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
-	if s.screen != configuratorScreenClientAddName {
-		t.Fatalf("expected to stay on add name, got %v", s.screen)
+	if s.screen != configuratorScreenClientNameError {
+		t.Fatalf("expected name error dialog, got %v", s.screen)
 	}
 	if s.notice == "" {
 		t.Fatal("expected notice about empty name")
@@ -878,6 +878,108 @@ func TestUpdateClientAddNameScreen_OtherKeysPassToInput(t *testing.T) {
 	}
 }
 
+func TestUpdateClientAddNameScreen_RejectsInvalidPaste(t *testing.T) {
+	for _, input := range []string{
+		`{"ClientID":1}`, "{\n  \"ClientID\": 1\n}",
+		strings.Repeat("a", 17), strings.Repeat("a", 300),
+		"office vpn", " office", "office ", "office.backup", "сервер",
+	} {
+		t.Run(input, func(t *testing.T) {
+			m := newTestConfigurator(t)
+			m.screen = configuratorScreenClientAddName
+			control := m.options.testControl()
+			result, _ := m.Update(tea.PasteMsg{Content: input})
+			m = result.(Configurator)
+			if !strings.Contains(input, "\n") && m.client.addNameInput.Value() != input {
+				t.Fatalf("paste was changed: got %q, want %q", m.client.addNameInput.Value(), input)
+			}
+			result, cmd := m.Update(keyNamed(tea.KeyEnter))
+			m = result.(Configurator)
+			if m.screen != configuratorScreenClientNameError || m.done || cmd != nil || control.importCalled {
+				t.Fatalf("invalid name advanced or ended the flow: screen=%v done=%v import=%v", m.screen, m.done, control.importCalled)
+			}
+			if m.notice == "" || !strings.Contains(m.View().Content, m.notice) {
+				t.Fatal("expected visible name validation error")
+			}
+			if m.client.addNameInput.Value() != "" {
+				t.Fatal("invalid name was not cleared")
+			}
+
+			result, _ = m.Update(keyNamed(tea.KeyEnter))
+			m = result.(Configurator)
+			m.client.addNameInput.SetValue("Abc_0123456789-Z")
+			result, _ = m.Update(keyNamed(tea.KeyEnter))
+			m = result.(Configurator)
+			if m.screen != configuratorScreenClientAddJSON || m.client.addName != "Abc_0123456789-Z" || m.notice != "" {
+				t.Fatal("correcting the name did not resume the add flow")
+			}
+		})
+	}
+}
+
+func TestUpdateClientAddNameScreen_UnbracketedJSONPasteCannotAdvance(t *testing.T) {
+	m := newTestConfigurator(t)
+	m.screen = configuratorScreenClientAddName
+	control := m.options.testControl()
+	for _, r := range "{\n  \"ClientID\": 1\n}\n" {
+		msg := keyRunes(r)
+		if r == '\n' {
+			msg = keyNamed(tea.KeyEnter)
+		}
+		result, _ := m.Update(msg)
+		m = result.(Configurator)
+		if (m.screen != configuratorScreenClientAddName && m.screen != configuratorScreenClientNameError) || m.done || control.importCalled {
+			t.Fatalf("paste left name screen at %q: screen=%v done=%v import=%v", r, m.screen, m.done, control.importCalled)
+		}
+	}
+	if m.notice == "" {
+		t.Fatal("expected a name validation error")
+	}
+}
+
+func TestUpdateClientAddNameScreen_ShowsDialogOnEveryInvalidSubmit(t *testing.T) {
+	m := newTestConfigurator(t)
+	m.screen = configuratorScreenClientAddName
+	m.width, m.height = 80, 24
+	input := `{"ClientID":1,"padding":"` + strings.Repeat("x", 967) + `"}`
+	result, _ := m.Update(tea.PasteMsg{Content: input})
+	m = result.(Configurator)
+	control := m.options.testControl()
+	for _, dismiss := range []rune{tea.KeyEnter, tea.KeyEsc} {
+		result, _ = m.Update(keyNamed(tea.KeyEnter))
+		m = result.(Configurator)
+		view := stripANSI(m.View().Content)
+		if !strings.Contains(view, "Error: invalid name") || !strings.Contains(view, "Try again") {
+			t.Fatalf("missing error dialog or dismiss action:\n%s", view)
+		}
+		if strings.Contains(view, "Characters:") || strings.Contains(view, "Enter confirm") {
+			t.Fatal("error dialog did not replace the name input")
+		}
+		for _, msg := range []tea.Msg{keyRunes('x'), keyNamed(tea.KeyTab), tea.PasteMsg{Content: "another name"}} {
+			result, _ = m.Update(msg)
+			m = result.(Configurator)
+			if stripANSI(m.View().Content) != view || m.client.addNameInput.Value() != "" || m.done || control.importCalled {
+				t.Fatal("error dialog allowed underlying input or navigation")
+			}
+		}
+		result, _ = m.Update(keyNamed(dismiss))
+		m = result.(Configurator)
+		if m.screen != configuratorScreenClientAddName || m.notice != "" || m.client.addNameInput.Value() != "" {
+			t.Fatal("dismissing the error did not return to an empty name input")
+		}
+		if !strings.Contains(stripANSI(m.View().Content), "Characters: 0/16") {
+			t.Fatal("name input was not reset after dismissing the dialog")
+		}
+	}
+	result, _ = m.Update(tea.PasteMsg{Content: "office-vpn"})
+	m = result.(Configurator)
+	result, _ = m.Update(keyNamed(tea.KeyEnter))
+	m = result.(Configurator)
+	if m.screen != configuratorScreenClientAddJSON || m.client.addName != "office-vpn" {
+		t.Fatal("corrected name did not advance to the configuration input")
+	}
+}
+
 // --- 11. updateClientAddJSONScreen ---
 
 func TestUpdateClientAddJSONScreen_EscGoesBack(t *testing.T) {
@@ -899,11 +1001,11 @@ func TestUpdateClientAddJSONScreen_EnterInvalidJSON(t *testing.T) {
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
-	if s.screen != configuratorScreenClientInvalid {
-		t.Fatalf("expected invalid screen, got %v", s.screen)
+	if s.screen != configuratorScreenClientJSONError {
+		t.Fatalf("expected JSON error dialog, got %v", s.screen)
 	}
-	if s.client.invalidAllowDelete {
-		t.Fatal("expected invalidAllowDelete=false for JSON parse error")
+	if s.client.addJSONInput.Value() != "" {
+		t.Fatal("expected JSON input to be cleared")
 	}
 }
 
@@ -915,6 +1017,98 @@ func TestUpdateClientAddJSONScreen_OtherKeysPassToInput(t *testing.T) {
 	s := result.(Configurator)
 	if s.screen != configuratorScreenClientAddJSON {
 		t.Fatalf("expected to stay on add JSON screen, got %v", s.screen)
+	}
+}
+
+func TestUpdateClientAddJSONScreen_ErrorDialogRetryFlow(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		err   error
+		keep  bool
+	}{
+		{"empty", "", errors.New("invalid client configuration: unexpected end of JSON input"), false},
+		{"syntax", "{", errors.New("invalid client configuration: unexpected end of JSON input"), false},
+		{"settings", `{"ClientID":0}`, errors.New("invalid client configuration: invalid ClientID 0: must be > 0"), false},
+		{"storage", validClientConfigurationJSON(), errors.New("failed to write client configuration: permission denied"), true},
+	} {
+		for _, dismiss := range []rune{tea.KeyEnter, tea.KeyEsc} {
+			t.Run(tc.name+"_"+keyNamed(dismiss).String(), func(t *testing.T) {
+				m := newTestConfigurator(t)
+				control := m.options.testControl()
+				control.importErr = tc.err
+				m.screen = configuratorScreenClientAddName
+				m.client.addNameInput.SetValue("office")
+				result, _ := m.Update(keyNamed(tea.KeyEnter))
+				m = result.(Configurator)
+				result, _ = m.Update(tea.PasteMsg{Content: tc.input})
+				m = result.(Configurator)
+				originalJSON := m.client.addJSONInput.Value()
+				oldPasteSeq := m.client.pasteSeq
+				result, cmd := m.Update(keyNamed(tea.KeyEnter))
+				m = result.(Configurator)
+				if m.done || cmd != nil || !control.importCalled {
+					t.Fatal("failed import did not stay in the add flow")
+				}
+				if !strings.Contains(stripANSI(m.View().Content), "Error: configuration not added") {
+					t.Fatalf("expected import error dialog, got:\n%s", stripANSI(m.View().Content))
+				}
+				wantJSON := ""
+				if tc.keep {
+					wantJSON = originalJSON
+				}
+				control.importCalled = false
+				for _, msg := range []tea.Msg{keyNamed(tea.KeyTab), keyRunes('x'), tea.PasteMsg{Content: "ignored"}} {
+					result, _ = m.Update(msg)
+					m = result.(Configurator)
+					if m.client.addName != "office" || m.client.addJSONInput.Value() != wantJSON || control.importCalled || m.tab != configuratorTabMain {
+						t.Fatal("modal input changed the configuration, name, or tab")
+					}
+				}
+				result, _ = m.Update(keyNamed(dismiss))
+				m = result.(Configurator)
+				if m.screen != configuratorScreenClientAddJSON || m.notice != "" || !m.client.addJSONInput.Focused() {
+					t.Fatal("dismissing the error did not return to JSON input")
+				}
+				control.importErr = nil
+				if !tc.keep {
+					result, _ = m.Update(tea.PasteMsg{Content: validClientConfigurationJSON()})
+					m = result.(Configurator)
+				}
+				wantJSON = m.client.addJSONInput.Value()
+				result, _ = m.Update(pasteSettledMsg{seq: oldPasteSeq})
+				m = result.(Configurator)
+				if m.client.addJSONInput.Value() != wantJSON {
+					t.Fatal("stale paste formatting changed the retry input")
+				}
+				result, _ = m.Update(keyNamed(tea.KeyEnter))
+				m = result.(Configurator)
+				if m.screen != configuratorScreenClientSelect || m.done || !control.importCalled || control.importName != "office" || control.importJSON != wantJSON {
+					t.Fatal("retry did not import the configuration with the confirmed name")
+				}
+			})
+		}
+	}
+}
+
+func TestUpdate_JSONScreen_UnbracketedPasteDoesNotSubmit(t *testing.T) {
+	m := newTestConfigurator(t)
+	m.screen = configuratorScreenClientAddJSON
+	control := m.options.testControl()
+	input := "{\n  \"ClientID\": 1\n}\n"
+	for _, r := range input {
+		msg := keyRunes(r)
+		if r == '\n' {
+			msg = keyNamed(tea.KeyEnter)
+		}
+		result, _ := m.Update(msg)
+		m = result.(Configurator)
+		if m.screen != configuratorScreenClientAddJSON || control.importCalled {
+			t.Fatalf("paste submitted at %q", r)
+		}
+	}
+	if m.client.addJSONInput.Value() != input {
+		t.Fatalf("paste changed: got %q, want %q", m.client.addJSONInput.Value(), input)
 	}
 }
 
@@ -1394,11 +1588,11 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 	}
 }
 
-// --- View with notice on ClientAddName and ClientAddJSON screens ---
+// --- Input error dialogs ---
 
-func TestView_ClientAddNameScreen_WithNotice(t *testing.T) {
+func TestView_ClientNameErrorScreen_WithNotice(t *testing.T) {
 	m := newTestConfigurator(t)
-	m.screen = configuratorScreenClientAddName
+	m.screen = configuratorScreenClientNameError
 	m.width = 80
 	m.height = 30
 	m.notice = "Name cannot be empty."
@@ -1409,9 +1603,9 @@ func TestView_ClientAddNameScreen_WithNotice(t *testing.T) {
 	}
 }
 
-func TestView_ClientAddJSONScreen_WithNotice(t *testing.T) {
+func TestView_ClientJSONErrorScreen_WithNotice(t *testing.T) {
 	m := newTestConfigurator(t)
-	m.screen = configuratorScreenClientAddJSON
+	m.screen = configuratorScreenClientJSONError
 	m.width = 80
 	m.height = 30
 	m.notice = "Invalid JSON"
@@ -2022,14 +2216,14 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ImportError(t *testing.T) {
 	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
 
-	if !s.done {
-		t.Fatal("expected done=true on import error")
+	if s.done || s.screen != configuratorScreenClientJSONError {
+		t.Fatal("expected a recoverable import error dialog")
 	}
-	if !errors.Is(s.resultErr, importErr) {
-		t.Fatalf("expected import error, got %v", s.resultErr)
+	if s.notice != importErr.Error() || s.resultErr != nil {
+		t.Fatalf("expected import error notice, got notice=%q, fatal error=%v", s.notice, s.resultErr)
 	}
-	if cmd == nil {
-		t.Fatal("expected quit cmd")
+	if cmd != nil {
+		t.Fatal("unexpected command on import error")
 	}
 }
 
@@ -2581,8 +2775,8 @@ func TestUpdate_JSONScreen_EnterAcceptedAfterDebounce(t *testing.T) {
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(Configurator)
-	if s.screen != configuratorScreenClientInvalid {
-		t.Fatalf("expected Enter to be accepted (goes to invalid screen for bad JSON), got %v", s.screen)
+	if s.screen != configuratorScreenClientJSONError {
+		t.Fatalf("expected Enter to open the JSON error dialog, got %v", s.screen)
 	}
 }
 

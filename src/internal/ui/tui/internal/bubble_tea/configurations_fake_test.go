@@ -13,6 +13,8 @@ type testConfigurationControl struct {
 	activeErr            error
 	importCalled         bool
 	importErr            error
+	importName           string
+	importJSON           string
 	deleted              []string
 	deleteErr            error
 	generatePath         string
@@ -66,8 +68,10 @@ func (c testClientConfigurations) Active() (*clientconfig.Configuration, error) 
 	return &clientconfig.Configuration{}, c.activeErr
 }
 
-func (c testClientConfigurations) Import(string, string) error {
+func (c testClientConfigurations) Import(name, rawJSON string) error {
 	c.importCalled = true
+	c.importName = name
+	c.importJSON = rawJSON
 	return c.importErr
 }
 

@@ -233,6 +233,69 @@ func TestConfigurationsImportReturnsStorageErrors(t *testing.T) {
 	})
 }
 
+func TestConfigurationsImportNameRules(t *testing.T) {
+	data, err := json.Marshal(validTestConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a", "Abc_0123456789-Z"} {
+		t.Run("accept_"+name, func(t *testing.T) {
+			activePath := filepath.Join(t.TempDir(), "client_configuration.json")
+			configurations := &Configurations{activePath: activePath}
+			if err := configurations.Import(name, string(data)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := decodeFile(activePath + "." + name); err != nil {
+				t.Fatalf("read imported configuration: %v", err)
+			}
+		})
+	}
+	for _, name := range []string{
+		strings.Repeat("a", 17), "office vpn", " office", "office ",
+		"office.backup", "сервер", "office\tbackup", "office\nbackup",
+		"office\x00backup", `{"ClientID":1}`, "{", "", ".", "..", "../office",
+		`office\backup`, "office:backup", "office*", "office?", "office|", "<office>",
+	} {
+		t.Run("reject_"+name, func(t *testing.T) {
+			directory := t.TempDir()
+			configurations := &Configurations{activePath: filepath.Join(directory, "client_configuration.json")}
+			if err := configurations.Import(name, string(data)); err == nil {
+				t.Fatalf("Import(%q) accepted an invalid name", name)
+			}
+			entries, err := os.ReadDir(directory)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("invalid import changed storage: entries=%v, err=%v", entries, err)
+			}
+		})
+	}
+}
+
+func TestConfigurationsLegacyNamesRemainAccessible(t *testing.T) {
+	activePath := filepath.Join(t.TempDir(), "client_configuration.json")
+	configurations := &Configurations{activePath: activePath}
+	name := "Мой office.backup configuration"
+	configuration := validTestConfiguration()
+	writeConfiguration(t, activePath+"."+name, configuration)
+
+	names, err := configurations.List()
+	if err != nil || !slices.Equal(names, []string{name}) {
+		t.Fatalf("List() = %v, %v", names, err)
+	}
+	if err := configurations.Activate(name); err != nil {
+		t.Fatalf("activate legacy configuration: %v", err)
+	}
+	active, err := configurations.Active()
+	if err != nil || active.ClientID != configuration.ClientID {
+		t.Fatalf("Active() = %v, %v", active, err)
+	}
+	if err := configurations.Delete(name); err != nil {
+		t.Fatalf("delete legacy configuration: %v", err)
+	}
+	if _, err := os.Stat(activePath + "." + name); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy configuration still exists: %v", err)
+	}
+}
+
 func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "client_configuration.json")
 	configurations := &Configurations{activePath: activePath}

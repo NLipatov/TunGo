@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	clientconfig "tungo/internal/config/client"
 	"tungo/internal/mode"
 )
 
@@ -41,21 +42,29 @@ func (m Configurator) mainTabView() string {
 	case configuratorScreenClientAddName:
 		styles := resolveUIStyles(m.preferences)
 		container := styles.inputFrame.Width(m.inputContainerWidth())
-		stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.client.addNameInput.Value()), m.client.addNameInput.CharLimit))
-		body := make([]string, 0, 4)
-		if strings.TrimSpace(m.notice) != "" {
-			body = append(body, m.notice, "")
-		}
-		body = append(body, container.Render(m.client.addNameInput.View()), stats)
+		stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.client.addNameInput.Value()), clientconfig.MaxNameLength))
+		body := []string{container.Render(m.client.addNameInput.View()), stats}
 		return renderScreen(
 			m.width,
 			m.height,
 			m.tabsLine(styles),
 			"Name configuration",
 			body,
-			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
+			"Enter confirm | Esc back | ctrl+c exit",
 			m.preferences,
 			styles,
+		)
+	case configuratorScreenClientNameError, configuratorScreenClientJSONError:
+		title := "Error: invalid name"
+		if m.screen == configuratorScreenClientJSONError {
+			title = "Error: configuration not added"
+		}
+		return m.renderSelectionScreen(
+			title,
+			m.notice,
+			[]string{"Try again"},
+			0,
+			"Enter try again | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientAddJSON:
 		styles := resolveUIStyles(m.preferences)
@@ -65,11 +74,7 @@ func (m Configurator) mainTabView() string {
 			lines = len(strings.Split(value, "\n"))
 		}
 		stats := styles.meta.Render(fmt.Sprintf("Lines: %d", lines))
-		body := make([]string, 0, 4)
-		if strings.TrimSpace(m.notice) != "" {
-			body = append(body, m.notice, "")
-		}
-		body = append(body, container.Render(m.client.addJSONInput.View()), stats)
+		body := []string{container.Render(m.client.addJSONInput.View()), stats}
 		return renderScreen(
 			m.width,
 			m.height,
