@@ -4,12 +4,16 @@ on:
     branches:
       - main
     paths:
-      - 'src/**'   # Only if src directory files changed
+      - 'src/**'
+      - '.github/workflows/main.yml'
+      - '.github/tests/tunnel/**'
   pull_request:
     branches:
       - main
     paths:
-      - 'src/**'   # Only if src directory files changed
+      - 'src/**'
+      - '.github/workflows/main.yml'
+      - '.github/tests/tunnel/**'
 
 env:
   GO_VERSION: '1.27.0'
@@ -85,9 +89,47 @@ jobs:
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
             go test -run '^$' -exec /usr/bin/true ./...
 
+  tunnel-e2e:
+    name: Tunnel E2E (${{ matrix.arch }}, ${{ matrix.protocol }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        protocol: [UDP, TCP, WS]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Get repository code
+        uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Test real TUN traffic and cleanup
+        env:
+          PROTOCOL: ${{ matrix.protocol }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          ARTIFACT_DIR: ${{ runner.temp }}/tungo-e2e
+        run: bash .github/tests/tunnel/run.sh "$PROTOCOL"
+
+      - name: Upload tunnel diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tunnel-e2e-${{ matrix.arch }}-${{ matrix.protocol }}
+          path: ${{ runner.temp }}/tungo-e2e
+          if-no-files-found: warn
+          retention-days: 7
+
   version-and-tag:
     runs-on: ubuntu-latest
-    needs: [run-tests, cross-compile-tests]
+    needs: [run-tests, cross-compile-tests, tunnel-e2e]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
     concurrency:
       group: ${{ github.workflow }}-version-and-tag-${{ github.ref }}
