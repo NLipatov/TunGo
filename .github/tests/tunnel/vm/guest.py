@@ -82,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
                 if PROTOCOL not in ('UDP', 'TCP', 'WS'):
                     raise ValueError('invalid protocol')
                 # Only fixture-owned transport addresses are accepted.
-                if data['host'] not in ('127.0.0.1', '192.168.250.15'):
+                if data['host'] not in ('127.77.0.1', '192.168.250.15'):
                     raise ValueError('invalid transport host')
                 env = dict(os.environ, Host=data['host'])
                 env.update({f'Enable{p}': str(p == PROTOCOL).lower() for p in ('UDP', 'TCP', 'WS')})

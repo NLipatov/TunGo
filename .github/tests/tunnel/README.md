@@ -94,7 +94,11 @@ The guest contains the server and an HTTP target in a separate network namespace
 macOS uses QEMU's host-only vmnet network because TunGo rejects loopback server
 addresses on macOS. Linux uses a dedicated TAP device connecting the runner to
 the guest. Windows forwards only the controller and VPN listener ports through
-QEMU's restricted user network, bound to host loopback addresses.
+QEMU's user network, bound to host loopback addresses. The guest firewall
+allows transport replies and rejects new outbound connections on that interface.
+QEMU's `restrict=on` is unsuitable here: libslirp drops UDP replies before
+looking up the forwarded socket. The VPN uses `127.77.0.1`, keeping its
+pinned route separate from the runner's built-in `127.0.0.1` route.
 The HTTP target is never port-forwarded. Guest firewall rules also prohibit
 direct forwarding from the transport interface into the target network.
 

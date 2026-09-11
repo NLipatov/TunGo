@@ -228,7 +228,7 @@ def main():
     else:
         assert os.geteuid() == 0, 'Root required'
     args.artifacts.mkdir(parents=True, exist_ok=True)
-    endpoint = '127.0.0.1' if SYSTEM == 'Windows' else '192.168.250.15'
+    endpoint = '127.77.0.1' if SYSTEM == 'Windows' else '192.168.250.15'
     control = 'http://' + ('127.0.0.1' if SYSTEM == 'Windows' else '192.168.250.15') + ':18080'
     qemu_arch = 'x86_64' if args.server_arch == 'amd64' else 'aarch64'
     qemu = shutil.which(f'qemu-system-{qemu_arch}')
@@ -245,11 +245,13 @@ def main():
     elif SYSTEM == 'Linux':
         network = 'tap,id=transport,ifname=tungo-vm0,script=no,downscript=no'
     else:
-        network = ('user,id=transport,net=192.168.250.0/24,restrict=on,'
+        # libslirp's restricted mode also drops UDP hostfwd replies.
+        # The guest firewall permits transport replies and rejects new egress.
+        network = ('user,id=transport,net=192.168.250.0/24,'
                    'hostfwd=tcp:127.0.0.1:18080-192.168.250.15:18080,'
-                   'hostfwd=tcp:127.0.0.1:8080-192.168.250.15:8080,'
-                   'hostfwd=udp:127.0.0.1:9090-192.168.250.15:9090,'
-                   'hostfwd=tcp:127.0.0.1:1010-192.168.250.15:1010')
+                   'hostfwd=tcp:127.77.0.1:8080-192.168.250.15:8080,'
+                   'hostfwd=udp:127.77.0.1:9090-192.168.250.15:9090,'
+                   'hostfwd=tcp:127.77.0.1:1010-192.168.250.15:1010')
     command += ['-netdev', network, '-device', 'virtio-net-pci,netdev=transport']
     routes = RunnerRoutes()
     vm = client = None
