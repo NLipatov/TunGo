@@ -58,6 +58,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(status())
             elif self.path == '/diagnostics':
                 self.reply({'network': snapshot(), 'links': run('ip', '-details', '-statistics', 'link'),
+                            'udp_packets': Path('/tmp/udp.log').read_text()[-12000:],
                             'counters': run('iptables-save', '-c'), 'counters6': run('ip6tables-save', '-c'),
                             'server_log': LOG.read_text() if LOG.exists() else '',
                             'target_log': Path('/tmp/target.log').read_text(),

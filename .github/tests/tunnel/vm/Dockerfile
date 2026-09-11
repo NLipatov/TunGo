@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
     -tags "netgo,osusergo" -ldflags="-s -w" -o /tungo main.go
 
 FROM alpine:3.23 AS guest
-RUN apk add --no-cache linux-virt iproute2 iptables python3
+RUN apk add --no-cache linux-virt iproute2 iptables python3 tcpdump
 COPY --from=builder /tungo /usr/local/bin/tungo
 COPY .github/tests/tunnel/http_server.py /opt/tungo-e2e/http_server.py
 COPY .github/tests/tunnel/vm/init.sh /init

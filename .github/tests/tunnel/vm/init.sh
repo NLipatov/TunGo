@@ -35,5 +35,7 @@ ip6tables -A FORWARD -i eth0 -o backend0 -j DROP
 ip netns exec target python3 /opt/tungo-e2e/http_server.py >/tmp/target.log 2>&1 &
 ip netns exec target python3 /opt/tungo-e2e/http_server.py --bind fd73:7467:6f::2 >/tmp/target6.log 2>&1 &
 python3 /opt/tungo-e2e/guest.py >/dev/console 2>&1 &
+# Only VPN UDP metadata is logged; control traffic carries generated keys.
+tcpdump -i eth0 -nn -l 'udp port 9090' >/tmp/udp.log 2>&1 &
 echo 'TUNGO_E2E_VM_BOOTED'
 while true; do sleep 3600; done

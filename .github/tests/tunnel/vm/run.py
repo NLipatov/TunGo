@@ -143,7 +143,7 @@ class RunnerRoutes:
                 self.delete6 = ['route', '-n', 'delete', *suffix]
         else:
             route = powershell(
-                'Get-NetRoute -DestinationPrefix ::/0 -ErrorAction SilentlyContinue | Sort-Object RouteMetric '
+                "Get-NetRoute -AddressFamily IPv6 | Where-Object DestinationPrefix -eq '::/0' | Sort-Object RouteMetric "
                 '| Select-Object -First 1 -Property NextHop,InterfaceIndex | ConvertTo-Json -Compress')
             if route:
                 route = json.loads(route)
