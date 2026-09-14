@@ -1,0 +1,212 @@
+name: Native runner network probe
+
+# Re-run all jobs together: the server lives only for this run attempt.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/runner-network-probe]
+    paths:
+      - '.github/workflows/runner-network-probe.yml'
+      - '.github/tests/runner-network/**'
+
+permissions:
+  contents: read
+
+jobs:
+  connectivity-server:
+    name: Connectivity server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: src/go.mod
+      - name: Start native TCP and UDP server
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/connectivity" .github/tests/runner-network/connectivity/main.go
+          private_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i=1; i<NF; i++) if ($i == "src") print $(i+1)}')
+          # The public egress IP is a candidate, not proof of inbound reachability.
+          public_ip=$(curl -4 --fail --silent --show-error --retry 2 --max-time 15 https://api.ipify.org)
+          "$RUNNER_TEMP/connectivity" server "$RUNNER_TEMP/endpoint.json" \
+            "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" "$public_ip" "$private_ip" \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/server.pid"
+          for attempt in {1..50}; do
+            if [[ -f "$RUNNER_TEMP/endpoint.json" ]]; then
+              cat "$RUNNER_TEMP/endpoint.json"
+              jq '.Addresses = ["127.0.0.1"]' "$RUNNER_TEMP/endpoint.json" > "$RUNNER_TEMP/local-endpoint.json"
+              "$RUNNER_TEMP/connectivity" client "$RUNNER_TEMP/local-endpoint.json" "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+              ip -brief -4 address
+              ip -4 route
+              sudo iptables -S INPUT
+              exit 0
+            fi
+            kill -0 "$(cat "$RUNNER_TEMP/server.pid")"
+            sleep 0.1
+          done
+          exit 1
+      - name: Publish live server endpoint
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-server-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/endpoint.json
+          if-no-files-found: error
+      - name: Keep server alive until client jobs finish
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const pid = Number(fs.readFileSync(`${process.env.RUNNER_TEMP}/server.pid`, 'utf8'));
+            const deadline = Date.now() + 8 * 60 * 1000;
+            while (Date.now() < deadline) {
+              process.kill(pid, 0);
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
+                ...context.repo, run_id: context.runId,
+                attempt_number: Number(process.env.GITHUB_RUN_ATTEMPT), per_page: 100
+              });
+              const clients = jobs.filter(job => job.name.startsWith('Connectivity client ('));
+              if (clients.length && clients.every(job => job.status === 'completed')) {
+                for (const job of clients) core.info(`${job.name}: ${job.conclusion} ${job.html_url}`);
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            throw new Error('Client jobs did not finish while the server was alive; check queued jobs and logs');
+      - name: Stop server and print evidence
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/server.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/server.pid")" 2>/dev/null || true
+          fi
+          if [[ -f "$RUNNER_TEMP/server.log" ]]; then cat "$RUNNER_TEMP/server.log"; fi
+
+  connectivity-client:
+    name: Connectivity client (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, runner: macos-15-intel}
+          - {os: darwin, arch: arm64, runner: macos-15}
+          - {os: windows, arch: amd64, runner: windows-2025}
+          - {os: windows, arch: arm64, runner: windows-11-arm}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: src/go.mod
+      - name: Wait for server readiness in this attempt
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const name = `native-server-${process.env.GITHUB_RUN_ATTEMPT}`;
+            const deadline = Date.now() + 5 * 60 * 1000;
+            while (Date.now() < deadline) {
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                ...context.repo, run_id: context.runId, per_page: 100
+              });
+              if (artifacts.some(artifact => artifact.name === name && !artifact.expired)) return;
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            throw new Error('No live server endpoint for this attempt; inspect server job or Re-run all jobs');
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: native-server-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/server
+      - name: Prove TCP and UDP round trips
+        shell: bash
+        env:
+          EXPECTED_OS: ${{ matrix.os }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOHOSTOS)" = "$EXPECTED_OS"
+          test "$(go env GOHOSTARCH)" = "$EXPECTED_ARCH"
+          binary="$RUNNER_TEMP/connectivity"
+          if [[ "$EXPECTED_OS" == windows ]]; then binary="$binary.exe"; fi
+          go build -o "$binary" .github/tests/runner-network/connectivity/main.go
+          "$binary" client "$RUNNER_TEMP/server/endpoint.json" "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+
+  probe:
+    name: Native network (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, runner: macos-15-intel}
+          - {os: darwin, arch: arm64, runner: macos-15}
+          - {os: windows, arch: amd64, runner: windows-2025}
+          - {os: windows, arch: arm64, runner: windows-11-arm}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Install Linux network tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iproute2 iptables
+      - name: Install Wintun
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'wintun.zip'
+          $unpacked = Join-Path $env:RUNNER_TEMP 'wintun'
+          Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $archive
+          Expand-Archive $archive -DestinationPath $unpacked -Force
+          Copy-Item "$unpacked/wintun/bin/$env:ARCH/wintun.dll" "$env:SystemRoot/System32/wintun.dll"
+      - name: Build native probe against TunGo from this checkout
+        shell: bash
+        env:
+          EXPECTED_OS: ${{ matrix.os }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          test "$(go env GOHOSTOS)" = "$EXPECTED_OS"
+          test "$(go env GOHOSTARCH)" = "$EXPECTED_ARCH"
+          mkdir -p "$RUNNER_TEMP/network-probe"
+          cp .github/tests/runner-network/probe_test.go "$RUNNER_TEMP/network-probe/"
+          cd "$RUNNER_TEMP/network-probe"
+          go mod init tungo/runner-probe
+          go mod edit -require=tungo@v0.0.0 -replace="tungo=$GITHUB_WORKSPACE/src"
+          binary="$RUNNER_TEMP/runner-network-probe"
+          if [[ "$EXPECTED_OS" == windows ]]; then binary="$binary.exe"; fi
+          go test -mod=mod -c -o "$binary" .
+      - name: Probe Unix network capabilities with sudo
+        if: runner.os != 'Windows'
+        run: sudo env "PATH=$PATH" GITHUB_ACTIONS=true "$RUNNER_TEMP/runner-network-probe" -test.v -test.timeout=90s
+      - name: Probe Windows network capabilities as administrator
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP/runner-network-probe.exe" -test.v -test.timeout=90s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
