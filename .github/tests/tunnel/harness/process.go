@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,13 +20,11 @@ func startChild(logPath string, env []string, args ...string) (*child, error) {
 	cmd.Stdout, cmd.Stderr = log, log
 	configureChild(cmd)
 	if err := cmd.Start(); err != nil {
-		log.Close()
-		return nil, err
+		return nil, errors.Join(err, log.Close())
 	}
 	p := &child{cmd: cmd, done: make(chan struct{})}
 	go func() {
-		p.err = cmd.Wait()
-		log.Close()
+		p.err = errors.Join(cmd.Wait(), log.Close())
 		close(p.done)
 	}()
 	return p, nil

@@ -16,12 +16,14 @@ import (
 func TestTargetTraffic(t *testing.T) {
 	for _, host := range []string{"127.0.0.1", "::1"} {
 		t.Run(host, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(newTarget())
+			if err := server.Listener.Close(); err != nil {
+				t.Fatal(err)
+			}
 			listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			server := httptest.NewUnstartedServer(newTarget())
-			server.Listener.Close()
 			server.Listener = listener
 			server.Start()
 			defer server.Close()

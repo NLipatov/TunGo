@@ -272,9 +272,10 @@ func (r *runner) traffic(ctx context.Context, f family, expectedHash string) err
 		return err
 	}
 	args := []string{"ping", fmt.Sprintf("-%d", f.number), "-n", "-c", "3", f.server}
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		args = []string{"ping", fmt.Sprintf("-%d", f.number), "-n", "3", "-w", "2000", f.server}
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		name := "ping"
 		if f.number == 6 {
 			name = "ping6"
