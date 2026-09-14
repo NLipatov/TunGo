@@ -12,7 +12,7 @@ COPY . ./
 # Download dependencies
 RUN go mod download
 
-RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+RUN GOOS=linux CGO_ENABLED=0 \
     go build \
     -trimpath -buildvcs=false -tags "netgo,osusergo" \
     -ldflags="-s -w" \
