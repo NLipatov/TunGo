@@ -25,8 +25,9 @@ ip netns exec target ip addr add 198.18.0.2/24 dev target0
 ip netns exec target ip -6 addr add fd73:7467:6f::2/64 dev target0 nodad
 ip netns exec target ip link set target0 up
 ip route add default via 198.18.0.2 dev backend0
-sysctl -w net.ipv4.ip_forward=1
-sysctl -w net.ipv6.conf.all.forwarding=1
+# TunGo must enable kernel forwarding before either tunnel family can pass traffic.
+sysctl -w net.ipv4.ip_forward=0
+sysctl -w net.ipv6.conf.all.forwarding=0
 iptables -P FORWARD DROP
 ip6tables -P FORWARD DROP
 # A host route via the guest must never bypass TunGo's TUN interface.
@@ -40,9 +41,9 @@ for firewall in iptables ip6tables; do
     "$firewall" -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     "$firewall" -A OUTPUT -o eth0 -j DROP
 done
-ip netns exec target python3 /opt/tungo-e2e/http_server.py >/tmp/target.log 2>&1 &
-ip netns exec target python3 /opt/tungo-e2e/http_server.py --bind fd73:7467:6f::2 >/tmp/target6.log 2>&1 &
-python3 /opt/tungo-e2e/guest.py >/dev/console 2>&1 &
+ip netns exec target tungo-e2e target >/tmp/target.log 2>&1 &
+ip netns exec target tungo-e2e target --bind fd73:7467:6f::2 >/tmp/target6.log 2>&1 &
+tungo-e2e agent >/dev/console 2>&1 &
 # Only VPN UDP metadata is logged; control traffic carries generated keys.
 tcpdump -i eth0 -nn -l 'udp port 9090' >/tmp/udp.log 2>&1 &
 echo 'TUNGO_E2E_VM_BOOTED'

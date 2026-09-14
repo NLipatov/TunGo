@@ -6,13 +6,16 @@ RUN go mod download
 COPY src/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
     -tags "netgo,osusergo" -ldflags="-s -w" -o /tungo main.go
+WORKDIR /fixture
+COPY .github/tests/tunnel/harness/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+    -ldflags="-s -w" -o /tungo-e2e .
 
 FROM alpine:3.23 AS guest
-RUN apk add --no-cache linux-virt iproute2 iptables python3 tcpdump
+RUN apk add --no-cache linux-virt iproute2 iptables tcpdump
 COPY --from=builder /tungo /usr/local/bin/tungo
-COPY .github/tests/tunnel/http_server.py /opt/tungo-e2e/http_server.py
-COPY .github/tests/tunnel/vm/init.sh /init
-COPY .github/tests/tunnel/vm/guest.py /opt/tungo-e2e/guest.py
+COPY --from=builder /tungo-e2e /usr/local/bin/tungo-e2e
+COPY .github/tests/tunnel/compatibility/server-vm/init-server.sh /init
 RUN chmod 755 /init && mkdir -p /proc /sys /dev /run /tmp
 
 FROM alpine:3.23 AS packer

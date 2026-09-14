@@ -50,6 +50,10 @@ jobs:
             env GOTOOLCHAIN=local \
             go test -coverprofile=coverage.txt ./...
 
+      - name: Test tunnel harness
+        working-directory: .github/tests/tunnel/harness
+        run: go test -race ./...
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v7.0.0
         with:
@@ -91,6 +95,9 @@ jobs:
           cd src
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
             go test -run '^$' -exec /usr/bin/true ./...
+          cd ../.github/tests/tunnel/harness
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go test -run '^$' -exec /usr/bin/true ./...
 
   tunnel-e2e:
     name: Tunnel E2E (${{ matrix.arch }}, ${{ matrix.protocol }})
@@ -114,12 +121,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test real TUN traffic and cleanup
+      - name: Test IPv4/IPv6 TUN traffic and cleanup
         env:
           PROTOCOL: ${{ matrix.protocol }}
           EXPECTED_ARCH: ${{ matrix.arch }}
           ARTIFACT_DIR: ${{ runner.temp }}/tungo-e2e
-        run: bash .github/tests/tunnel/run.sh "$PROTOCOL"
+        run: bash .github/tests/tunnel/containers/run.sh "$PROTOCOL"
 
       - name: Upload tunnel diagnostics
         if: always()
@@ -160,7 +167,7 @@ jobs:
           esac
           go_version=$(awk '$1 == "go" { print $2; exit }' src/go.mod)
           docker build --build-arg "GO_VERSION=$go_version" \
-            --file .github/tests/tunnel/vm/Dockerfile \
+            --file .github/tests/tunnel/compatibility/server-vm/Dockerfile \
             --output "type=local,dest=$RUNNER_TEMP/tungo-vm" .
       - uses: actions/upload-artifact@v7.0.1
         with:
@@ -200,10 +207,6 @@ jobs:
         with:
           go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-          architecture: ${{ matrix.client.arch == 'amd64' && 'x64' || 'arm64' }}
       - name: Install Linux QEMU and network tools
         if: runner.os == 'Linux'
         run: |
@@ -217,7 +220,7 @@ jobs:
         shell: pwsh
         env:
           CLIENT_ARCH: ${{ matrix.client.arch }}
-        run: .github/tests/tunnel/vm/setup-windows.ps1 -Architecture $env:CLIENT_ARCH
+        run: .github/tests/tunnel/compatibility/setup-windows.ps1 -Architecture $env:CLIENT_ARCH
       - name: Build native client
         shell: bash
         env:
@@ -229,9 +232,15 @@ jobs:
           test "$(go env GOHOSTOS)" = "$CLIENT_OS"
           test "$(go env GOHOSTARCH)" = "$CLIENT_ARCH"
           binary="$RUNNER_TEMP/tungo-client"
-          if [[ "$CLIENT_OS" == windows ]]; then binary="$binary.exe"; fi
+          fixture="$RUNNER_TEMP/tungo-e2e"
+          if [[ "$CLIENT_OS" == windows ]]; then
+            binary="$binary.exe"
+            fixture="$fixture.exe"
+          fi
           cd src
           go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags="-s -w" -o "$binary" .
+          cd ../.github/tests/tunnel/harness
+          go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$fixture" .
       - name: Test native Unix client against Linux VM
         if: runner.os != 'Windows'
         env:
@@ -239,7 +248,7 @@ jobs:
           SERVER_ARCH: ${{ matrix.server_arch }}
           PROTOCOL: ${{ matrix.protocol }}
         run: |
-          sudo env "PATH=$PATH" GITHUB_ACTIONS=true python .github/tests/tunnel/vm/run.py \
+          sudo env "PATH=$PATH" GITHUB_ACTIONS=true "$RUNNER_TEMP/tungo-e2e" run \
             --client-arch "$CLIENT_ARCH" --server-arch "$SERVER_ARCH" --protocol "$PROTOCOL" \
             --image-dir "$RUNNER_TEMP/tungo-vm" --binary "$RUNNER_TEMP/tungo-client" \
             --artifacts "$RUNNER_TEMP/tungo-compatibility"
@@ -251,7 +260,7 @@ jobs:
           SERVER_ARCH: ${{ matrix.server_arch }}
           PROTOCOL: ${{ matrix.protocol }}
         run: |
-          python .github/tests/tunnel/vm/run.py `
+          & "$env:RUNNER_TEMP/tungo-e2e.exe" run `
             --client-arch $env:CLIENT_ARCH --server-arch $env:SERVER_ARCH --protocol $env:PROTOCOL `
             --image-dir "$env:RUNNER_TEMP/tungo-vm" --binary "$env:RUNNER_TEMP/tungo-client.exe" `
             --artifacts "$env:RUNNER_TEMP/tungo-compatibility"
