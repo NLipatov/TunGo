@@ -1,15 +1,24 @@
 name: Main Workflow
+concurrency:
+  group: main-workflow-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 on:
   push:
     branches:
       - main
     paths:
-      - 'src/**'   # Only if src directory files changed
+      - 'src/**'
+      - '.github/workflows/main.yml'
+      - '.github/workflows/tunnel-e2e.yml'
+      - '.github/tests/tunnel/**'
   pull_request:
     branches:
       - main
     paths:
-      - 'src/**'   # Only if src directory files changed
+      - 'src/**'
+      - '.github/workflows/main.yml'
+      - '.github/workflows/tunnel-e2e.yml'
+      - '.github/tests/tunnel/**'
 
 env:
   GO_VERSION: '1.27.0'
@@ -42,6 +51,10 @@ jobs:
           sudo --preserve-env=PATH,GOROOT,GOTOOLCHAIN \
             env GOTOOLCHAIN=local \
             go test -coverprofile=coverage.txt ./...
+
+      - name: Test tunnel harness
+        working-directory: .github/tests/tunnel/harness
+        run: go test -race ./...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v7.0.0
@@ -84,10 +97,16 @@ jobs:
           cd src
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
             go test -run '^$' -exec /usr/bin/true ./...
+          cd ../.github/tests/tunnel/harness
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go test -run '^$' -exec /usr/bin/true ./...
+
+  tunnel-e2e:
+    uses: ./.github/workflows/tunnel-e2e.yml
 
   version-and-tag:
     runs-on: ubuntu-latest
-    needs: [run-tests, cross-compile-tests]
+    needs: [run-tests, cross-compile-tests, tunnel-e2e]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
     concurrency:
       group: ${{ github.workflow }}-version-and-tag-${{ github.ref }}

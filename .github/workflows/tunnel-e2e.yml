@@ -1,0 +1,138 @@
+name: Tunnel E2E
+
+on:
+  workflow_call:
+
+env:
+  GOTOOLCHAIN: 'local'
+
+jobs:
+  tunnel-vm-images:
+    name: Tunnel VM image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build native Linux guest from this checkout
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) test "$EXPECTED_ARCH" = amd64 ;;
+            aarch64) test "$EXPECTED_ARCH" = arm64 ;;
+            *) exit 1 ;;
+          esac
+          go_version=$(awk '$1 == "go" { print $2; exit }' src/go.mod)
+          docker build --build-arg "GO_VERSION=$go_version" \
+            --file .github/tests/tunnel/server-vm/Dockerfile \
+            --output "type=local,dest=$RUNNER_TEMP/tungo-vm" .
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tunnel-vm-${{ matrix.arch }}
+          path: ${{ runner.temp }}/tungo-vm
+          if-no-files-found: error
+          retention-days: 1
+
+  tunnel-e2e:
+    name: Tunnel E2E (${{ matrix.client.os }}/${{ matrix.client.arch }} -> Linux/${{ matrix.server_arch }}, ${{ matrix.protocol }})
+    needs: tunnel-vm-images
+    runs-on: ${{ matrix.client.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        client:
+          - {os: linux, arch: amd64, runner: ubuntu-24.04}
+          - {os: linux, arch: arm64, runner: ubuntu-24.04-arm}
+          - {os: darwin, arch: amd64, runner: macos-15-intel}
+          - {os: darwin, arch: arm64, runner: macos-15}
+          - {os: windows, arch: amd64, runner: windows-2025}
+          - {os: windows, arch: arm64, runner: windows-11-arm}
+        server_arch: [amd64, arm64]
+        protocol: [UDP, TCP, WS]
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: tunnel-vm-${{ matrix.server_arch }}
+          path: ${{ runner.temp }}/tungo-vm
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Install Linux QEMU and network tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-system-arm iproute2 iptables iputils-ping traceroute curl jq
+      - name: Install macOS QEMU
+        if: runner.os == 'macOS'
+        run: brew install qemu jq
+      - name: Install native Windows QEMU, Wintun and OpenSSH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CLIENT_ARCH: ${{ matrix.client.arch }}
+        run: .github/tests/tunnel/runner/windows/setup.ps1 -Architecture $env:CLIENT_ARCH
+      - name: Build native client
+        shell: bash
+        env:
+          CLIENT_OS: ${{ matrix.client.os }}
+          CLIENT_ARCH: ${{ matrix.client.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          test "$(go env GOHOSTOS)" = "$CLIENT_OS"
+          test "$(go env GOHOSTARCH)" = "$CLIENT_ARCH"
+          binary="$RUNNER_TEMP/tungo-client"
+          harness="$RUNNER_TEMP/tungo-e2e"
+          if [[ "$CLIENT_OS" == windows ]]; then
+            binary="$binary.exe"
+            harness="$harness.exe"
+          fi
+          cd src
+          go build -trimpath -buildvcs=false -tags "netgo,osusergo" -ldflags="-s -w" -o "$binary" .
+          cd ../.github/tests/tunnel/harness
+          go build -trimpath -buildvcs=false -ldflags="-s -w" -o "$harness" .
+      - name: Check Windows client console and graceful shutdown
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: .github/tests/tunnel/harness
+        run: go test -v -run '^TestClientConsole$' ./...
+      - name: Prepare machines and run tunnel scenario
+        shell: bash
+        env:
+          SERVER_ARCH: ${{ matrix.server_arch }}
+          PROTOCOL: ${{ matrix.protocol }}
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            bash .github/tests/tunnel/runner/run.sh "$PROTOCOL" "$SERVER_ARCH" "$RUNNER_TEMP"
+          else
+            sudo env "PATH=$PATH" GITHUB_ACTIONS=true \
+              bash .github/tests/tunnel/runner/run.sh "$PROTOCOL" "$SERVER_ARCH" "$RUNNER_TEMP"
+          fi
+      - name: Upload tunnel diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tunnel-${{ matrix.client.os }}-${{ matrix.client.arch }}-server-${{ matrix.server_arch }}-${{ matrix.protocol }}
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: warn
+          retention-days: 7

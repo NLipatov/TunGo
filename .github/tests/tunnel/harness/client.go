@@ -1,0 +1,166 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+)
+
+// clientInput is sent through SSH stdin, never through arguments or log files.
+type clientInput struct {
+	Config, Checksum string
+}
+
+func runRemoteClient(ctx context.Context, directory, logs string, input clientInput) (err error) {
+	data, err := os.ReadFile(filepath.Join(directory, "client.json"))
+	if err != nil {
+		return err
+	}
+	var host struct{ SSH, User, Command string }
+	if err := json.Unmarshal(data, &host); err != nil {
+		return err
+	}
+	slog.Info("Starting client scenario over SSH", "address", host.SSH, "user", host.User)
+	connection, err := connectSSH(ctx, directory, host.SSH, host.User, "client.pub")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = connection.Close() }()
+	// Bound session creation, execution and output collection on connection loss.
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
+	session, err := connection.NewSession()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = session.Close() }()
+	data, err = json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	log, err := os.Create(filepath.Join(logs, "ssh-client.log"))
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, log.Close()) }()
+	session.Stdin = bytes.NewReader(data)
+	session.Stdout = io.MultiWriter(os.Stdout, log)
+	session.Stderr = io.MultiWriter(os.Stderr, log)
+	if err := session.Run(host.Command); err != nil {
+		return fmt.Errorf("client scenario over SSH: %w", errors.Join(err, ctx.Err()))
+	}
+	return nil
+}
+
+func runClientCommand(ctx context.Context, directory, logs string) (err error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	var input clientInput
+	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1024*1024)).Decode(&input); err != nil {
+		return fmt.Errorf("client input: %w", err)
+	}
+	if err := prepareRunner(); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			printLogs(filepath.Join(logs, "client-*.log"))
+		}
+	}()
+	binary := filepath.Join(directory, "tungo-client")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	slog.Info("Client platform", "os", runtime.GOOS, "arch", runtime.GOARCH)
+	return runClient(ctx, binary, logs, input.Config, input.Checksum)
+}
+
+func runClient(ctx context.Context, binary, logs, config, checksum string) (err error) {
+	// A healthy target must remain isolated until the client connects.
+	for _, f := range families {
+		if err := assertUnreachable(ctx, f); err != nil {
+			return err
+		}
+	}
+	baseline := routeSources(ctx)
+	slog.Info("Installing client configuration")
+	path, err := installConfig(config)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, os.Remove(path)) }()
+
+	// Reuse the same configuration and server for a second connection.
+	for cycle := 1; cycle <= 2; cycle++ {
+		slog.Info("Starting connection cycle", "cycle", cycle)
+		log := filepath.Join(logs, fmt.Sprintf("client-%d.log", cycle))
+		if err := checkConnection(ctx, binary, log, checksum, baseline); err != nil {
+			return fmt.Errorf("connection %d: %w", cycle, err)
+		}
+	}
+	return nil
+}
+
+func installConfig(config string) (string, error) {
+	path := "/etc/tungo/client_configuration.json"
+	if runtime.GOOS == "windows" {
+		directory := os.Getenv("ProgramData")
+		if directory == "" {
+			return "", fmt.Errorf("ProgramData is not set")
+		}
+		path = filepath.Join(directory, "TunGo", "client_configuration.json")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return "", err
+	}
+	_, writeErr := file.WriteString(config)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		return "", errors.Join(err, os.Remove(path))
+	}
+	return path, nil
+}
+
+func checkConnection(ctx context.Context, binary, log, checksum string, baseline map[string]string) error {
+	slog.Info("Starting TunGo client")
+	client, err := startChild(log, binary, "c")
+	if err != nil {
+		return err
+	}
+	defer client.kill()
+	for _, f := range families {
+		if err := checkTraffic(ctx, f, checksum); err != nil {
+			return err
+		}
+	}
+	tun, err := clientInterface()
+	if err != nil {
+		return err
+	}
+	slog.Info("Stopping TunGo client and checking TUN removal and route restoration", "interface", tun.Name, "index", tun.Index)
+	if err := client.stop(); err != nil {
+		return err
+	}
+	if err := waitUntil(ctx, "client TUN and routes removed", 15*time.Second, func(ctx context.Context) error {
+		return checkClientCleanup(ctx, tun, baseline)
+	}); err != nil {
+		return err
+	}
+	for _, f := range families {
+		if err := assertUnreachable(ctx, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
