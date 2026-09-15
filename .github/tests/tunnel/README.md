@@ -1,6 +1,7 @@
 # Tunnel E2E
 
-The [workflow](../../workflows/main.yml) builds TunGo and prepares two machines:
+The [Tunnel E2E workflow](../../workflows/tunnel-e2e.yml), called by
+[main](../../workflows/main.yml), builds TunGo and prepares two machines:
 a native Linux/macOS/Windows client on the GitHub runner and a Linux server VM.
 [runner/run.sh](runner/run.sh) owns QEMU, networking and temporary SSH access.
 The [harness](harness/e2e.go) owns the complete TunGo scenario:
