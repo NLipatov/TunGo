@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net"
 	"net/netip"
@@ -34,7 +35,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 		ping = []string{"ping", flag, "-n", "1", "-w", "2000", f.target}
 		trace = []string{"tracert", flag, "-d", "-h", "2", "-w", "2000", f.target}
 	}
-	fmt.Printf("Checking IPv%d routes use client TUN %s and target %s answers ping\n", f.number, f.client, f.target)
+	slog.Info("Checking TUN routes and target ping", "family", f.number, "client_tun", f.client, "target", f.target)
 	if err := waitUntil(ctx, "IPv"+fmt.Sprint(f.number)+" ping through tunnel", 60*time.Second, func(ctx context.Context) error {
 		// A reachable address alone is not proof that the tunnel is ready.
 		// Check both halves of the split default without sending internet traffic.
@@ -50,7 +51,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("Checking IPv%d traceroute: hop 1 is server %s, hop 2 is target %s\n", f.number, f.server, f.target)
+	slog.Info("Checking traceroute through server to target", "family", f.number, "hop_1", f.server, "hop_2", f.target)
 	output, err := command(ctx, trace...)
 	if err != nil {
 		return err
@@ -59,7 +60,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	if !traceHop(output, 1, f.server) || !traceHop(output, 2, f.target) {
 		return fmt.Errorf("trace must go through %s to %s", f.server, f.target)
 	}
-	fmt.Printf("Checking IPv%d HTTP payload from %s: 4 MiB and matching SHA-256\n", f.number, f.target)
+	slog.Info("Checking 4 MiB HTTP payload and SHA-256", "family", f.number, "target", f.target)
 	curl := exec.CommandContext(ctx, "curl", "--noproxy", "*", "-fsS",
 		"--connect-timeout", "2", "--max-time", "20", f.url("/payload"))
 	curl.Stderr = os.Stderr
@@ -70,7 +71,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	if len(body) != 4*1024*1024 || fmt.Sprintf("%x", sha256.Sum256(body)) != checksum {
 		return fmt.Errorf("IPv%d payload size or checksum mismatch", f.number)
 	}
-	fmt.Printf("Checking IPv%d NAT: target %s must see server source %s\n", f.number, f.target, f.nat)
+	slog.Info("Checking target sees server NAT source", "family", f.number, "target", f.target, "source", f.nat)
 	peer, err := command(ctx, "curl", "--noproxy", "*", "-fsS", "--max-time", "5", f.url("/peer"))
 	if err != nil {
 		return err
@@ -177,7 +178,7 @@ func checkClientCleanup(ctx context.Context, tun net.Interface, baseline map[str
 }
 
 func assertUnreachable(ctx context.Context, f family) error {
-	fmt.Printf("Checking IPv%d target %s is unreachable without the tunnel\n", f.number, f.target)
+	slog.Info("Checking target is unreachable without the tunnel", "family", f.number, "target", f.target)
 	if _, err := command(ctx, "curl", "--noproxy", "*", "-fsS", "--max-time", "2", f.url("/peer")); err == nil {
 		return fmt.Errorf("IPv%d target reachable without tunnel", f.number)
 	}

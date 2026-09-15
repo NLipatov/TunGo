@@ -133,6 +133,6 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tunnel-${{ matrix.client.os }}-${{ matrix.client.arch }}-server-${{ matrix.server_arch }}-${{ matrix.protocol }}
-          path: ${{ runner.temp }}/tungo-e2e-logs
+          path: ${{ runner.temp }}/logs
           if-no-files-found: warn
           retention-days: 7

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,7 +19,7 @@ type clientInput struct {
 	Config, Checksum string
 }
 
-func runRemoteClient(ctx context.Context, directory, artifacts string, input clientInput) (err error) {
+func runRemoteClient(ctx context.Context, directory, logs string, input clientInput) (err error) {
 	data, err := os.ReadFile(filepath.Join(directory, "client.json"))
 	if err != nil {
 		return err
@@ -27,7 +28,7 @@ func runRemoteClient(ctx context.Context, directory, artifacts string, input cli
 	if err := json.Unmarshal(data, &host); err != nil {
 		return err
 	}
-	fmt.Printf("Starting client scenario over SSH: %s, user %s\n", host.SSH, host.User)
+	slog.Info("Starting client scenario over SSH", "address", host.SSH, "user", host.User)
 	connection, err := connectSSH(ctx, directory, host.SSH, host.User, "client.pub")
 	if err != nil {
 		return err
@@ -45,7 +46,7 @@ func runRemoteClient(ctx context.Context, directory, artifacts string, input cli
 	if err != nil {
 		return err
 	}
-	log, err := os.Create(filepath.Join(artifacts, "ssh-client.log"))
+	log, err := os.Create(filepath.Join(logs, "ssh-client.log"))
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,7 @@ func runRemoteClient(ctx context.Context, directory, artifacts string, input cli
 	return nil
 }
 
-func runClientCommand(ctx context.Context, directory, artifacts string) (err error) {
+func runClientCommand(ctx context.Context, directory, logs string) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	var input clientInput
@@ -71,18 +72,18 @@ func runClientCommand(ctx context.Context, directory, artifacts string) (err err
 	}
 	defer func() {
 		if err != nil {
-			printLogs(filepath.Join(artifacts, "client-*.log"))
+			printLogs(filepath.Join(logs, "client-*.log"))
 		}
 	}()
 	binary := filepath.Join(directory, "tungo-client")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
-	fmt.Printf("Client %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	return runClient(ctx, binary, artifacts, input.Config, input.Checksum)
+	slog.Info("Client platform", "os", runtime.GOOS, "arch", runtime.GOARCH)
+	return runClient(ctx, binary, logs, input.Config, input.Checksum)
 }
 
-func runClient(ctx context.Context, binary, artifacts, config, checksum string) (err error) {
+func runClient(ctx context.Context, binary, logs, config, checksum string) (err error) {
 	// A healthy target must remain isolated until the client connects.
 	for _, f := range families {
 		if err := assertUnreachable(ctx, f); err != nil {
@@ -90,7 +91,7 @@ func runClient(ctx context.Context, binary, artifacts, config, checksum string) 
 		}
 	}
 	baseline := routeSources(ctx)
-	fmt.Println("Installing client configuration")
+	slog.Info("Installing client configuration")
 	path, err := installConfig(config)
 	if err != nil {
 		return err
@@ -99,8 +100,8 @@ func runClient(ctx context.Context, binary, artifacts, config, checksum string) 
 
 	// Reuse the same configuration and server for a second connection.
 	for cycle := 1; cycle <= 2; cycle++ {
-		fmt.Printf("Connection %d\n", cycle)
-		log := filepath.Join(artifacts, fmt.Sprintf("client-%d.log", cycle))
+		slog.Info("Starting connection cycle", "cycle", cycle)
+		log := filepath.Join(logs, fmt.Sprintf("client-%d.log", cycle))
 		if err := checkConnection(ctx, binary, log, checksum, baseline); err != nil {
 			return fmt.Errorf("connection %d: %w", cycle, err)
 		}
@@ -132,7 +133,7 @@ func installConfig(config string) (string, error) {
 }
 
 func checkConnection(ctx context.Context, binary, log, checksum string, baseline map[string]string) error {
-	fmt.Println("Starting TunGo client")
+	slog.Info("Starting TunGo client")
 	client, err := startChild(log, binary, "c")
 	if err != nil {
 		return err
@@ -147,7 +148,7 @@ func checkConnection(ctx context.Context, binary, log, checksum string, baseline
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Stopping TunGo client and checking removal of TUN %s (index %d) and route restoration\n", tun.Name, tun.Index)
+	slog.Info("Stopping TunGo client and checking TUN removal and route restoration", "interface", tun.Name, "index", tun.Index)
 	if err := client.stop(); err != nil {
 		return err
 	}

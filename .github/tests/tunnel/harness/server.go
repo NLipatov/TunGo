@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -18,16 +19,16 @@ import (
 
 // server owns the SSH connection and the remote TunGo server process.
 type server struct {
-	ssh                 *ssh.Client
-	process             *ssh.Session
-	networkBefore       string
-	endpoint, artifacts string
+	sshClient      *ssh.Client
+	sshSession     *ssh.Session
+	networkBefore  string
+	endpoint, logs string
 }
 
 //go:embed server_configuration.json
 var serverConfiguration string
 
-func connectServer(ctx context.Context, directory, artifacts string) (*server, error) {
+func connectServer(ctx context.Context, directory, logs string) (*server, error) {
 	data, err := os.ReadFile(filepath.Join(directory, "server.json"))
 	if err != nil {
 		return nil, err
@@ -39,17 +40,17 @@ func connectServer(ctx context.Context, directory, artifacts string) (*server, e
 	if _, err := netip.ParseAddr(addresses.VPN); err != nil {
 		return nil, fmt.Errorf("server VPN address: %w", err)
 	}
-	fmt.Printf("Server: VPN endpoint %s, SSH %s\n", addresses.VPN, addresses.SSH)
+	slog.Info("Server addresses", "vpn", addresses.VPN, "ssh", addresses.SSH)
 	connection, err := connectSSH(ctx, directory, addresses.SSH, "root", "server.pub")
 	if err != nil {
 		return nil, err
 	}
-	return &server{ssh: connection, endpoint: addresses.VPN, artifacts: artifacts}, nil
+	return &server{sshClient: connection, endpoint: addresses.VPN, logs: logs}, nil
 }
 
 func (s *server) checkTarget(ctx context.Context) (string, error) {
 	for _, f := range families {
-		fmt.Printf("Checking server access to IPv%d HTTP target %s\n", f.number, f.url("/peer"))
+		slog.Info("Checking server access to HTTP target", "family", f.number, "url", f.url("/peer"))
 		if _, err := s.remote(ctx, "curl --noproxy '*' -fsS --max-time 5 '"+f.url("/peer")+"'"); err != nil {
 			return "", err
 		}
@@ -80,13 +81,13 @@ func (s *server) startServer(ctx context.Context, protocol string) (string, erro
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	stop := context.AfterFunc(ctx, func() { _ = s.ssh.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = s.sshClient.Close() })
 	defer stop()
-	s.process, err = s.ssh.NewSession()
+	s.sshSession, err = s.sshClient.NewSession()
 	if err != nil {
 		return "", err
 	}
-	if err := s.process.Start(env + "exec tungo s >/tmp/server.log 2>&1"); err != nil {
+	if err := s.sshSession.Start(env + "exec tungo s >/tmp/server.log 2>&1"); err != nil {
 		return "", err
 	}
 	return config, nil
@@ -95,12 +96,12 @@ func (s *server) startServer(ctx context.Context, protocol string) (string, erro
 func (s *server) stopServer(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	stop := context.AfterFunc(ctx, func() { _ = s.ssh.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = s.sshClient.Close() })
 	defer stop()
-	if err := s.process.Signal(ssh.SIGTERM); err != nil {
+	if err := s.sshSession.Signal(ssh.SIGTERM); err != nil {
 		return err
 	}
-	if err := s.process.Wait(); err != nil {
+	if err := s.sshSession.Wait(); err != nil {
 		return err
 	}
 	after, err := s.remote(ctx, "network-state")
@@ -117,9 +118,9 @@ func (s *server) remote(ctx context.Context, script string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	// Closing the transport bounds channel creation as well as command execution.
-	stop := context.AfterFunc(ctx, func() { _ = s.ssh.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = s.sshClient.Close() })
 	defer stop()
-	session, err := s.ssh.NewSession()
+	session, err := s.sshClient.NewSession()
 	if err != nil {
 		return "", err
 	}
@@ -136,10 +137,10 @@ func (s *server) remote(ctx context.Context, script string) (string, error) {
 func (s *server) close() error {
 	ctx := context.Background()
 	var errs []error
-	if s.process != nil {
-		_ = s.process.Close()
+	if s.sshSession != nil {
+		_ = s.sshSession.Close()
 	}
-	if s.ssh != nil {
+	if s.sshClient != nil {
 		data, err := s.remote(ctx, `
 network-state
 ip -details -statistics link
@@ -153,10 +154,10 @@ for file in /tmp/server.log /tmp/sshd.log /tmp/target.log; do
 done
 `)
 		if err == nil {
-			err = os.WriteFile(filepath.Join(s.artifacts, "server.log"), []byte(data), 0644)
+			err = os.WriteFile(filepath.Join(s.logs, "server.log"), []byte(data), 0644)
 		}
 		errs = append(errs, err)
-		_ = s.ssh.Close()
+		_ = s.sshClient.Close()
 	}
 	return errors.Join(errs...)
 }

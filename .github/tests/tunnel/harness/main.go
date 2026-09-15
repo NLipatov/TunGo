@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,7 +19,7 @@ func main() {
 		err = run(ctx, info)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		slog.Error("Harness failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -28,13 +29,13 @@ type runInfo struct {
 }
 
 func newRunInfo(args []string) (runInfo, error) {
-	usage := fmt.Errorf("usage: tungo-e2e run <UDP|TCP|WS> <workdir> | tungo-e2e client <workdir>")
+	usage := fmt.Errorf("usage: tungo-e2e coordinator <UDP|TCP|WS> <workdir> | tungo-e2e client <workdir>")
 	if len(args) < 2 {
 		return runInfo{}, usage
 	}
 	info := runInfo{command: args[0], workdir: args[len(args)-1]}
 	switch info.command {
-	case "run":
+	case "coordinator":
 		if len(args) != 3 {
 			return runInfo{}, usage
 		}
@@ -60,29 +61,29 @@ func run(ctx context.Context, info runInfo) (err error) {
 	if err != nil {
 		return err
 	}
-	artifacts := filepath.Join(directory, "tungo-e2e-logs")
+	logs := filepath.Join(directory, "logs")
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
-	if err := os.MkdirAll(artifacts, 0755); err != nil {
+	if err := os.MkdirAll(logs, 0755); err != nil {
 		return err
 	}
 	if info.command == "client" {
-		return runClientCommand(ctx, directory, artifacts)
+		return runClientCommand(ctx, directory, logs)
 	}
 	defer func() {
 		if err != nil {
-			printLogs(filepath.Join(artifacts, "*.log"))
+			printLogs(filepath.Join(logs, "*.log"))
 		} else {
-			fmt.Println("PASS: IPv4/IPv6 ping, traceroute, payload checksum, NAT, reconnect and cleanup")
+			fmt.Println("PASS")
 		}
 	}()
-	fmt.Printf("Tunnel scenario: %s\n", info.protocol)
-	server, err := connectServer(ctx, directory, artifacts)
+	slog.Info("Starting tunnel scenario", "protocol", info.protocol)
+	server, err := connectServer(ctx, directory, logs)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, server.close()) }()
-	return runTunnel(ctx, server, info.protocol, directory, artifacts)
+	return runTunnel(ctx, server, info.protocol, directory, logs)
 }
 
 func printLogs(pattern string) {

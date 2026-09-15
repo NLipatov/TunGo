@@ -18,8 +18,8 @@ main() {
     case "$host" in
         MINGW*|MSYS*|CYGWIN*) workdir=$(cygpath -m "$workdir") ;;
     esac
-    artifacts="$workdir/tungo-e2e-logs"
-    mkdir -p "$artifacts"
+    logs="$workdir/logs"
+    mkdir -p "$logs"
     trap finish EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
@@ -29,7 +29,7 @@ main() {
     wait_for_server
     local harness="$workdir/tungo-e2e"
     case "$host" in MINGW*|MSYS*|CYGWIN*) harness+=.exe ;; esac
-    "$harness" run "$protocol" "$workdir"
+    "$harness" coordinator "$protocol" "$workdir"
 }
 
 prepare_ssh() {
@@ -51,7 +51,7 @@ prepare_ssh() {
 
 start_client_ssh() {
     MSYS2_ARG_CONV_EXCL='*' "$sshd" -D -e -f "$keydir/sshd-client.conf" \
-        >"$artifacts/sshd-client.log" 2>&1 &
+        >"$logs/sshd-client.log" 2>&1 &
     sshd_pid=$!
 }
 
@@ -91,7 +91,7 @@ start_server() {
         -kernel "$workdir/tungo-vm/kernel" -initrd "$workdir/tungo-vm/initramfs.gz" \
         -serial stdio -append "console=$console rdinit=/init panic=1 tungo_ssh_key=$public_key" \
         -machine "$machine" -cpu "$cpu" -netdev "$network" \
-        -device virtio-net-pci,netdev=transport >"$artifacts/vm.log" 2>&1 &
+        -device virtio-net-pci,netdev=transport >"$logs/vm.log" 2>&1 &
     qemu_pid=$!
 }
 
@@ -107,8 +107,8 @@ wait_for_server() {
             return 1
         fi
         # Pin the guest key through the local console, never through the network.
-        if [[ -f "$artifacts/vm.log" ]]; then
-            sed -n 's/^TUNGO_E2E_SSH_HOST_KEY //p' "$artifacts/vm.log" >"$keydir/server.pub"
+        if [[ -f "$logs/vm.log" ]]; then
+            sed -n 's/^TUNGO_E2E_SSH_HOST_KEY //p' "$logs/vm.log" >"$keydir/server.pub"
             if [[ -s "$keydir/server.pub" ]]; then
                 return
             fi
@@ -124,7 +124,7 @@ finish() {
     trap - EXIT INT TERM
     if (( status != 0 )); then
         local log
-        for log in "$artifacts/vm.log" "$artifacts/sshd-client.log"; do
+        for log in "$logs/vm.log" "$logs/sshd-client.log"; do
             if [[ -f "$log" ]]; then
                 printf '%s:\n' "$log" >&2
                 tail -c 20000 "$log" >&2
