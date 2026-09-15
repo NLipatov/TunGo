@@ -70,8 +70,9 @@ Each of two connections checks IPv4 and IPv6: ping, the server TUN as the first
 traceroute hop, both halves of the default route, a 4 MiB download with SHA-256,
 and NAT source. The target is healthy but unreachable before and after connection.
 Forwarding starts disabled and must be enabled by TunGo; the target has no return
-route, so replies require NAT. Client TUN addresses and route selection must be
-restored; server interfaces, routes and firewall are compared after shutdown.
+route, so replies require NAT. The client TUN interface is identified while connected
+and must disappear after shutdown, along with its addresses; route selection must be
+restored. Server interfaces, routes and firewall are compared after shutdown.
 The test does not compare the client's entire firewall/routing table or test DNS.
 
 `run` prints `PASS` on success; failure exits with code 1. Diagnostics are written

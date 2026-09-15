@@ -120,7 +120,41 @@ func traceHop(output string, hop int, address string) bool {
 	return false
 }
 
-func checkClientCleanup(ctx context.Context, baseline map[string]string) error {
+func clientInterface() (net.Interface, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return net.Interface{}, err
+	}
+	for _, iface := range interfaces {
+		addresses, err := iface.Addrs()
+		if err != nil {
+			return net.Interface{}, err
+		}
+		for _, address := range addresses {
+			prefix, err := netip.ParsePrefix(address.String())
+			if err != nil {
+				return net.Interface{}, err
+			}
+			for _, f := range families {
+				if prefix.Addr() == netip.MustParseAddr(f.client) {
+					return iface, nil
+				}
+			}
+		}
+	}
+	return net.Interface{}, fmt.Errorf("client TUN interface not found")
+}
+
+func checkClientCleanup(ctx context.Context, tun net.Interface, baseline map[string]string) error {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	for _, iface := range interfaces {
+		if iface.Index == tun.Index && iface.Name == tun.Name {
+			return fmt.Errorf("client TUN interface %s (index %d) remains", tun.Name, tun.Index)
+		}
+	}
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return err

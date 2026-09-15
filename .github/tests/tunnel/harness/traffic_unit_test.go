@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"net"
+	"testing"
+)
 
 func TestTraceHop(t *testing.T) {
 	for _, test := range []struct {
@@ -18,4 +23,23 @@ func TestTraceHop(t *testing.T) {
 			t.Errorf("traceHop(%q, %d, %q) = %t, want %t", test.output, test.hop, test.address, got, test.want)
 		}
 	}
+}
+
+func TestCheckClientCleanupRejectsExistingInterface(t *testing.T) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback == 0 {
+			continue
+		}
+		// A known interface must be detected independently of its IP addresses.
+		want := fmt.Sprintf("client TUN interface %s (index %d) remains", iface.Name, iface.Index)
+		if err := checkClientCleanup(context.Background(), iface, nil); err == nil || err.Error() != want {
+			t.Fatalf("expected %q, got %v", want, err)
+		}
+		return
+	}
+	t.Fatal("no loopback interface found")
 }

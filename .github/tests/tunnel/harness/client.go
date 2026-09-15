@@ -132,8 +132,6 @@ func installConfig(config string) (string, error) {
 }
 
 func checkConnection(ctx context.Context, binary, log, checksum string, baseline map[string]string) error {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
 	fmt.Println("Starting TunGo client")
 	client, err := startChild(log, binary, "c")
 	if err != nil {
@@ -145,12 +143,16 @@ func checkConnection(ctx context.Context, binary, log, checksum string, baseline
 			return err
 		}
 	}
-	fmt.Println("Stopping TunGo client and checking TUN removal and route restoration")
+	tun, err := clientInterface()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Stopping TunGo client and checking removal of TUN %s (index %d) and route restoration\n", tun.Name, tun.Index)
 	if err := client.stop(); err != nil {
 		return err
 	}
 	if err := waitUntil(ctx, "client TUN and routes removed", 15*time.Second, func(ctx context.Context) error {
-		return checkClientCleanup(ctx, baseline)
+		return checkClientCleanup(ctx, tun, baseline)
 	}); err != nil {
 		return err
 	}
