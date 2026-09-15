@@ -1,34 +1,70 @@
-# Tunnel E2E
+# Tunnel E2E harness
 
-The [Tunnel E2E workflow](../../workflows/tunnel-e2e.yml), called by
-[main](../../workflows/main.yml), builds TunGo and prepares two machines:
-a native Linux/macOS/Windows client on the GitHub runner and a Linux server VM.
-[runner/run.sh](runner/run.sh) owns QEMU, networking and temporary SSH access.
-The [harness](harness/e2e.go) owns the complete TunGo scenario:
-generate configurations on the server, start it, run the client over SSH,
-check traffic, then stop the server and verify cleanup.
+The harness starts TunGo on a prepared server and client, then checks traffic:
 
 ```text
-                       harness run (on the runner)
-                         /                   \
-                       SSH              SSH localhost
-                        |                     |
-                    Linux VM             GitHub runner
-                  TunGo server <=== VPN === TunGo client
-                        |                harness client:
-                      nginx              ping / traceroute / curl
+TunGo client -> TunGo server -> HTTP target
 ```
 
-The same executable has two commands:
+The HTTP target is on an isolated network behind the server.
+The client can reach it only through the tunnel.
 
-- `tungo-e2e run UDP <workdir>` orchestrates both sides over SSH.
-- `tungo-e2e client <workdir>` runs client checks on the client machine.
-  It receives the configuration and expected payload checksum through SSH stdin.
+## Requirements
 
-The workflow runs `runner/run.sh UDP arm64 "$RUNNER_TEMP"` and tests 36 combinations:
-six native client OS/architecture pairs × two Linux server architectures × UDP/TCP/WS.
-The harness does not create VMs or select architectures. Both TunGo binaries are
-built from the current checkout. OS-specific SSH preparation lives in [runner/](runner/).
+### Client requirements
+
+Linux/macOS/Windows with SSH access and root or administrator privileges.
+The client needs TUN support, `curl`, `ping` and `traceroute` (`tracert` on Windows;
+`ping6`/`traceroute6` for IPv6 on macOS).
+
+Install the client harness and `tungo-client` (`tungo-client.exe` on Windows) on
+the client; the TunGo binary must be in `<client-workdir>`.
+
+### Server requirements
+
+Linux with root SSH access. The server needs `tungo`, `network-state`, `curl`,
+`sha256sum` and the network and HTTP target defined in the [server fixture](server-vm/).
+
+## Build harness
+
+Run from the `harness/` directory.
+
+### Linux/macOS
+
+```sh
+go build -o tungo-e2e .
+```
+
+### Windows
+
+```powershell
+go build -o tungo-e2e.exe .
+```
+
+## Usage
+
+Prepare these inputs in `<workdir>`:
+
+| File | Contents |
+| --- | --- |
+| `server.json` | `SSH`: server `host:port`; `VPN`: server transport IP address |
+| `client.json` | `SSH`: client `host:port`; `User`: SSH user; `Command`: command that launches `tungo-e2e client <client-workdir>` |
+| `tungo-ssh/identity` | SSH private key authorized on both hosts |
+| `tungo-ssh/server.pub`, `tungo-ssh/client.pub` | Pinned SSH host public keys |
+
+Run one protocol at a time:
+
+```text
+tungo-e2e run <UDP|TCP|WS> <workdir>
+```
+
+`run` generates TunGo configurations on the server, starts it, and launches
+`client` over SSH. It supplies JSON fields `Config` and `Checksum` through stdin;
+`client` installs the configuration, starts TunGo and checks traffic.
+After the client checks, `run` stops the server and verifies cleanup.
+
+The harness creates server and client configurations at TunGo's standard paths.
+It fails if either configuration file already exists, to avoid overwriting it.
 
 Each of two connections checks IPv4 and IPv6: ping, the server TUN as the first
 traceroute hop, both halves of the default route, a 4 MiB download with SHA-256,
@@ -38,14 +74,8 @@ route, so replies require NAT. Client TUN addresses and route selection must be
 restored; server interfaces, routes and firewall are compared after shutdown.
 The test does not compare the client's entire firewall/routing table or test DNS.
 
-The work directory contains `server.json` (`SSH`, `VPN`) and `client.json`
-(`SSH`, `User`, `Command`), native binaries and diagnostics in `tungo-e2e-logs/`.
-Only connection details and the OS-specific harness launch command come from setup;
-TunGo configurations are created by the harness. SSH uses temporary keys in
-`tungo-ssh/`; both host keys are pinned locally. The runner script stops SSH/QEMU
-and removes its keys on exit, including failure. Key files are not uploaded.
+`run` prints `PASS` on success; failure exits with code 1. Diagnostics are written
+to `tungo-e2e-logs/` in each command's work directory. The scenario has an 8-minute deadline,
+the client part 5 minutes, each connection 90 seconds.
 
-Build with `go build`. The `*_unit_test.go` files test the harness itself with
-`go test`; Windows CI also checks graceful client shutdown with and without an
-inherited console. E2E requires disposable GitHub Actions machines. The scenario
-has an 8-minute deadline, the client part 5 minutes, each connection 90 seconds.
+Run `go test ./...` from `harness/` to test the harness code itself.
