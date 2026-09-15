@@ -1,40 +1,50 @@
 # Tunnel E2E
 
-Run the IPv4/IPv6 [container tests](containers/) from the repository root on a
-Linux Docker host with Docker access and `/dev/net/tun`. Each command builds the
-current checkout.
-
-```bash
-bash .github/tests/tunnel/containers/run.sh UDP
-bash .github/tests/tunnel/containers/run.sh TCP
-bash .github/tests/tunnel/containers/run.sh WS
-```
-
-`ARTIFACT_DIR` selects the diagnostics directory; otherwise the script creates
-a temporary directory and prints its location.
-
-Each run checks both IP families over two connections: TUN routes and ping,
-payload checksum, NAT, isolation without a tunnel, and network cleanup.
-
-The [compatibility tests](compatibility/) run native Linux/macOS/Windows clients
-against Linux servers under QEMU TCG, with IPv4 and IPv6 tunnel traffic. CI builds
-the server VM from [server-vm](compatibility/server-vm/).
-Both suites use an IPv4 VPN endpoint to carry traffic from both IP families.
-
-The Go [harness](harness/) has three modes: `run` (runner), `agent`, and `target`.
+The [workflow](../../workflows/main.yml) builds TunGo and prepares two machines:
+a native Linux/macOS/Windows client on the GitHub runner and a Linux server VM.
+[runner/run.sh](runner/run.sh) owns QEMU, networking and temporary SSH access.
+The [harness](harness/e2e.go) owns the complete TunGo scenario:
+generate configurations on the server, start it, run the client over SSH,
+check traffic, then stop the server and verify cleanup.
 
 ```text
-Traffic: runner -> TunGo client == VPN ==> TunGo server -> HTTP target
-Control: runner -> agent -> TunGo server
+                       harness run (on the runner)
+                         /                   \
+                       SSH              SSH localhost
+                        |                     |
+                    Linux VM             GitHub runner
+                  TunGo server <=== VPN === TunGo client
+                        |                harness client:
+                      nginx              ping / traceroute / curl
 ```
 
-The runner and TunGo client run on the native client host; the agent, server
-and target run inside the Linux VM.
+The same executable has two commands:
 
-The runner boots the VM, starts the native client, and checks traffic, checksums,
-NAT and cleanup over two connections. The agent controls the server and reports
-target health, process status and diagnostics. The target serves test data.
+- `tungo-e2e run UDP <workdir>` orchestrates both sides over SSH.
+- `tungo-e2e client <workdir>` runs client checks on the client machine.
+  It receives the configuration and expected payload checksum through SSH stdin.
 
-`tungo-e2e run` is for disposable GitHub Actions runners only: it requires
-administrative privileges and changes host routes. See the
-[main workflow](../../workflows/main.yml) for VM setup and invocation.
+The workflow runs `runner/run.sh UDP arm64 "$RUNNER_TEMP"` and tests 36 combinations:
+six native client OS/architecture pairs × two Linux server architectures × UDP/TCP/WS.
+The harness does not create VMs or select architectures. Both TunGo binaries are
+built from the current checkout. OS-specific SSH preparation lives in [runner/](runner/).
+
+Each of two connections checks IPv4 and IPv6: ping, the server TUN as the first
+traceroute hop, both halves of the default route, a 4 MiB download with SHA-256,
+and NAT source. The target is healthy but unreachable before and after connection.
+Forwarding starts disabled and must be enabled by TunGo; the target has no return
+route, so replies require NAT. Client TUN addresses and route selection must be
+restored; server interfaces, routes and firewall are compared after shutdown.
+The test does not compare the client's entire firewall/routing table or test DNS.
+
+The work directory contains `server.json` (`SSH`, `VPN`) and `client.json`
+(`SSH`, `User`, `Command`), native binaries and diagnostics in `tungo-e2e-logs/`.
+Only connection details and the OS-specific harness launch command come from setup;
+TunGo configurations are created by the harness. SSH uses temporary keys in
+`tungo-ssh/`; both host keys are pinned locally. The runner script stops SSH/QEMU
+and removes its keys on exit, including failure. Key files are not uploaded.
+
+Build with `go build`. The `*_unit_test.go` files test the harness itself with
+`go test`; Windows CI also checks graceful client shutdown with and without an
+inherited console. E2E requires disposable GitHub Actions machines. The scenario
+has an 8-minute deadline, the client part 5 minutes, each connection 90 seconds.

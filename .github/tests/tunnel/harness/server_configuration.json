@@ -1,0 +1,5 @@
+{
+  "UDPSettings": {"IPv4Subnet": "198.19.0.0/24", "IPv6Subnet": "fd73:7467:6f:1::/64"},
+  "TCPSettings": {"IPv4Subnet": "198.19.0.0/24", "IPv6Subnet": "fd73:7467:6f:1::/64"},
+  "WSSettings": {"IPv4Subnet": "198.19.0.0/24", "IPv6Subnet": "fd73:7467:6f:1::/64"}
+}

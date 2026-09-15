@@ -28,3 +28,20 @@ $unpacked = Join-Path $env:RUNNER_TEMP 'wintun'
 Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $archive
 Expand-Archive $archive -DestinationPath $unpacked -Force
 Copy-Item "$unpacked/wintun/bin/$Architecture/wintun.dll" "$env:SystemRoot/System32/wintun.dll"
+
+# Use one native, pinned OpenSSH distribution for the disposable localhost server.
+$sshRelease = '10.0.0.0p2-Preview'
+$sshPlatform = if ($Architecture -eq 'arm64') { 'ARM64' } else { 'Win64' }
+$sshChecksum = if ($Architecture -eq 'arm64') {
+    '698c6aec31c1dd0fb996206e8741f4531a97355686b5431ef347d531b07fcd42'
+} else {
+    '23f50f3458c4c5d0b12217c6a5ddfde0137210a30fa870e98b29827f7b43aba5'
+}
+$sshArchive = Join-Path $env:RUNNER_TEMP 'openssh.zip'
+Invoke-WebRequest "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$sshRelease/OpenSSH-$sshPlatform.zip" -OutFile $sshArchive
+if ((Get-FileHash $sshArchive -Algorithm SHA256).Hash -ne $sshChecksum) {
+    throw 'OpenSSH archive checksum mismatch'
+}
+$sshUnpacked = Join-Path $env:RUNNER_TEMP 'openssh-unpacked'
+Expand-Archive $sshArchive -DestinationPath $sshUnpacked
+Move-Item "$sshUnpacked/OpenSSH-$sshPlatform" "$env:RUNNER_TEMP/openssh"

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"unsafe"
 )
 
 func shutdownSignals() []os.Signal { return []os.Signal{os.Interrupt} }
@@ -15,10 +16,12 @@ func prepareRunner() error {
 		return fmt.Errorf("administrator required")
 	}
 	kernel := syscall.NewLazyDLL("kernel32.dll")
-	console, _, _ := kernel.NewProc("GetConsoleWindow").Call()
-	if console == 0 {
+	// A remoted console need not have a window. Check console attachment itself.
+	var pid uint32
+	count, _, consoleErr := kernel.NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&pid)), 1)
+	if count == 0 {
 		if ok, _, err := kernel.NewProc("AllocConsole").Call(); ok == 0 {
-			return fmt.Errorf("allocate console for Ctrl+Break: %w", err)
+			return fmt.Errorf("allocate console for Ctrl+Break (console query: %v): %w", consoleErr, err)
 		}
 	}
 	return nil

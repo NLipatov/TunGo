@@ -4,8 +4,8 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
-mkdir -p /dev/net /run/netns
 mount -t tmpfs tmpfs /run
+mkdir -p /dev/net /run/netns /run/sshd /run/tungo-e2e
 for module in virtio_pci virtio_net tun veth ipv6 ip6_tables ip_tables iptable_filter iptable_nat xt_MASQUERADE xt_state; do
     modprobe "$module" || true
 done
@@ -41,10 +41,35 @@ for firewall in iptables ip6tables; do
     "$firewall" -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     "$firewall" -A OUTPUT -o eth0 -j DROP
 done
-ip netns exec target tungo-e2e target >/tmp/target.log 2>&1 &
-ip netns exec target tungo-e2e target --bind fd73:7467:6f::2 >/tmp/target6.log 2>&1 &
-tungo-e2e agent >/dev/console 2>&1 &
-# Only VPN UDP metadata is logged; control traffic carries generated keys.
-tcpdump -i eth0 -nn -l 'udp port 9090' >/tmp/udp.log 2>&1 &
+ip netns exec target nginx -g 'daemon off;' >/tmp/target.log 2>&1 &
+# The runner passes only its ephemeral public key through the kernel command line.
+umask 077
+# Kernel arguments are words on a single line.
+# shellcheck disable=SC2013
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+    tungo_ssh_key=*) printf 'ssh-ed25519 %s\n' "${arg#tungo_ssh_key=}" >/run/tungo-e2e/authorized_keys ;;
+    esac
+done
+test -s /run/tungo-e2e/authorized_keys
+ssh-keygen -q -t ed25519 -N '' -f /run/tungo-e2e/ssh_host_ed25519_key
+# Unlock root for public-key login; password authentication stays disabled.
+passwd -d root >/dev/null
+cat >/run/tungo-e2e/sshd_config <<'EOF'
+ListenAddress 192.168.250.15
+HostKey /run/tungo-e2e/ssh_host_ed25519_key
+AuthorizedKeysFile /run/tungo-e2e/authorized_keys
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+DisableForwarding yes
+PermitTTY no
+PrintMotd no
+EOF
+/usr/sbin/sshd -f /run/tungo-e2e/sshd_config -E /tmp/sshd.log
+# Pin the SSH host key through QEMU's local serial output, before connecting.
+printf 'TUNGO_E2E_SSH_HOST_KEY '
+cat /run/tungo-e2e/ssh_host_ed25519_key.pub
 echo 'TUNGO_E2E_VM_BOOTED'
 while true; do sleep 3600; done

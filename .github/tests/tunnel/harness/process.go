@@ -10,13 +10,12 @@ import (
 	"time"
 )
 
-func startChild(logPath string, env []string, args ...string) (*child, error) {
+func startChild(logPath string, args ...string) (*child, error) {
 	log, err := os.Create(logPath)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Env = env
 	cmd.Stdout, cmd.Stderr = log, log
 	configureChild(cmd)
 	if err := cmd.Start(); err != nil {
@@ -31,7 +30,7 @@ func startChild(logPath string, env []string, args ...string) (*child, error) {
 }
 
 // child owns its log and the single Wait call. Closing done publishes the exit
-// result to the runner and controller without reading exec.Cmd concurrently.
+// result to the runner without reading exec.Cmd concurrently.
 type child struct {
 	cmd  *exec.Cmd
 	done chan struct{}
@@ -71,11 +70,6 @@ func (p *child) wait(timeout time.Duration) error {
 	case <-time.After(timeout):
 		return fmt.Errorf("process %d did not exit within %s", p.cmd.Process.Pid, timeout)
 	}
-}
-
-func powershell(ctx context.Context, script string) (string, error) {
-	return command(ctx, "pwsh", "-NoProfile", "-NonInteractive", "-Command",
-		"$ErrorActionPreference='Stop'; "+script)
 }
 
 func command(ctx context.Context, args ...string) (string, error) {

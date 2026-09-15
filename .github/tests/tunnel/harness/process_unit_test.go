@@ -14,8 +14,9 @@ import (
 func TestChildGracefulShutdown(t *testing.T) {
 	directory := t.TempDir()
 	logPath, ready := filepath.Join(directory, "child.log"), filepath.Join(directory, "ready")
-	env := append(os.Environ(), "TUNGO_E2E_CHILD_TEST=graceful", "TUNGO_E2E_CHILD_READY="+ready)
-	p, err := startChild(logPath, env, os.Args[0], "-test.run=^TestChildHelper$")
+	t.Setenv("TUNGO_E2E_CHILD_TEST", "graceful")
+	t.Setenv("TUNGO_E2E_CHILD_READY", ready)
+	p, err := startChild(logPath, os.Args[0], "-test.run=^TestChildHelper$")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,8 @@ func TestChildGracefulShutdown(t *testing.T) {
 
 func TestChildFailure(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "child.log")
-	p, err := startChild(logPath, append(os.Environ(), "TUNGO_E2E_CHILD_TEST=failure"), os.Args[0], "-test.run=^TestChildHelper$")
+	t.Setenv("TUNGO_E2E_CHILD_TEST", "failure")
+	p, err := startChild(logPath, os.Args[0], "-test.run=^TestChildHelper$")
 	if err != nil {
 		t.Fatal(err)
 	}
