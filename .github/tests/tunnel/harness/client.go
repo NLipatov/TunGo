@@ -27,6 +27,7 @@ func runRemoteClient(ctx context.Context, directory, artifacts string, input cli
 	if err := json.Unmarshal(data, &host); err != nil {
 		return err
 	}
+	fmt.Printf("Starting client scenario over SSH: %s, user %s\n", host.SSH, host.User)
 	connection, err := connectSSH(ctx, directory, host.SSH, host.User, "client.pub")
 	if err != nil {
 		return err
@@ -89,6 +90,7 @@ func runClient(ctx context.Context, binary, artifacts, config, checksum string) 
 		}
 	}
 	baseline := routeSources(ctx)
+	fmt.Println("Installing client configuration")
 	path, err := installConfig(config)
 	if err != nil {
 		return err
@@ -132,6 +134,7 @@ func installConfig(config string) (string, error) {
 func checkConnection(ctx context.Context, binary, log, checksum string, baseline map[string]string) error {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
+	fmt.Println("Starting TunGo client")
 	client, err := startChild(log, binary, "c")
 	if err != nil {
 		return err
@@ -142,6 +145,7 @@ func checkConnection(ctx context.Context, binary, log, checksum string, baseline
 			return err
 		}
 	}
+	fmt.Println("Stopping TunGo client and checking TUN removal and route restoration")
 	if err := client.stop(); err != nil {
 		return err
 	}

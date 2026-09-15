@@ -139,7 +139,7 @@ jobs:
           retention-days: 1
 
   tunnel-e2e:
-    name: Tunnel (${{ matrix.client.os }}/${{ matrix.client.arch }} -> Linux/${{ matrix.server_arch }}, ${{ matrix.protocol }})
+    name: Tunnel E2E (${{ matrix.client.os }}/${{ matrix.client.arch }} -> Linux/${{ matrix.server_arch }}, ${{ matrix.protocol }})
     needs: tunnel-vm-images
     runs-on: ${{ matrix.client.runner }}
     timeout-minutes: 20

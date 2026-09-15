@@ -75,7 +75,8 @@ start_server() {
         MINGW*|MSYS*|CYGWIN*)
             ssh_address=127.0.0.1:2222 vpn_address=127.77.0.1
             # The guest firewall isolates egress; restrict=on drops UDP replies.
-            network=user,id=transport,net=192.168.250.0/24
+            # The transport is IPv4; IPv6 router advertisements would change its routes.
+            network=user,id=transport,net=192.168.250.0/24,ipv6=off
             network+=,hostfwd=tcp:127.0.0.1:2222-192.168.250.15:22
             network+=,hostfwd=tcp:127.77.0.1:8080-192.168.250.15:8080
             network+=,hostfwd=udp:127.77.0.1:9090-192.168.250.15:9090

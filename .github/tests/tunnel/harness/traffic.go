@@ -34,6 +34,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 		ping = []string{"ping", flag, "-n", "1", "-w", "2000", f.target}
 		trace = []string{"tracert", flag, "-d", "-h", "2", "-w", "2000", f.target}
 	}
+	fmt.Printf("Checking IPv%d routes use client TUN %s and target %s answers ping\n", f.number, f.client, f.target)
 	if err := waitUntil(ctx, "IPv"+fmt.Sprint(f.number)+" ping through tunnel", 60*time.Second, func(ctx context.Context) error {
 		// A reachable address alone is not proof that the tunnel is ready.
 		// Check both halves of the split default without sending internet traffic.
@@ -49,6 +50,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	}); err != nil {
 		return err
 	}
+	fmt.Printf("Checking IPv%d traceroute: hop 1 is server %s, hop 2 is target %s\n", f.number, f.server, f.target)
 	output, err := command(ctx, trace...)
 	if err != nil {
 		return err
@@ -57,6 +59,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	if !traceHop(output, 1, f.server) || !traceHop(output, 2, f.target) {
 		return fmt.Errorf("trace must go through %s to %s", f.server, f.target)
 	}
+	fmt.Printf("Checking IPv%d HTTP payload from %s: 4 MiB and matching SHA-256\n", f.number, f.target)
 	curl := exec.CommandContext(ctx, "curl", "--noproxy", "*", "-fsS",
 		"--connect-timeout", "2", "--max-time", "20", f.url("/payload"))
 	curl.Stderr = os.Stderr
@@ -67,6 +70,7 @@ func checkTraffic(ctx context.Context, f family, checksum string) error {
 	if len(body) != 4*1024*1024 || fmt.Sprintf("%x", sha256.Sum256(body)) != checksum {
 		return fmt.Errorf("IPv%d payload size or checksum mismatch", f.number)
 	}
+	fmt.Printf("Checking IPv%d NAT: target %s must see server source %s\n", f.number, f.target, f.nat)
 	peer, err := command(ctx, "curl", "--noproxy", "*", "-fsS", "--max-time", "5", f.url("/peer"))
 	if err != nil {
 		return err
@@ -139,6 +143,7 @@ func checkClientCleanup(ctx context.Context, baseline map[string]string) error {
 }
 
 func assertUnreachable(ctx context.Context, f family) error {
+	fmt.Printf("Checking IPv%d target %s is unreachable without the tunnel\n", f.number, f.target)
 	if _, err := command(ctx, "curl", "--noproxy", "*", "-fsS", "--max-time", "2", f.url("/peer")); err == nil {
 		return fmt.Errorf("IPv%d target reachable without tunnel", f.number)
 	}

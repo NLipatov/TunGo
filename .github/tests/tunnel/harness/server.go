@@ -39,6 +39,7 @@ func connectServer(ctx context.Context, directory, artifacts string) (*server, e
 	if _, err := netip.ParseAddr(addresses.VPN); err != nil {
 		return nil, fmt.Errorf("server VPN address: %w", err)
 	}
+	fmt.Printf("Server: VPN endpoint %s, SSH %s\n", addresses.VPN, addresses.SSH)
 	connection, err := connectSSH(ctx, directory, addresses.SSH, "root", "server.pub")
 	if err != nil {
 		return nil, err
@@ -48,6 +49,7 @@ func connectServer(ctx context.Context, directory, artifacts string) (*server, e
 
 func (s *server) checkTarget(ctx context.Context) (string, error) {
 	for _, f := range families {
+		fmt.Printf("Checking server access to IPv%d HTTP target %s\n", f.number, f.url("/peer"))
 		if _, err := s.remote(ctx, "curl --noproxy '*' -fsS --max-time 5 '"+f.url("/peer")+"'"); err != nil {
 			return "", err
 		}
