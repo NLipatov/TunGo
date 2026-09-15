@@ -4,7 +4,8 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
-mount -t tmpfs tmpfs /run
+# sshd requires the authorized_keys parent directories to be root-owned and unwritable by others.
+mount -t tmpfs -o mode=0755 tmpfs /run
 mkdir -p /dev/net /run/netns /run/sshd /run/tungo-e2e
 for module in virtio_pci virtio_net tun veth ipv6 ip6_tables ip_tables iptable_filter iptable_nat xt_MASQUERADE xt_state; do
     modprobe "$module" || true
