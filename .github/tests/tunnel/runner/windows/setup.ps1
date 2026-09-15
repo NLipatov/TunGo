@@ -25,7 +25,11 @@ $qemuDirectory | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 # The same signed driver distribution used by the project's Windows releases.
 $archive = Join-Path $env:RUNNER_TEMP 'wintun.zip'
 $unpacked = Join-Path $env:RUNNER_TEMP 'wintun'
+$wintunChecksum = '07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51'
 Invoke-WebRequest 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $archive
+if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $wintunChecksum) {
+    throw 'Wintun archive checksum mismatch'
+}
 Expand-Archive $archive -DestinationPath $unpacked -Force
 Copy-Item "$unpacked/wintun/bin/$Architecture/wintun.dll" "$env:SystemRoot/System32/wintun.dll"
 
