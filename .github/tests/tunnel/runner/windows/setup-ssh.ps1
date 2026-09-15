@@ -36,7 +36,7 @@ PermitTTY no
 
 # Encoding protects paths with spaces and quotes through the SSH default shell.
 $quotedDirectory = $Workdir.Replace("'", "''")
-$script = '$env:GITHUB_ACTIONS="true"; & ''{0}/tungo-e2e.exe'' client ''{0}''; exit $LASTEXITCODE' -f $quotedDirectory
+$script = '& ''{0}/tungo-e2e.exe'' client ''{0}''; exit $LASTEXITCODE' -f $quotedDirectory
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
 @{
     SSH = '127.0.0.1:2223'

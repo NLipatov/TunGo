@@ -56,9 +56,6 @@ func newRunInfo(args []string) (runInfo, error) {
 }
 
 func run(ctx context.Context, info runInfo) (err error) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" {
-		return fmt.Errorf("E2E changes client routes: use disposable GitHub Actions machines")
-	}
 	directory, err := filepath.Abs(info.workdir)
 	if err != nil {
 		return err

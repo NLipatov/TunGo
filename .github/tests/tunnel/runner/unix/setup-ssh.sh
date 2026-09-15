@@ -36,7 +36,7 @@ if [[ $(uname -s) == Linux ]]; then
 fi
 
 # The SSH command launches the client part of the harness with native privileges.
-printf -v client_command 'sudo -n env GITHUB_ACTIONS=true %q client %q' \
+printf -v client_command 'sudo -n %q client %q' \
     "$workdir/tungo-e2e" "$workdir"
 jq -n --arg user "$client_user" --arg command "$client_command" \
     '{SSH:"127.0.0.1:2223", User:$user, Command:$command}' >"$workdir/client.json"
