@@ -72,4 +72,6 @@ EOF
 printf 'TUNGO_E2E_SSH_HOST_KEY '
 cat /run/tungo-e2e/ssh_host_ed25519_key.pub
 echo 'TUNGO_E2E_VM_BOOTED'
+# Keep SSH failures visible even when the harness cannot connect to the guest.
+tail -n +1 -F /tmp/sshd.log &
 while true; do sleep 3600; done

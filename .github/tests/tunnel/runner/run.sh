@@ -34,7 +34,7 @@ main() {
 
 prepare_ssh() {
     # This directory is owned by this invocation; never reuse existing keys.
-    mkdir -m 700 "$workdir/tungo-ssh"
+    mkdir "$workdir/tungo-ssh"
     keydir="$workdir/tungo-ssh"
     case "$host" in
         Linux|Darwin)
@@ -106,9 +106,11 @@ wait_for_server() {
             return 1
         fi
         # Pin the guest key through the local console, never through the network.
-        sed -n 's/^TUNGO_E2E_SSH_HOST_KEY //p' "$artifacts/vm.log" >"$keydir/server.pub"
-        if [[ -s "$keydir/server.pub" ]]; then
-            return
+        if [[ -f "$artifacts/vm.log" ]]; then
+            sed -n 's/^TUNGO_E2E_SSH_HOST_KEY //p' "$artifacts/vm.log" >"$keydir/server.pub"
+            if [[ -s "$keydir/server.pub" ]]; then
+                return
+            fi
         fi
         sleep 1
     done

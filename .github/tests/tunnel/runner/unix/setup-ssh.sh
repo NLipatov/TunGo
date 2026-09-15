@@ -5,6 +5,7 @@ workdir=$1
 client_user=$2
 keydir="$workdir/tungo-ssh"
 
+chmod 700 "$keydir"
 ssh-keygen -q -t ed25519 -N '' -f "$keydir/identity"
 ssh-keygen -q -t ed25519 -N '' -f "$keydir/client"
 # sshd checks authorized keys as the login user; only the public identity is needed.
