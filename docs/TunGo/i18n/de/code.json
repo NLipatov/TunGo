@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "In Minuten starten"
+    "message": "Installieren"
   },
   "homepage.title": {
-    "message": "Minimalistisches, schnelles & sicheres Open-Source-VPN"
+    "message": "Schnelles, schlankes VPN"
   },
   "homepage.description": {
-    "message": "Sichern Sie Ihre Verbindung mit TunGo: leichtgewichtiges, schnelles Open-Source-VPN, gebaut in Go mit moderner Kryptografie."
+    "message": "TunGo ist ein quelloffenes VPN, entwickelt in Go mit moderner Kryptografie. Der Server unterstützt Linux, die Clients unterstützen Linux, macOS und Windows."
   },
   "feature.cpuFast.title": {
-    "message": "Schnell"
-  },
-  "feature.cpuFast.description": {
-    "message": "0 Allocs/op auf dem Hot Path."
+    "message": "Geringe CPU-Last"
   },
   "feature.ramEfficient.title": {
-    "message": "Speicher"
-  },
-  "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS unter Last."
+    "message": "Geringer RAM-Verbrauch"
   },
   "feature.secure.title": {
-    "message": "Krypto"
+    "message": "Moderne Kryptografie"
   },
   "feature.secure.description": {
-    "message": "Noise IK, X25519, ChaCha20-Poly1305."
+    "message": "Noise IK, X25519 und ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Transporte"
+    "message": "Drei Verbindungsarten"
   },
   "feature.multiTransport.description": {
-    "message": "UDP, TCP, WebSocket/WSS."
+    "message": "UDP, TCP oder WebSocket. WSS wird ebenfalls unterstützt."
   },
   "feature.platforms.title": {
-    "message": "Plattformen"
+    "message": "Linux, macOS und Windows"
   },
   "feature.platforms.description": {
-    "message": "Linux, macOS, Windows."
+    "message": "Die Clients unterstützen amd64 und arm64. Der Server unterstützt Linux."
   },
   "feature.openSource.title": {
-    "message": "OSS"
+    "message": "Open Source"
   },
   "feature.openSource.description": {
-    "message": "Unter AGPLv3 lizenziert."
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "Schnell und schlank"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "Userspace-VPN"
-  },
-  "homepage.benchmarksCta": {
-    "message": "Benchmarks ansehen"
-  },
-  "bench.hero.title": {
-    "message": "Benchmark-Snapshot"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "Vollständiger Dataplane-Zyklus"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "Verschlüsseln, Lookup, Validierung, Entschlüsselung, Handoff. Obergrenze für den Dataplane-Kern, nicht für den End-to-End-VPN-Durchsatz."
-  },
-  "bench.section.scaling.title": {
-    "message": "UDP-Skalierung über mehrere Peers"
-  },
-  "bench.section.scaling.text": {
-    "message": "Aggregierter Durchsatz bei Verteilung der Arbeit über viele Peers, nicht über eine einzelne serialisierte Sendespur."
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "Aggregierter Durchsatz"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup und Serialisierung"
-  },
-  "bench.section.lookup.text": {
-    "message": "Internal-IP-, Allowed-Host- und Route-ID-Lookups bleiben flach. Misses und Serialisierung pro Peer sind die eigentlichen Druckpunkte."
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "Client -> Server"
-  },
-  "bench.direction.serverClient": {
-    "message": "Server -> Client"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP Client -> Server"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP Server -> Client"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "Exakter Internal-Lookup"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "Allowed-Host-Lookup"
-  },
-  "bench.lookup.routeId": {
-    "message": "Route-ID-Lookup"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "Benchmark-Ergebnisse des vollständigen Dataplane-Zyklus"
-  },
-  "bench.table.path": {
-    "message": "Pfad"
-  },
-  "bench.table.latency": {
-    "message": "Latenz"
-  },
-  "bench.table.throughput": {
-    "message": "Durchsatz"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "Miss-Pfad"
-  },
-  "bench.table.lookupAria": {
-    "message": "Benchmark-Ergebnisse für Repository-Lookup und Miss-Pfad"
-  },
-  "bench.table.lookup": {
-    "message": "Suche"
-  },
-  "bench.table.peers": {
-    "message": "Peers"
-  },
-  "bench.page.title": {
-    "message": "Benchmarks"
-  },
-  "bench.page.description": {
-    "message": "Benchmark-Dashboard für TunGo-Dataplane-Durchsatz, Latenz, Repository-Lookup-Kosten und Egress-Contention."
-  },
-  "bench.hero.lead": {
-    "message": "Manueller Snapshot, gemessen auf {machine} mit {goVersion}."
-  },
-  "bench.metric.throughput": {
-    "message": "Durchsatz"
-  },
-  "bench.metric.throughputNote": {
-    "message": "Bester Full-Cycle-Pfad"
-  },
-  "bench.metric.latency": {
-    "message": "Latenz"
-  },
-  "bench.metric.latencyNote": {
-    "message": "Niedrigster Full-Cycle-Pfad"
-  },
-  "bench.metric.lookup": {
-    "message": "Fast-Path-Lookup"
-  },
-  "bench.metric.lookupNote": {
-    "message": "Flach von {minCount} bis {maxCount}"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "Kritischer Pfad"
-  },
-  "bench.summary.egress": {
-    "message": "Egress-Spur"
-  },
-  "bench.summary.egressNote": {
-    "message": "Von Sendungen ohne Konkurrenz zu Sendungen mit Konkurrenz"
-  },
-  "bench.summary.missPath": {
-    "message": "Miss-Pfad"
-  },
-  "bench.summary.linear": {
-    "message": "Linear"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{startLatency} bei {firstCount} -> {endLatency} bei {lastCount}"
+    "message": "Der Quellcode steht unter der AGPLv3-Lizenz zur Verfügung."
   },
   "footer.iconsBy": {
-    "message": "Symbole von"
+    "message": "Symbole:"
   },
   "footer.builtWith": {
-    "message": "Erstellt mit"
+    "message": "Erstellt mit {docusaurus}"
   },
   "footer.contributors": {
-    "message": "TunGo-Mitwirkende"
+    "message": "Mitwirkende am TunGo-Projekt"
+  },
+  "homepage.heroTitle": {
+    "message": "Schnelles, schlankes VPN"
   }
 }

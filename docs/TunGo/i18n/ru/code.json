@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "Начните за несколько минут"
+    "message": "Установить"
   },
   "homepage.title": {
-    "message": "Минималистичный, быстрый и безопасный VPN с открытым исходным кодом"
+    "message": "Быстрый и лёгкий VPN"
   },
   "homepage.description": {
-    "message": "Защитите своё соединение с TunGo: лёгкий, быстрый VPN с открытым исходным кодом, написанный на Go с использованием современной криптографии."
+    "message": "TunGo — VPN с открытым исходным кодом, написанный на Go и использующий современную криптографию. Сервер поддерживает Linux, клиенты — Linux, macOS и Windows."
   },
   "feature.cpuFast.title": {
-    "message": "Быстрый"
-  },
-  "feature.cpuFast.description": {
-    "message": "0 allocs/op на hot path."
+    "message": "Низкая нагрузка на процессор"
   },
   "feature.ramEfficient.title": {
-    "message": "Память"
-  },
-  "feature.ramEfficient.description": {
-    "message": "≈5–15 МБ RSS под нагрузкой."
+    "message": "Небольшой расход памяти"
   },
   "feature.secure.title": {
-    "message": "Криптография"
+    "message": "Современная криптография"
   },
   "feature.secure.description": {
-    "message": "Noise IK, X25519, ChaCha20-Poly1305."
+    "message": "Noise IK, X25519 и ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Транспорты"
+    "message": "Три способа подключения"
   },
   "feature.multiTransport.description": {
-    "message": "UDP, TCP, WebSocket/WSS."
+    "message": "UDP, TCP или WebSocket, в том числе WSS."
   },
   "feature.platforms.title": {
-    "message": "Платформы"
+    "message": "Linux, macOS и Windows"
   },
   "feature.platforms.description": {
-    "message": "Linux, macOS, Windows."
+    "message": "Клиенты доступны для amd64 и arm64. Сервер поддерживает Linux."
   },
   "feature.openSource.title": {
-    "message": "Open source"
+    "message": "Открытый исходный код"
   },
   "feature.openSource.description": {
-    "message": "Лицензия AGPLv3."
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "Быстрый и лёгкий"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "userspace VPN"
-  },
-  "homepage.benchmarksCta": {
-    "message": "Смотреть бенчмарки"
-  },
-  "bench.hero.title": {
-    "message": "Снимок бенчмарков"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "Полный dataplane-цикл"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "Шифрование, lookup, валидация, дешифрование, handoff. Верхняя граница для ядра dataplane, а не сквозной пропускной способности VPN."
-  },
-  "bench.section.scaling.title": {
-    "message": "Масштабирование UDP по peer"
-  },
-  "bench.section.scaling.text": {
-    "message": "Агрегированная пропускная способность при распределении работы между множеством peer, а не по одной сериализованной send-линии."
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "Агрегированная пропускная способность"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup и сериализация"
-  },
-  "bench.section.lookup.text": {
-    "message": "Lookup по Internal IP, allowed-host и route-ID остаются плоскими. Misses и сериализация на peer — основные точки давления."
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "Клиент -> Сервер"
-  },
-  "bench.direction.serverClient": {
-    "message": "Сервер -> Клиент"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP Клиент -> Сервер"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP Сервер -> Клиент"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "Точный lookup по internal IP"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "Lookup по allowed-host"
-  },
-  "bench.lookup.routeId": {
-    "message": "Lookup по route-ID"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "Результаты бенчмарка полного dataplane-цикла"
-  },
-  "bench.table.path": {
-    "message": "Путь"
-  },
-  "bench.table.latency": {
-    "message": "Задержка"
-  },
-  "bench.table.throughput": {
-    "message": "Пропускная способность"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "Путь промаха"
-  },
-  "bench.table.lookupAria": {
-    "message": "Результаты бенчмарка repository lookup и miss-path"
-  },
-  "bench.table.lookup": {
-    "message": "Поиск"
-  },
-  "bench.table.peers": {
-    "message": "Пиры"
-  },
-  "bench.page.title": {
-    "message": "Бенчмарки"
-  },
-  "bench.page.description": {
-    "message": "Панель бенчмарков dataplane TunGo: пропускная способность, задержка, стоимость repository lookup и contention на egress."
-  },
-  "bench.hero.lead": {
-    "message": "Ручной снимок, замеренный на {machine} с {goVersion}."
-  },
-  "bench.metric.throughput": {
-    "message": "Пропускная способность"
-  },
-  "bench.metric.throughputNote": {
-    "message": "Лучший full-cycle path"
-  },
-  "bench.metric.latency": {
-    "message": "Задержка"
-  },
-  "bench.metric.latencyNote": {
-    "message": "Минимальный full-cycle path"
-  },
-  "bench.metric.lookup": {
-    "message": "Поиск fast-path"
-  },
-  "bench.metric.lookupNote": {
-    "message": "Плоско от {minCount} до {maxCount}"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "Критический путь"
-  },
-  "bench.summary.egress": {
-    "message": "Egress-линия"
-  },
-  "bench.summary.egressNote": {
-    "message": "От отправки без конкуренции к отправке с конкуренцией"
-  },
-  "bench.summary.missPath": {
-    "message": "Путь промаха"
-  },
-  "bench.summary.linear": {
-    "message": "Линейно"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{startLatency} на {firstCount} -> {endLatency} на {lastCount}"
+    "message": "Исходный код доступен по лицензии AGPLv3."
   },
   "footer.iconsBy": {
-    "message": "Иконки от"
+    "message": "Иконки:"
   },
   "footer.builtWith": {
-    "message": "Собрано на"
+    "message": "Сайт создан на {docusaurus}"
   },
   "footer.contributors": {
-    "message": "Участники TunGo"
+    "message": "Участники проекта TunGo"
+  },
+  "homepage.heroTitle": {
+    "message": "Быстрый и лёгкий VPN"
   }
 }

@@ -1,0 +1,75 @@
+---
+id: Install
+slug: /QuickStart
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installation
+
+Le client fonctionne sous **Linux, macOS et Windows**.<br />
+Le serveur fonctionne **uniquement sous Linux**.
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+<Tabs>
+<TabItem value="amd64" label="amd64" default>
+
+```bash
+curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 && \
+sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
+```
+
+</TabItem>
+<TabItem value="arm64" label="arm64">
+
+```bash
+curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 && \
+sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
+```
+
+</TabItem>
+</Tabs>
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+<Tabs>
+<TabItem value="homebrew" label="Homebrew" default>
+
+```bash
+brew install NLipatov/tungo/tungo
+```
+
+</TabItem>
+<TabItem value="arm64" label="Installation manuelle (Apple Silicon)">
+
+```bash
+curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 && \
+sudo mkdir -p /usr/local/bin && \
+chmod +x tungo && \
+sudo mv tungo /usr/local/bin/
+```
+
+</TabItem>
+<TabItem value="amd64" label="Installation manuelle (Intel)">
+
+```bash
+curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 && \
+sudo mkdir -p /usr/local/bin && \
+chmod +x tungo && \
+sudo mv tungo /usr/local/bin/
+```
+
+</TabItem>
+</Tabs>
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Téléchargez le programme d’installation `.exe` adapté à l’architecture de votre ordinateur depuis la [page des versions](https://github.com/NLipatov/TunGo/releases/latest), puis exécutez-le.
+
+</TabItem>
+</Tabs>

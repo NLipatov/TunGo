@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+通过 TunGo 的终端交互界面配置服务端并连接客户端。
+
+首先[安装 TunGo](../1.%20Install.mdx)。
+
+## 配置服务端 {#server}
+
+请允许所用端口的入站连接。详见[服务端网络与端口](../3.%20Server%20networking.mdx)。
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**生成客户端配置**
+
+```bash
+sudo tungo s gen
+```
+
+复制生成的配置，稍后客户端连接服务端时会用到。
+
+**打开 TunGo**
+
+```bash
+sudo tungo
+```
+
+在使用 systemd 的 Linux 系统上，可以将 TunGo 安装为后台服务。
+
+选择运行方式：
+
+- **在当前终端运行：** 依次选择 `server` → `start server`。
+- **在后台运行（systemd）：** 依次选择 `daemon` → `setup server daemon` → `start daemon`。
+
+服务会在系统启动时自动运行。要删除服务，请依次选择 `daemon` → `delete daemon`。
+
+</TabItem>
+</Tabs>
+
+## 配置客户端 {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. 依次选择 `client` → `add configuration`，输入配置名称（例如 `home`），然后按 Enter。
+2. 粘贴在服务端生成的客户端配置，然后按 Enter。
+3. 从列表中选择刚添加的配置，等待出现 `Status: Connected`。
+
+**在后台运行（可选）**
+
+在使用 systemd 的 Linux 系统上，客户端可以在后台运行，并随系统自动启动。
+
+1. 按 Esc，选择 `Stop`，再按 Enter 确认，即可断开连接并返回菜单。
+2. 选择 `daemon` → `setup client daemon` → `start daemon`。
+
+要删除服务，请依次选择 `daemon` → `delete daemon`。
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. 选择 `add configuration`，输入配置名称（例如 `home`），然后按 Enter。
+2. 粘贴在服务端生成的客户端配置，然后按 Enter。
+3. 从列表中选择刚添加的配置，等待出现 `Status: Connected`。
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+以管理员身份运行 TunGo。
+
+1. 选择 `add configuration`，输入配置名称（例如 `home`），然后按 Enter。
+2. 粘贴在服务端生成的客户端配置，然后按 Enter。
+3. 从列表中选择刚添加的配置，等待出现 `Status: Connected`。
+
+</TabItem>
+</Tabs>

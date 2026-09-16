@@ -7,16 +7,12 @@
     "message": "TunGo 标志",
     "description": "The alt text of navbar logo"
   },
-  "item.label.Tutorial": {
-    "message": "教程",
-    "description": "Navbar item with label Tutorial"
-  },
-  "item.label.Benchmarks": {
-    "message": "基准测试",
-    "description": "Navbar item with label Benchmarks"
-  },
   "item.label.GitHub": {
     "message": "GitHub",
     "description": "Navbar item with label GitHub"
+  },
+  "item.label.Installation": {
+    "message": "安装",
+    "description": "Navbar item with label Installation"
   }
 }

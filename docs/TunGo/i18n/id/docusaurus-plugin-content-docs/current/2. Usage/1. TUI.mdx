@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+Siapkan server dan hubungkan klien melalui antarmuka interaktif TunGo di terminal.
+
+[Instal TunGo](../1.%20Install.mdx) terlebih dahulu.
+
+## Menyiapkan server {#server}
+
+Izinkan koneksi masuk ke port yang digunakan. Lihat [Jaringan dan port server](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Buat konfigurasi klien**
+
+```bash
+sudo tungo s gen
+```
+
+Salin konfigurasi ini untuk menghubungkan klien.
+
+**Buka TunGo**
+
+```bash
+sudo tungo
+```
+
+Di Linux dengan systemd, TunGo dapat dipasang sebagai layanan latar belakang.
+
+Pilih cara menjalankannya:
+
+- **Di terminal ini:** `server` → `start server`.
+- **Di latar belakang (systemd):** `daemon` → `setup server daemon` → `start daemon`.
+
+Layanan akan berjalan otomatis saat sistem dinyalakan. Untuk menghapusnya, pilih `daemon` → `delete daemon`.
+
+</TabItem>
+</Tabs>
+
+## Menyiapkan klien {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. Pilih `client` → `add configuration`, masukkan nama seperti `home`, lalu tekan Enter.
+2. Tempel konfigurasi klien yang dibuat di server, lalu tekan Enter.
+3. Pilih konfigurasi tersebut dari daftar dan tunggu hingga `Status: Connected` muncul.
+
+**Jalankan di latar belakang (opsional)**
+
+Di Linux dengan systemd, klien dapat berjalan di latar belakang dan dimulai otomatis saat sistem dinyalakan.
+
+1. Tekan Esc, pilih `Stop`, lalu tekan Enter untuk memutus koneksi dan kembali ke menu.
+2. Pilih `daemon` → `setup client daemon` → `start daemon`.
+
+Untuk menghapus layanan, pilih `daemon` → `delete daemon`.
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. Pilih `add configuration`, masukkan nama seperti `home`, lalu tekan Enter.
+2. Tempel konfigurasi klien yang dibuat di server, lalu tekan Enter.
+3. Pilih konfigurasi tersebut dari daftar dan tunggu hingga `Status: Connected` muncul.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Jalankan TunGo sebagai administrator.
+
+1. Pilih `add configuration`, masukkan nama seperti `home`, lalu tekan Enter.
+2. Tempel konfigurasi klien yang dibuat di server, lalu tekan Enter.
+3. Pilih konfigurasi tersebut dari daftar dan tunggu hingga `Status: Connected` muncul.
+
+</TabItem>
+</Tabs>

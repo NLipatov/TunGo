@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+Настройка сервера и подключение клиента в интерактивном интерфейсе TunGo.
+
+Сначала [установите TunGo](../1.%20Install.mdx).
+
+## Настройка сервера {#server}
+
+Разрешите входящие подключения к используемым портам. Подробнее: [Сеть и порты сервера](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Создайте конфигурацию клиента**
+
+```bash
+sudo tungo s gen
+```
+
+Скопируйте конфигурацию — она понадобится для подключения клиента.
+
+**Откройте TunGo**
+
+```bash
+sudo tungo
+```
+
+В Linux с systemd TunGo может установить фоновую службу (демон).
+
+Выберите способ запуска:
+
+- **В текущем терминале:** `server` → `start server`.
+- **В фоновом режиме (systemd):** `daemon` → `setup server daemon` → `start daemon`.
+
+Служба автоматически запускается после перезагрузки системы. Чтобы удалить её, выберите `daemon` → `delete daemon`.
+
+</TabItem>
+</Tabs>
+
+## Настройка клиента {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. Выберите `client` → `add configuration`, введите имя конфигурации, например `home`, и нажмите Enter.
+2. Вставьте конфигурацию клиента, созданную на сервере, и нажмите Enter.
+3. Выберите конфигурацию в списке и дождитесь статуса `Status: Connected`.
+
+**Запуск в фоне (необязательно)**
+
+В Linux с systemd клиент может работать в фоне и автоматически запускаться после перезагрузки.
+
+1. Нажмите Esc, выберите `Stop` и нажмите Enter, чтобы отключиться и вернуться в меню.
+2. Выберите `daemon` → `setup client daemon` → `start daemon`.
+
+Чтобы удалить службу, выберите `daemon` → `delete daemon`.
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. Выберите `add configuration`, введите имя конфигурации, например `home`, и нажмите Enter.
+2. Вставьте конфигурацию клиента, созданную на сервере, и нажмите Enter.
+3. Выберите конфигурацию в списке и дождитесь статуса `Status: Connected`.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Запустите TunGo от имени администратора.
+
+1. Выберите `add configuration`, введите имя конфигурации, например `home`, и нажмите Enter.
+2. Вставьте конфигурацию клиента, созданную на сервере, и нажмите Enter.
+3. Выберите конфигурацию в списке и дождитесь статуса `Status: Connected`.
+
+</TabItem>
+</Tabs>

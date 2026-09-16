@@ -1,0 +1,13 @@
+---
+id: ServerNetworking
+---
+
+# Netzwerk und Ports des Servers
+
+Standardports: **UDP — 9090**, **TCP — 8080**, **WebSocket — 1010**. Standardmäßig ist nur UDP aktiviert.
+
+Die verwendeten Ports müssen vom Client aus erreichbar und in den Firewalls des Servers und des Anbieters freigegeben sein.
+
+## Protokoll oder Port ändern
+
+Aktivierte Protokolle und Ports werden in `/etc/tungo/server_configuration.json` festgelegt. Wenn Sie einen Serverport ändern, passen Sie ihn auch in den Client-Konfigurationen an. Starten Sie Server und Clients danach neu.

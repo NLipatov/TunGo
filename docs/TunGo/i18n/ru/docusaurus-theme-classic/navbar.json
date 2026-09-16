@@ -7,16 +7,12 @@
     "message": "Логотип TunGo",
     "description": "The alt text of navbar logo"
   },
-  "item.label.Tutorial": {
-    "message": "Руководство",
-    "description": "Navbar item with label Tutorial"
-  },
-  "item.label.Benchmarks": {
-    "message": "Бенчмарки",
-    "description": "Navbar item with label Benchmarks"
-  },
   "item.label.GitHub": {
     "message": "GitHub",
     "description": "Navbar item with label GitHub"
+  },
+  "item.label.Installation": {
+    "message": "Установка",
+    "description": "Navbar item with label Installation"
   }
 }

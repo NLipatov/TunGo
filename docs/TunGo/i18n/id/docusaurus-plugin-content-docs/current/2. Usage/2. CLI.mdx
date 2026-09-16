@@ -1,0 +1,101 @@
+---
+id: CLI
+slug: /CLI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# CLI
+
+Jalankan server dan klien dari baris perintah.
+
+[Instal TunGo](../1.%20Install.mdx) terlebih dahulu.
+
+## Menyiapkan server {#server}
+
+Izinkan koneksi masuk ke port yang digunakan. Lihat [Jaringan dan port server](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Buat konfigurasi klien**
+
+```bash
+sudo tungo s gen
+```
+
+Salin konfigurasi ini untuk menghubungkan klien.
+
+Jalankan server:
+
+```bash
+sudo tungo s
+```
+
+</TabItem>
+<TabItem value="docker" label="Docker">
+
+Perintah berikut ditujukan untuk Docker Engine di Linux dengan akses ke `/dev/net/tun`.
+
+**Buat konfigurasi klien**
+
+```bash
+docker run --rm --network host \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest s gen
+```
+
+Salin konfigurasi ini untuk menghubungkan klien.
+
+Volume `tungo_volume` menyimpan konfigurasi dan kunci di `/etc/tungo`. Pertahankan volume ini saat mengganti kontainer.
+
+**Jalankan server**
+
+Pada komputer yang menjalankan Docker, aktifkan penerusan paket dan simpan pengaturannya agar tetap aktif setelah komputer dimulai ulang:
+
+```bash
+printf '%s\n' 'net.ipv4.ip_forward = 1' 'net.ipv6.conf.all.forwarding = 1' | \
+  sudo tee /etc/sysctl.d/90-tungo.conf
+sudo sysctl -p /etc/sysctl.d/90-tungo.conf
+```
+
+```bash
+docker run -d \
+  --name tungo \
+  --restart unless-stopped \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest
+```
+
+- Pantau log: `docker logs -f tungo`
+- Hentikan server: `docker stop tungo`
+- Jalankan kembali: `docker start tungo`
+
+</TabItem>
+</Tabs>
+
+## Menyiapkan klien {#client}
+
+Di **Linux / macOS**, buat direktori `/etc/tungo` jika belum ada. Simpan konfigurasi klien yang telah dibuat ke `/etc/tungo/client_configuration.json`, lalu atur izin berkasnya ke `600`. Langkah-langkah ini memerlukan hak administrator. Jalankan klien:
+
+```bash
+sudo tungo c
+```
+
+<details>
+<summary>Windows</summary>
+
+Pada **Windows**, simpan konfigurasi di `%ProgramData%\TunGo\client_configuration.json`. Buka PowerShell sebagai administrator, lalu jalankan:
+
+```powershell
+cd "$env:ProgramFiles\TunGo"
+.\tungo-windows-amd64.exe c
+```
+
+Untuk arm64, ganti `amd64` dengan `arm64` pada nama berkas.
+
+</details>

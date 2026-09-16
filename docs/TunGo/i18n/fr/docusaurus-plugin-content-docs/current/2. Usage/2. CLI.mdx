@@ -1,0 +1,101 @@
+---
+id: CLI
+slug: /CLI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# CLI
+
+Démarrez le serveur et le client en ligne de commande.
+
+Commencez par [installer TunGo](../1.%20Install.mdx).
+
+## Configurer le serveur {#server}
+
+Autorisez les connexions entrantes sur les ports utilisés. Consultez [Réseau et ports du serveur](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Créer une configuration client**
+
+```bash
+sudo tungo s gen
+```
+
+Copiez la configuration : elle vous servira à connecter le client.
+
+Démarrez le serveur :
+
+```bash
+sudo tungo s
+```
+
+</TabItem>
+<TabItem value="docker" label="Docker">
+
+Les commandes ci-dessous sont prévues pour Docker Engine sous Linux avec accès à `/dev/net/tun`.
+
+**Créer une configuration client**
+
+```bash
+docker run --rm --network host \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest s gen
+```
+
+Copiez la configuration : elle vous servira à connecter le client.
+
+Le volume `tungo_volume` conserve les configurations et les clés dans `/etc/tungo`. Gardez ce volume lorsque vous remplacez le conteneur.
+
+**Démarrer le serveur**
+
+Activez le transfert de paquets sur l’hôte et conservez ce réglage après redémarrage :
+
+```bash
+printf '%s\n' 'net.ipv4.ip_forward = 1' 'net.ipv6.conf.all.forwarding = 1' | \
+  sudo tee /etc/sysctl.d/90-tungo.conf
+sudo sysctl -p /etc/sysctl.d/90-tungo.conf
+```
+
+```bash
+docker run -d \
+  --name tungo \
+  --restart unless-stopped \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest
+```
+
+- Afficher les journaux en direct : `docker logs -f tungo`
+- Arrêter le serveur : `docker stop tungo`
+- Relancer le serveur : `docker start tungo`
+
+</TabItem>
+</Tabs>
+
+## Configurer le client {#client}
+
+Sous **Linux / macOS**, créez le dossier `/etc/tungo` s’il n’existe pas. Enregistrez la configuration client générée dans `/etc/tungo/client_configuration.json` et réglez les permissions du fichier sur `600`. Ces opérations nécessitent les droits administrateur. Démarrez ensuite le client :
+
+```bash
+sudo tungo c
+```
+
+<details>
+<summary>Windows</summary>
+
+Sur **Windows**, enregistrez la configuration dans `%ProgramData%\TunGo\client_configuration.json`. Dans PowerShell ouvert en tant qu’administrateur, exécutez :
+
+```powershell
+cd "$env:ProgramFiles\TunGo"
+.\tungo-windows-amd64.exe c
+```
+
+Pour arm64, remplacez `amd64` par `arm64` dans le nom du fichier.
+
+</details>

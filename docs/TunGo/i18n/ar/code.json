@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "ابدأ في دقائق"
+    "message": "تثبيت"
   },
   "homepage.title": {
-    "message": "VPN مفتوح المصدر بسيط وسريع وآمن"
+    "message": "شبكة VPN سريعة وخفيفة"
   },
   "homepage.description": {
-    "message": "أمّن اتصالك مع TunGo: VPN خفيف وسريع ومفتوح المصدر مبني بـ Go باستخدام تشفير حديث."
+    "message": "TunGo شبكة VPN مفتوحة المصدر، طُوّرت بلغة Go وتستخدم تقنيات تشفير حديثة. يدعم الخادم Linux، ويدعم العميل Linux وmacOS وWindows."
   },
   "feature.cpuFast.title": {
-    "message": "سريع"
-  },
-  "feature.cpuFast.description": {
-    "message": "0 allocs/op على المسار السريع."
+    "message": "حمل منخفض على المعالج"
   },
   "feature.ramEfficient.title": {
-    "message": "الذاكرة"
-  },
-  "feature.ramEfficient.description": {
-    "message": "≈5–15 ميجابايت RSS تحت الحمل."
+    "message": "استهلاك منخفض للذاكرة"
   },
   "feature.secure.title": {
-    "message": "التشفير"
+    "message": "تقنيات تشفير حديثة"
   },
   "feature.secure.description": {
-    "message": "Noise IK و X25519 و ChaCha20-Poly1305."
+    "message": "Noise IK وX25519 وChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "النواقل"
+    "message": "ثلاث طرق للاتصال"
   },
   "feature.multiTransport.description": {
-    "message": "UDP و TCP و WebSocket/WSS."
+    "message": "اختر UDP أو TCP أو WebSocket، بما في ذلك WSS."
   },
   "feature.platforms.title": {
-    "message": "المنصات"
+    "message": "Linux وmacOS وWindows"
   },
   "feature.platforms.description": {
-    "message": "Linux و macOS و Windows."
+    "message": "تطبيقات العميل تدعم amd64 وarm64. ويدعم الخادم Linux."
   },
   "feature.openSource.title": {
-    "message": "مفتوح"
+    "message": "مفتوح المصدر"
   },
   "feature.openSource.description": {
-    "message": "مرخّص تحت AGPLv3."
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "سريع وخفيف"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "VPN يعمل في فضاء المستخدم"
-  },
-  "homepage.benchmarksCta": {
-    "message": "عرض القياسات"
-  },
-  "bench.hero.title": {
-    "message": "لقطة القياسات"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "دورة dataplane كاملة"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "تشفير، lookup، تحقق، فك تشفير، handoff. هذا حد أعلى لنواة dataplane وليس لسرعة VPN من الطرف إلى الطرف."
-  },
-  "bench.section.scaling.title": {
-    "message": "توسّع UDP متعدد الـ peer"
-  },
-  "bench.section.scaling.text": {
-    "message": "إنتاجية مجمعة مع توزيع العمل على عدد كبير من الـ peer، وليس عبر مسار إرسال واحد متسلسل."
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "الإنتاجية المجمعة"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup والتسلسل"
-  },
-  "bench.section.lookup.text": {
-    "message": "Lookup عبر Internal-IP و allowed-host و route-ID يبقى ثابتًا. أما misses والتسلسل لكل peer فهما نقاط الضغط الحقيقية."
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "العميل -> الخادم"
-  },
-  "bench.direction.serverClient": {
-    "message": "الخادم -> العميل"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP العميل -> الخادم"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP الخادم -> العميل"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "Lookup داخلي دقيق"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "بحث المضيف المسموح"
-  },
-  "bench.lookup.routeId": {
-    "message": "بحث معرّف المسار"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "نتائج قياس دورة dataplane الكاملة"
-  },
-  "bench.table.path": {
-    "message": "المسار"
-  },
-  "bench.table.latency": {
-    "message": "الكمون"
-  },
-  "bench.table.throughput": {
-    "message": "الإنتاجية"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "مسار الإخفاق"
-  },
-  "bench.table.lookupAria": {
-    "message": "نتائج قياس repository lookup و miss path"
-  },
-  "bench.table.lookup": {
-    "message": "البحث"
-  },
-  "bench.table.peers": {
-    "message": "النظراء"
-  },
-  "bench.page.title": {
-    "message": "القياسات"
-  },
-  "bench.page.description": {
-    "message": "لوحة قياسات لـ dataplane في TunGo: الإنتاجية والكمون وكلفة lookup في repository والتزاحم في egress."
-  },
-  "bench.hero.lead": {
-    "message": "لقطة يدوية جرى قياسها على {machine} باستخدام {goVersion}."
-  },
-  "bench.metric.throughput": {
-    "message": "الإنتاجية"
-  },
-  "bench.metric.throughputNote": {
-    "message": "أفضل مسار full-cycle"
-  },
-  "bench.metric.latency": {
-    "message": "الكمون"
-  },
-  "bench.metric.latencyNote": {
-    "message": "أقل مسار full-cycle"
-  },
-  "bench.metric.lookup": {
-    "message": "بحث المسار السريع"
-  },
-  "bench.metric.lookupNote": {
-    "message": "يبقى ثابتًا من {minCount} إلى {maxCount}"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "المسار الحرج"
-  },
-  "bench.summary.egress": {
-    "message": "مسار egress"
-  },
-  "bench.summary.egressNote": {
-    "message": "من إرسال بلا تزاحم إلى إرسال مع تزاحم"
-  },
-  "bench.summary.missPath": {
-    "message": "مسار الإخفاق"
-  },
-  "bench.summary.linear": {
-    "message": "خطي"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{startLatency} عند {firstCount} -> {endLatency} عند {lastCount}"
+    "message": "الشيفرة المصدرية متاحة بموجب ترخيص AGPLv3."
   },
   "footer.iconsBy": {
-    "message": "الأيقونات من"
+    "message": "الأيقونات:"
   },
   "footer.builtWith": {
-    "message": "مبني باستخدام"
+    "message": "بُني الموقع باستخدام {docusaurus}"
   },
   "footer.contributors": {
-    "message": "مساهمو TunGo"
+    "message": "المساهمون في مشروع TunGo"
+  },
+  "homepage.heroTitle": {
+    "message": "شبكة VPN سريعة وخفيفة"
   }
 }

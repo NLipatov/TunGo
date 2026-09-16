@@ -1,0 +1,13 @@
+---
+id: ServerNetworking
+---
+
+# Jaringan dan port server
+
+Port bawaan: **UDP — 9090**, **TCP — 8080**, **WebSocket — 1010**. Hanya UDP yang aktif pada pengaturan awal.
+
+Pastikan klien dapat mengakses port yang digunakan dan firewall server maupun penyedia mengizinkan koneksinya.
+
+## Ubah protokol atau port
+
+Protokol yang diaktifkan dan port diatur di `/etc/tungo/server_configuration.json`. Jika port server diubah, perbarui juga port pada konfigurasi klien. Setelah itu, mulai ulang server dan klien.
