@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+أعدّ الخادم واتصل به من العميل باستخدام واجهة TunGo التفاعلية في الطرفية.
+
+ابدأ [بتثبيت TunGo](../1.%20Install.mdx).
+
+## إعداد الخادم {#server}
+
+اسمح بالاتصالات الواردة إلى المنافذ المستخدمة. راجع [شبكة الخادم ومنافذه](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**أنشئ إعدادات العميل**
+
+```bash
+sudo tungo s gen
+```
+
+انسخ الإعدادات — ستحتاج إليها لتوصيل العميل.
+
+**افتح TunGo**
+
+```bash
+sudo tungo
+```
+
+على Linux مع systemd، يمكنك إعداد TunGo كخدمة تعمل في الخلفية.
+
+اختر طريقة التشغيل:
+
+- **في الطرفية الحالية:** اختر `server` ثم `start server`.
+- **في الخلفية (systemd):** اختر `daemon` ثم `setup server daemon` ثم `start daemon`.
+
+تبدأ الخدمة تلقائيًا بعد إعادة تشغيل الجهاز. لإزالة الخدمة، اختر `daemon` ثم `delete daemon`.
+
+</TabItem>
+</Tabs>
+
+## إعداد العميل {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. اختر `client` ثم `add configuration`، واكتب اسمًا للإعدادات، مثل `home`، ثم اضغط Enter.
+2. ألصق إعدادات العميل التي أنشأتها على الخادم، ثم اضغط Enter.
+3. اختر الإعدادات التي أضفتها من القائمة، وانتظر ظهور `Status: Connected`.
+
+**التشغيل في الخلفية (اختياري)**
+
+على Linux مع systemd، يمكن للعميل العمل في الخلفية والبدء تلقائيًا عند تشغيل الجهاز.
+
+1. اضغط Esc، واختر `Stop`، ثم اضغط Enter لقطع الاتصال والعودة إلى القائمة.
+2. اختر `daemon` ثم `setup client daemon` ثم `start daemon`.
+
+لإزالة الخدمة، اختر `daemon` ثم `delete daemon`.
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. اختر `add configuration`، واكتب اسمًا للإعدادات، مثل `home`، ثم اضغط Enter.
+2. ألصق إعدادات العميل التي أنشأتها على الخادم، ثم اضغط Enter.
+3. اختر الإعدادات التي أضفتها من القائمة، وانتظر ظهور `Status: Connected`.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+شغّل TunGo بصلاحيات المسؤول.
+
+1. اختر `add configuration`، واكتب اسمًا للإعدادات، مثل `home`، ثم اضغط Enter.
+2. ألصق إعدادات العميل التي أنشأتها على الخادم، ثم اضغط Enter.
+3. اختر الإعدادات التي أضفتها من القائمة، وانتظر ظهور `Status: Connected`.
+
+</TabItem>
+</Tabs>

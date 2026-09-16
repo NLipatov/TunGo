@@ -13,15 +13,11 @@ function HomepageHeader() {
       <div className={Clsx('container', Styles.heroGrid)}>
         <div className={Styles.heroCopy}>
           <Heading as="h1" className={Styles.heroTitle}>
-            <Translate id="homepage.heroTitle.prefix">Fast, lightweight</Translate>{' '}
-            <Translate id="homepage.heroTitle.suffix">userspace VPN</Translate>
+            <Translate id="homepage.heroTitle">Fast, lightweight VPN</Translate>
           </Heading>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
-              <Translate id="homepage.cta">Get started in minutes</Translate>
-            </Link>
-            <Link className="button button--outline button--primary button--lg" to="/benchmarks">
-              <Translate id="homepage.benchmarksCta">View benchmarks</Translate>
+              <Translate id="homepage.cta">Install</Translate>
             </Link>
           </div>
         </div>
@@ -34,8 +30,8 @@ function HomepageHeader() {
 export default function Home() {
   return (
     <Layout
-        title={translate({id: 'homepage.title', message: 'Minimalistic, Fast & Secure Open Source VPN'})}
-        description={translate({id: 'homepage.description', message: 'Secure your connection with TunGo: lightweight, fast, open-source VPN built in Go using modern cryptography.'})}>
+        title={translate({id: 'homepage.title', message: 'Fast, lightweight VPN'})}
+        description={translate({id: 'homepage.description', message: 'TunGo is an open-source VPN written in Go with modern cryptography. The server supports Linux; clients support Linux, macOS and Windows.'})}>
       <div className={Styles.homeShell}>
         <HomepageHeader />
         <main className={Styles.homeMain}>

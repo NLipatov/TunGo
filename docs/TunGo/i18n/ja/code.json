@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "数分で始める"
+    "message": "インストール"
   },
   "homepage.title": {
-    "message": "ミニマル、高速、セキュアなオープンソース VPN"
+    "message": "高速で軽量な VPN"
   },
   "homepage.description": {
-    "message": "TunGo で接続を保護：最新の暗号技術を使用し Go で構築された軽量、高速、オープンソース VPN。"
+    "message": "TunGo は Go で開発されたオープンソースの VPN です。サーバーは Linux、クライアントは Linux・macOS・Windows に対応し、通信は暗号化されます。"
   },
   "feature.cpuFast.title": {
-    "message": "高速"
-  },
-  "feature.cpuFast.description": {
-    "message": "ホットパスで 0 allocs/op。"
+    "message": "低い CPU 負荷"
   },
   "feature.ramEfficient.title": {
-    "message": "メモリ"
-  },
-  "feature.ramEfficient.description": {
-    "message": "高負荷時 ≈5–15 MB RSS。"
+    "message": "少ないメモリで動作"
   },
   "feature.secure.title": {
-    "message": "暗号"
+    "message": "通信を暗号化"
   },
   "feature.secure.description": {
-    "message": "Noise IK、X25519、ChaCha20-Poly1305。"
+    "message": "Noise IK、X25519、ChaCha20-Poly1305 を採用。"
   },
   "feature.multiTransport.title": {
-    "message": "トランスポート"
+    "message": "3 種類の接続方式"
   },
   "feature.multiTransport.description": {
-    "message": "UDP、TCP、WebSocket/WSS。"
+    "message": "UDP、TCP、WebSocket に対応。WSS も利用できます。"
   },
   "feature.platforms.title": {
-    "message": "プラットフォーム"
+    "message": "Linux・macOS・Windows 対応"
   },
   "feature.platforms.description": {
-    "message": "Linux、macOS、Windows。"
+    "message": "クライアントは amd64 と arm64 に対応。サーバーは Linux に対応しています。"
   },
   "feature.openSource.title": {
-    "message": "OSS"
+    "message": "オープンソース"
   },
   "feature.openSource.description": {
-    "message": "AGPLv3 ライセンス。"
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "高速で軽量な"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "ユーザースペース VPN"
-  },
-  "homepage.benchmarksCta": {
-    "message": "ベンチマークを見る"
-  },
-  "bench.hero.title": {
-    "message": "ベンチマークスナップショット"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "フルサイクル dataplane"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "暗号化、lookup、検証、復号、handoff。これは dataplane コアの上限であり、エンドツーエンド VPN スループットではありません。"
-  },
-  "bench.section.scaling.title": {
-    "message": "マルチピア UDP スケーリング"
-  },
-  "bench.section.scaling.text": {
-    "message": "単一の直列化された送信レーンではなく、多数のピアに作業を分散したときの集約スループット。"
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "集約スループット"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup とシリアライズ"
-  },
-  "bench.section.lookup.text": {
-    "message": "Internal-IP、allowed-host、route-ID の lookup は安定しています。ミスと peer ごとのシリアライズが本当の圧力点です。"
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "クライアント -> サーバー"
-  },
-  "bench.direction.serverClient": {
-    "message": "サーバー -> クライアント"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP クライアント -> サーバー"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP サーバー -> クライアント"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "正確な internal lookup"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "許可ホスト検索"
-  },
-  "bench.lookup.routeId": {
-    "message": "Route ID 検索"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "フルサイクル dataplane ベンチマーク結果"
-  },
-  "bench.table.path": {
-    "message": "パス"
-  },
-  "bench.table.latency": {
-    "message": "レイテンシ"
-  },
-  "bench.table.throughput": {
-    "message": "スループット"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "ミスパス"
-  },
-  "bench.table.lookupAria": {
-    "message": "リポジトリ lookup と miss path のベンチマーク結果"
-  },
-  "bench.table.lookup": {
-    "message": "検索"
-  },
-  "bench.table.peers": {
-    "message": "ピア"
-  },
-  "bench.page.title": {
-    "message": "ベンチマーク"
-  },
-  "bench.page.description": {
-    "message": "TunGo dataplane のスループット、レイテンシ、リポジトリ lookup コスト、egress contention のベンチマークダッシュボード。"
-  },
-  "bench.hero.lead": {
-    "message": "{machine} / {goVersion} で手動計測したスナップショット。"
-  },
-  "bench.metric.throughput": {
-    "message": "スループット"
-  },
-  "bench.metric.throughputNote": {
-    "message": "最良の full-cycle パス"
-  },
-  "bench.metric.latency": {
-    "message": "レイテンシ"
-  },
-  "bench.metric.latencyNote": {
-    "message": "最小の full-cycle パス"
-  },
-  "bench.metric.lookup": {
-    "message": "Fast-path 検索"
-  },
-  "bench.metric.lookupNote": {
-    "message": "{minCount} から {maxCount} までフラット"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "ホットパス"
-  },
-  "bench.summary.egress": {
-    "message": "Egress レーン"
-  },
-  "bench.summary.egressNote": {
-    "message": "競合なし送信から競合あり送信へ"
-  },
-  "bench.summary.missPath": {
-    "message": "ミスパス"
-  },
-  "bench.summary.linear": {
-    "message": "線形"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{firstCount} で {startLatency} -> {lastCount} で {endLatency}"
+    "message": "ソースコードは AGPLv3 ライセンスで公開しています。"
   },
   "footer.iconsBy": {
-    "message": "アイコン提供"
+    "message": "アイコン："
   },
   "footer.builtWith": {
-    "message": "使用技術"
+    "message": "{docusaurus} で構築"
   },
   "footer.contributors": {
     "message": "TunGo コントリビューター"
+  },
+  "homepage.heroTitle": {
+    "message": "高速で軽量な VPN"
   }
 }

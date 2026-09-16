@@ -83,12 +83,7 @@ const config = {
             type: 'docSidebar',
             sidebarId: 'tutorialSidebar',
             position: 'left',
-            label: 'Tutorial',
-          },
-          {
-            to: '/benchmarks',
-            label: 'Benchmarks',
-            position: 'left',
+            label: 'Installation',
           },
           {
             type: 'localeDropdown',

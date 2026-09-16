@@ -1,0 +1,13 @@
+---
+id: ServerNetworking
+---
+
+# Rede e portas do servidor
+
+Portas padrão: **UDP — 9090**, **TCP — 8080**, **WebSocket — 1010**. Apenas UDP vem ativado por padrão.
+
+Verifique se o cliente consegue acessar as portas usadas e se os firewalls do servidor e do provedor permitem as conexões.
+
+## Alterar o protocolo ou a porta
+
+Os protocolos ativados e as portas são configurados em `/etc/tungo/server_configuration.json`. Se você alterar uma porta do servidor, atualize-a também nas configurações dos clientes. Depois, reinicie o servidor e os clientes.

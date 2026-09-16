@@ -1,0 +1,101 @@
+---
+id: CLI
+slug: /CLI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# CLI
+
+コマンドラインからサーバーとクライアントを起動します。
+
+まず [TunGo をインストール](../1.%20Install.mdx)してください。
+
+## サーバーの設定 {#server}
+
+使用するポートへの外部からの接続を許可してください。詳しくは[サーバーのネットワークとポート](../3.%20Server%20networking.mdx)を参照してください。
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**クライアント設定を作成する**
+
+```bash
+sudo tungo s gen
+```
+
+設定をコピーしてください。クライアントの接続に使用します。
+
+サーバーを起動します。
+
+```bash
+sudo tungo s
+```
+
+</TabItem>
+<TabItem value="docker" label="Docker">
+
+以下のコマンドは、`/dev/net/tun` を利用できる Linux 上の Docker Engine 向けです。
+
+**クライアント設定を作成する**
+
+```bash
+docker run --rm --network host \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest s gen
+```
+
+設定をコピーしてください。クライアントの接続に使用します。
+
+`tungo_volume` ボリュームには `/etc/tungo` の設定と鍵を保存します。コンテナを作り直す際も、このボリュームは残してください。
+
+**サーバーを起動する**
+
+ホストでパケット転送を有効にし、再起動後も設定を維持します。
+
+```bash
+printf '%s\n' 'net.ipv4.ip_forward = 1' 'net.ipv6.conf.all.forwarding = 1' | \
+  sudo tee /etc/sysctl.d/90-tungo.conf
+sudo sysctl -p /etc/sysctl.d/90-tungo.conf
+```
+
+```bash
+docker run -d \
+  --name tungo \
+  --restart unless-stopped \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest
+```
+
+- ログをリアルタイムで表示する：`docker logs -f tungo`
+- サーバーを停止する：`docker stop tungo`
+- 停止したサーバーを起動する：`docker start tungo`
+
+</TabItem>
+</Tabs>
+
+## クライアントの設定 {#client}
+
+**Linux / macOS** では、`/etc/tungo` ディレクトリがなければ作成します。作成済みのクライアント設定を `/etc/tungo/client_configuration.json` に保存し、ファイルのアクセス権を `600` に設定してください。これらの操作には管理者権限が必要です。その後、クライアントを起動します。
+
+```bash
+sudo tungo c
+```
+
+<details>
+<summary>Windows</summary>
+
+**Windows** では、設定を `%ProgramData%\TunGo\client_configuration.json` に保存します。管理者として PowerShell を開き、次のコマンドを実行してください。
+
+```powershell
+cd "$env:ProgramFiles\TunGo"
+.\tungo-windows-amd64.exe c
+```
+
+arm64 では、ファイル名の `amd64` を `arm64` に置き換えてください。
+
+</details>

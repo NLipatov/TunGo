@@ -1,12 +1,12 @@
 {
   "homepage.cta": {
-    "message": "Get started in minutes"
+    "message": "Install"
   },
   "homepage.title": {
-    "message": "Minimalistic, Fast & Secure Open Source VPN"
+    "message": "Fast, lightweight VPN"
   },
   "homepage.description": {
-    "message": "Secure your connection with TunGo: lightweight, fast, open-source VPN built in Go using modern cryptography."
+    "message": "TunGo is an open-source VPN written in Go with modern cryptography. The server supports Linux; clients support Linux, macOS and Windows."
   },
   "theme.ErrorPageContent.title": {
     "message": "This page crashed.",
@@ -332,183 +332,45 @@
     "description": "The title of the tag list page"
   },
   "feature.cpuFast.title": {
-    "message": "Fast"
-  },
-  "feature.cpuFast.description": {
-    "message": "0 allocs/op on the hot path."
+    "message": "Low CPU usage"
   },
   "feature.ramEfficient.title": {
-    "message": "Memory"
-  },
-  "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS under load."
+    "message": "Low RAM usage"
   },
   "feature.secure.title": {
-    "message": "Crypto"
+    "message": "Modern cryptography"
   },
   "feature.secure.description": {
-    "message": "Noise IK, X25519, ChaCha20-Poly1305."
+    "message": "Noise IK, X25519 and ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Transports"
+    "message": "Three connection options"
   },
   "feature.multiTransport.description": {
-    "message": "UDP, TCP, WebSocket/WSS."
+    "message": "Choose UDP, TCP or WebSocket, including WSS."
   },
   "feature.platforms.title": {
-    "message": "Platforms"
+    "message": "Linux, macOS and Windows"
   },
   "feature.platforms.description": {
-    "message": "Linux, macOS, Windows."
+    "message": "Clients support amd64 and arm64. The server supports Linux."
   },
   "feature.openSource.title": {
-    "message": "OSS"
+    "message": "Open source"
   },
   "feature.openSource.description": {
-    "message": "AGPLv3-licensed."
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "Fast, lightweight"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "userspace VPN"
-  },
-  "homepage.benchmarksCta": {
-    "message": "View benchmarks"
-  },
-  "bench.hero.title": {
-    "message": "Benchmark snapshot"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "Full-cycle dataplane"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "Encrypt, lookup, validate, decrypt, handoff. Upper-bound for the dataplane core, not end-to-end VPN throughput."
-  },
-  "bench.section.scaling.title": {
-    "message": "Multi-peer UDP scaling"
-  },
-  "bench.section.scaling.text": {
-    "message": "Aggregate throughput with work spread across many peers, not one serialized send lane."
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "Aggregate throughput"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup and serialization"
-  },
-  "bench.section.lookup.text": {
-    "message": "Internal-IP, allowed-host, and route-ID lookups stay flat. Misses and per-peer serialization are the real pressure points."
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "Client -> Server"
-  },
-  "bench.direction.serverClient": {
-    "message": "Server -> Client"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP Client -> Server"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP Server -> Client"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "Exact internal lookup"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "Allowed host lookup"
-  },
-  "bench.lookup.routeId": {
-    "message": "Route ID lookup"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "Full-cycle dataplane benchmark results"
-  },
-  "bench.table.path": {
-    "message": "Path"
-  },
-  "bench.table.latency": {
-    "message": "Latency"
-  },
-  "bench.table.throughput": {
-    "message": "Throughput"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "Miss path"
-  },
-  "bench.table.lookupAria": {
-    "message": "Repository lookup and miss-path benchmark results"
-  },
-  "bench.table.lookup": {
-    "message": "Lookup"
-  },
-  "bench.table.peers": {
-    "message": "Peers"
-  },
-  "bench.page.title": {
-    "message": "Benchmarks"
-  },
-  "bench.page.description": {
-    "message": "Benchmark dashboard for TunGo dataplane throughput, latency, repository lookup costs, and egress contention."
-  },
-  "bench.hero.lead": {
-    "message": "Manual snapshot measured on {machine} with {goVersion}."
-  },
-  "bench.metric.throughput": {
-    "message": "Throughput"
-  },
-  "bench.metric.throughputNote": {
-    "message": "Best full-cycle path"
-  },
-  "bench.metric.latency": {
-    "message": "Latency"
-  },
-  "bench.metric.latencyNote": {
-    "message": "Lowest full-cycle path"
-  },
-  "bench.metric.lookup": {
-    "message": "Fast-path lookup"
-  },
-  "bench.metric.lookupNote": {
-    "message": "Flat from {minCount} to {maxCount}"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "Hot path"
-  },
-  "bench.summary.egress": {
-    "message": "Egress lane"
-  },
-  "bench.summary.egressNote": {
-    "message": "Uncontended to contended sends"
-  },
-  "bench.summary.missPath": {
-    "message": "Miss path"
-  },
-  "bench.summary.linear": {
-    "message": "Linear"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{startLatency} at {firstCount} -> {endLatency} at {lastCount}"
+    "message": "Source code available under the AGPLv3 license."
   },
   "footer.iconsBy": {
-    "message": "Icons by"
+    "message": "Icons:"
   },
   "footer.builtWith": {
-    "message": "Built with"
+    "message": "Built with {docusaurus}"
   },
   "footer.contributors": {
-    "message": "TunGo Contributors"
+    "message": "TunGo contributors"
+  },
+  "homepage.heroTitle": {
+    "message": "Fast, lightweight VPN"
   }
 }

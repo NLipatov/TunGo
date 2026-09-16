@@ -1,0 +1,13 @@
+---
+id: ServerNetworking
+---
+
+# Red y puertos del servidor
+
+Puertos predeterminados: **UDP — 9090**, **TCP — 8080**, **WebSocket — 1010**. Solo UDP está activado de forma predeterminada.
+
+Comprueba que el cliente pueda acceder a los puertos utilizados y que los cortafuegos del servidor y del proveedor permitan las conexiones.
+
+## Cambiar el protocolo o el puerto
+
+Los protocolos activados y los puertos se configuran en `/etc/tungo/server_configuration.json`. Si cambias un puerto del servidor, actualízalo también en las configuraciones de los clientes. Después, reinicia el servidor y los clientes.

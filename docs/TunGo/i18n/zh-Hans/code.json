@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "几分钟内开始使用"
+    "message": "安装"
   },
   "homepage.title": {
-    "message": "简约、快速、安全的开源 VPN"
+    "message": "快速、轻量的 VPN"
   },
   "homepage.description": {
-    "message": "使用 TunGo 保护您的连接：基于现代加密技术用 Go 构建的轻量级、快速、开源 VPN。"
+    "message": "TunGo 是使用 Go 开发的开源 VPN，采用现代加密技术。服务端支持 Linux，客户端支持 Linux、macOS 和 Windows。"
   },
   "feature.cpuFast.title": {
-    "message": "快速"
-  },
-  "feature.cpuFast.description": {
-    "message": "热路径上 0 allocs/op。"
+    "message": "CPU 占用低"
   },
   "feature.ramEfficient.title": {
-    "message": "内存"
-  },
-  "feature.ramEfficient.description": {
-    "message": "负载下约 5–15 MB RSS。"
+    "message": "内存占用低"
   },
   "feature.secure.title": {
-    "message": "密码学"
+    "message": "现代加密技术"
   },
   "feature.secure.description": {
-    "message": "Noise IK、X25519、ChaCha20-Poly1305。"
+    "message": "采用 Noise IK、X25519 和 ChaCha20-Poly1305。"
   },
   "feature.multiTransport.title": {
-    "message": "传输"
+    "message": "三种连接方式"
   },
   "feature.multiTransport.description": {
-    "message": "UDP、TCP、WebSocket/WSS。"
+    "message": "支持 UDP、TCP 和 WebSocket，也可使用 WSS。"
   },
   "feature.platforms.title": {
-    "message": "平台"
+    "message": "支持 Linux、macOS 和 Windows"
   },
   "feature.platforms.description": {
-    "message": "Linux、macOS、Windows。"
+    "message": "客户端支持 amd64 和 arm64 架构，服务端支持 Linux。"
   },
   "feature.openSource.title": {
     "message": "开源"
   },
   "feature.openSource.description": {
-    "message": "采用 AGPLv3 许可。"
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "快速轻量"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "用户态 VPN"
-  },
-  "homepage.benchmarksCta": {
-    "message": "查看基准测试"
-  },
-  "bench.hero.title": {
-    "message": "基准测试快照"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "完整 dataplane 周期"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "加密、lookup、校验、解密、handoff。这是 dataplane 核心的上限，不是端到端 VPN 吞吐量。"
-  },
-  "bench.section.scaling.title": {
-    "message": "多 peer UDP 扩展"
-  },
-  "bench.section.scaling.text": {
-    "message": "工作分摊到多个 peer 时的聚合吞吐量，而不是单条串行发送通道。"
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "聚合吞吐量"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup 与串行化"
-  },
-  "bench.section.lookup.text": {
-    "message": "Internal-IP、allowed-host 和 route-ID lookup 保持平稳。misses 和每个 peer 的串行化才是真正的压力点。"
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "客户端 -> 服务器"
-  },
-  "bench.direction.serverClient": {
-    "message": "服务器 -> 客户端"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP 客户端 -> 服务器"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP 服务器 -> 客户端"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "精确 internal lookup"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "allowed host 查找"
-  },
-  "bench.lookup.routeId": {
-    "message": "Route ID 查找"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "完整 dataplane 周期基准测试结果"
-  },
-  "bench.table.path": {
-    "message": "路径"
-  },
-  "bench.table.latency": {
-    "message": "延迟"
-  },
-  "bench.table.throughput": {
-    "message": "吞吐量"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "未命中路径"
-  },
-  "bench.table.lookupAria": {
-    "message": "仓库 lookup 与 miss path 基准测试结果"
-  },
-  "bench.table.lookup": {
-    "message": "查找"
-  },
-  "bench.table.peers": {
-    "message": "对等节点"
-  },
-  "bench.page.title": {
-    "message": "基准测试"
-  },
-  "bench.page.description": {
-    "message": "TunGo dataplane 吞吐量、延迟、仓库 lookup 成本和 egress 争用的基准测试面板。"
-  },
-  "bench.hero.lead": {
-    "message": "在 {machine} 上使用 {goVersion} 手动测得的快照。"
-  },
-  "bench.metric.throughput": {
-    "message": "吞吐量"
-  },
-  "bench.metric.throughputNote": {
-    "message": "最佳 full-cycle 路径"
-  },
-  "bench.metric.latency": {
-    "message": "延迟"
-  },
-  "bench.metric.latencyNote": {
-    "message": "最低 full-cycle 路径"
-  },
-  "bench.metric.lookup": {
-    "message": "Fast-path 查找"
-  },
-  "bench.metric.lookupNote": {
-    "message": "从 {minCount} 到 {maxCount} 保持平稳"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "热点路径"
-  },
-  "bench.summary.egress": {
-    "message": "Egress 通道"
-  },
-  "bench.summary.egressNote": {
-    "message": "从无争用发送到有争用发送"
-  },
-  "bench.summary.missPath": {
-    "message": "未命中路径"
-  },
-  "bench.summary.linear": {
-    "message": "线性"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{firstCount} 时 {startLatency} -> {lastCount} 时 {endLatency}"
+    "message": "源代码以 AGPLv3 许可证发布。"
   },
   "footer.iconsBy": {
-    "message": "图标来自"
+    "message": "图标："
   },
   "footer.builtWith": {
-    "message": "基于"
+    "message": "使用 {docusaurus} 构建"
   },
   "footer.contributors": {
-    "message": "TunGo 贡献者"
+    "message": "TunGo 项目贡献者"
+  },
+  "homepage.heroTitle": {
+    "message": "快速、轻量的 VPN"
   }
 }

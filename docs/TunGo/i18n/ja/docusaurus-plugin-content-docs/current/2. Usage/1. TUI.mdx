@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+TunGo の対話型ターミナル画面でサーバーを設定し、クライアントを接続します。
+
+まず [TunGo をインストール](../1.%20Install.mdx)してください。
+
+## サーバーの設定 {#server}
+
+使用するポートへの外部からの接続を許可してください。詳しくは[サーバーのネットワークとポート](../3.%20Server%20networking.mdx)を参照してください。
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**クライアント設定を作成する**
+
+```bash
+sudo tungo s gen
+```
+
+設定をコピーしてください。クライアントの接続に使用します。
+
+**TunGo を開く**
+
+```bash
+sudo tungo
+```
+
+systemd を使用する Linux では、TunGo を常駐サービス（デーモン）として登録できます。
+
+起動方法を選びます。
+
+- **このターミナルで実行：** `server` → `start server` を選びます。
+- **バックグラウンドで実行（systemd）：** `daemon` → `setup server daemon` → `start daemon` を選びます。
+
+サービスはシステムの起動時に自動で実行されます。削除するには、`daemon` → `delete daemon` を選びます。
+
+</TabItem>
+</Tabs>
+
+## クライアントの設定 {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. `client` → `add configuration` を選び、設定の名前（例：`home`）を入力して Enter キーを押します。
+2. サーバーで作成したクライアント設定を貼り付け、Enter キーを押します。
+3. 一覧から追加した設定を選び、`Status: Connected` と表示されるまで待ちます。
+
+**バックグラウンドで実行する（任意）**
+
+systemd を使用する Linux では、クライアントをバックグラウンドで実行できます。システム起動時の自動実行も設定できます。
+
+1. Esc キーを押し、`Stop` を選んで Enter キーで確定すると、接続が終了してメニューに戻ります。
+2. `daemon` → `setup client daemon` → `start daemon` を選びます。
+
+サービスを削除するには、`daemon` → `delete daemon` を選びます。
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. `add configuration` を選び、設定の名前（例：`home`）を入力して Enter キーを押します。
+2. サーバーで作成したクライアント設定を貼り付け、Enter キーを押します。
+3. 一覧から追加した設定を選び、`Status: Connected` と表示されるまで待ちます。
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+TunGo を管理者として実行してください。
+
+1. `add configuration` を選び、設定の名前（例：`home`）を入力して Enter キーを押します。
+2. サーバーで作成したクライアント設定を貼り付け、Enter キーを押します。
+3. 一覧から追加した設定を選び、`Status: Connected` と表示されるまで待ちます。
+
+</TabItem>
+</Tabs>

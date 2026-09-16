@@ -1,0 +1,101 @@
+---
+id: CLI
+slug: /CLI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# CLI
+
+شغّل الخادم والعميل من سطر الأوامر.
+
+ابدأ [بتثبيت TunGo](../1.%20Install.mdx).
+
+## إعداد الخادم {#server}
+
+اسمح بالاتصالات الواردة إلى المنافذ المستخدمة. راجع [شبكة الخادم ومنافذه](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**أنشئ إعدادات العميل**
+
+```bash
+sudo tungo s gen
+```
+
+انسخ الإعدادات — ستحتاج إليها لتوصيل العميل.
+
+شغّل الخادم:
+
+```bash
+sudo tungo s
+```
+
+</TabItem>
+<TabItem value="docker" label="Docker">
+
+لتشغيل الخادم بالأوامر التالية، تحتاج إلى Docker Engine على Linux وإمكانية الوصول إلى `/dev/net/tun`.
+
+**أنشئ إعدادات العميل**
+
+```bash
+docker run --rm --network host \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest s gen
+```
+
+انسخ الإعدادات — ستحتاج إليها لتوصيل العميل.
+
+تُحفظ الإعدادات والمفاتيح الموجودة في `/etc/tungo` في وحدة التخزين `tungo_volume`. احتفظ بها عند استبدال الحاوية.
+
+**شغّل الخادم**
+
+على الجهاز الذي يشغّل Docker، فعّل تمرير الحزم واحفظ هذا الإعداد ليبقى مفعّلًا بعد إعادة التشغيل:
+
+```bash
+printf '%s\n' 'net.ipv4.ip_forward = 1' 'net.ipv6.conf.all.forwarding = 1' | \
+  sudo tee /etc/sysctl.d/90-tungo.conf
+sudo sysctl -p /etc/sysctl.d/90-tungo.conf
+```
+
+```bash
+docker run -d \
+  --name tungo \
+  --restart unless-stopped \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest
+```
+
+- متابعة السجلات: `docker logs -f tungo`
+- إيقاف الخادم: `docker stop tungo`
+- تشغيله مجددًا: `docker start tungo`
+
+</TabItem>
+</Tabs>
+
+## إعداد العميل {#client}
+
+على **Linux / macOS**، أنشئ المجلد `/etc/tungo` إذا لم يكن موجودًا. احفظ إعدادات العميل التي أنشأتها في `/etc/tungo/client_configuration.json`، واضبط صلاحيات الملف على `600`. تحتاج هذه الخطوات إلى صلاحيات المسؤول. ثم شغّل العميل:
+
+```bash
+sudo tungo c
+```
+
+<details>
+<summary>Windows</summary>
+
+على **Windows**، احفظ الإعدادات في `%ProgramData%\TunGo\client_configuration.json`. شغّل PowerShell بصلاحيات المسؤول ونفّذ:
+
+```powershell
+cd "$env:ProgramFiles\TunGo"
+.\tungo-windows-amd64.exe c
+```
+
+لمعمارية arm64، استبدل `amd64` بـ `arm64` في اسم الملف.
+
+</details>

@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+Configura el servidor y conecta el cliente desde la interfaz interactiva de TunGo en el terminal.
+
+Primero, [instala TunGo](../1.%20Install.mdx).
+
+## Configurar el servidor {#server}
+
+Permite las conexiones entrantes a los puertos que uses. Consulta [Red y puertos del servidor](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Crea una configuración de cliente**
+
+```bash
+sudo tungo s gen
+```
+
+Copia la configuración; la necesitarás para conectar el cliente.
+
+**Abre TunGo**
+
+```bash
+sudo tungo
+```
+
+En Linux con systemd, puedes configurar TunGo como servicio en segundo plano.
+
+Elige cómo ejecutarlo:
+
+- **En este terminal:** `server` → `start server`.
+- **En segundo plano (systemd):** `daemon` → `setup server daemon` → `start daemon`.
+
+El servicio se inicia automáticamente al arrancar el sistema. Para eliminarlo, selecciona `daemon` → `delete daemon`.
+
+</TabItem>
+</Tabs>
+
+## Configurar el cliente {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. Selecciona `client` → `add configuration`, escribe un nombre, por ejemplo `home`, y pulsa Intro.
+2. Pega la configuración de cliente que generaste en el servidor y pulsa Intro.
+3. Selecciona la configuración en la lista y espera a que aparezca `Status: Connected`.
+
+**Ejecutar en segundo plano (opcional)**
+
+En Linux con systemd, el cliente puede ejecutarse en segundo plano e iniciarse automáticamente al arrancar el sistema.
+
+1. Pulsa Esc, selecciona `Stop` y pulsa Intro para desconectarte y volver al menú.
+2. Selecciona `daemon` → `setup client daemon` → `start daemon`.
+
+Para eliminar el servicio, selecciona `daemon` → `delete daemon`.
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. Selecciona `add configuration`, escribe un nombre, por ejemplo `home`, y pulsa Intro.
+2. Pega la configuración de cliente que generaste en el servidor y pulsa Intro.
+3. Selecciona la configuración en la lista y espera a que aparezca `Status: Connected`.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Ejecuta TunGo como administrador.
+
+1. Selecciona `add configuration`, escribe un nombre, por ejemplo `home`, y pulsa Intro.
+2. Pega la configuración de cliente que generaste en el servidor y pulsa Intro.
+3. Selecciona la configuración en la lista y espera a que aparezca `Status: Connected`.
+
+</TabItem>
+</Tabs>

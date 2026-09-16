@@ -1,0 +1,91 @@
+---
+id: TUI
+slug: /TUI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# TUI
+
+Richten Sie den Server ein und verbinden Sie den Client über die interaktive Terminaloberfläche von TunGo.
+
+[Installieren Sie zunächst TunGo](../1.%20Install.mdx).
+
+## Server einrichten {#server}
+
+Erlauben Sie eingehende Verbindungen auf den verwendeten Ports. Weitere Informationen: [Netzwerk und Ports des Servers](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Client-Konfiguration erstellen**
+
+```bash
+sudo tungo s gen
+```
+
+Kopieren Sie die Konfiguration. Sie benötigen sie, um den Client zu verbinden.
+
+**TunGo öffnen**
+
+```bash
+sudo tungo
+```
+
+TunGo kann unter Linux mit systemd einen Hintergrunddienst einrichten.
+
+Wählen Sie, wie TunGo laufen soll:
+
+- **Im aktuellen Terminal:** `server` → `start server`.
+- **Im Hintergrund (systemd):** `daemon` → `setup server daemon` → `start daemon`.
+
+Der Dienst startet beim Hochfahren des Systems automatisch. Zum Entfernen wählen Sie `daemon` → `delete daemon`.
+
+</TabItem>
+</Tabs>
+
+## Client einrichten {#client}
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+```bash
+sudo tungo
+```
+
+1. Wählen Sie `client` → `add configuration`, geben Sie einen Namen wie `home` ein und drücken Sie die Eingabetaste.
+2. Fügen Sie die auf dem Server erzeugte Client-Konfiguration ein und drücken Sie die Eingabetaste.
+3. Wählen Sie die Konfiguration in der Liste aus und warten Sie, bis `Status: Connected` angezeigt wird.
+
+**Im Hintergrund ausführen (optional)**
+
+Unter Linux mit systemd kann der Client im Hintergrund laufen und beim Systemstart automatisch starten.
+
+1. Drücken Sie Esc, wählen Sie `Stop` und bestätigen Sie mit der Eingabetaste, um die Verbindung zu trennen und zum Menü zurückzukehren.
+2. Wählen Sie `daemon` → `setup client daemon` → `start daemon`.
+
+Zum Entfernen des Dienstes wählen Sie `daemon` → `delete daemon`.
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+```bash
+sudo tungo
+```
+
+1. Wählen Sie `add configuration`, geben Sie einen Namen wie `home` ein und drücken Sie die Eingabetaste.
+2. Fügen Sie die auf dem Server erzeugte Client-Konfiguration ein und drücken Sie die Eingabetaste.
+3. Wählen Sie die Konfiguration in der Liste aus und warten Sie, bis `Status: Connected` angezeigt wird.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Starten Sie TunGo als Administrator.
+
+1. Wählen Sie `add configuration`, geben Sie einen Namen wie `home` ein und drücken Sie die Eingabetaste.
+2. Fügen Sie die auf dem Server erzeugte Client-Konfiguration ein und drücken Sie die Eingabetaste.
+3. Wählen Sie die Konfiguration in der Liste aus und warten Sie, bis `Status: Connected` angezeigt wird.
+
+</TabItem>
+</Tabs>

@@ -1,191 +1,53 @@
 {
   "homepage.cta": {
-    "message": "Mulai dalam hitungan menit"
+    "message": "Instal"
   },
   "homepage.title": {
-    "message": "VPN Open Source yang Minimalis, Cepat & Aman"
+    "message": "VPN cepat dan ringan"
   },
   "homepage.description": {
-    "message": "Amankan koneksi Anda dengan TunGo: VPN ringan, cepat, open-source yang dibangun dengan Go menggunakan kriptografi modern."
+    "message": "TunGo adalah VPN sumber terbuka yang ditulis dalam Go dan menggunakan kriptografi modern. Server mendukung Linux, sedangkan klien mendukung Linux, macOS, dan Windows."
   },
   "feature.cpuFast.title": {
-    "message": "Cepat"
-  },
-  "feature.cpuFast.description": {
-    "message": "0 allocs/op pada hot path."
+    "message": "Beban CPU rendah"
   },
   "feature.ramEfficient.title": {
-    "message": "Memori"
-  },
-  "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS saat beban."
+    "message": "Penggunaan RAM rendah"
   },
   "feature.secure.title": {
-    "message": "Kripto"
+    "message": "Kriptografi modern"
   },
   "feature.secure.description": {
-    "message": "Noise IK, X25519, ChaCha20-Poly1305."
+    "message": "Noise IK, X25519, dan ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Transport"
+    "message": "Tiga pilihan koneksi"
   },
   "feature.multiTransport.description": {
-    "message": "UDP, TCP, WebSocket/WSS."
+    "message": "Pilih UDP, TCP, atau WebSocket, termasuk WSS."
   },
   "feature.platforms.title": {
-    "message": "Platform"
+    "message": "Linux, macOS, dan Windows"
   },
   "feature.platforms.description": {
-    "message": "Linux, macOS, Windows."
+    "message": "Klien mendukung amd64 dan arm64. Server mendukung Linux."
   },
   "feature.openSource.title": {
-    "message": "OSS"
+    "message": "Sumber terbuka"
   },
   "feature.openSource.description": {
-    "message": "Berlisensi AGPLv3."
-  },
-  "homepage.heroTitle.prefix": {
-    "message": "Cepat dan ringan"
-  },
-  "homepage.heroTitle.suffix": {
-    "message": "VPN userspace"
-  },
-  "homepage.benchmarksCta": {
-    "message": "Lihat benchmark"
-  },
-  "bench.hero.title": {
-    "message": "Snapshot benchmark"
-  },
-  "bench.section.fullCycle.title": {
-    "message": "Dataplane siklus penuh"
-  },
-  "bench.section.fullCycle.text": {
-    "message": "Enkripsi, lookup, validasi, dekripsi, handoff. Batas atas untuk inti dataplane, bukan throughput VPN end-to-end."
-  },
-  "bench.section.scaling.title": {
-    "message": "Penskalaan UDP multi-peer"
-  },
-  "bench.section.scaling.text": {
-    "message": "Throughput agregat dengan pekerjaan yang tersebar di banyak peer, bukan satu jalur kirim terserialisasi."
-  },
-  "bench.chart.aggregateThroughput": {
-    "message": "Throughput agregat"
-  },
-  "bench.section.lookup.title": {
-    "message": "Lookup dan serialisasi"
-  },
-  "bench.section.lookup.text": {
-    "message": "Lookup internal-IP, allowed-host, dan route-ID tetap datar. Misses dan serialisasi per peer adalah titik tekanan yang sebenarnya."
-  },
-  "bench.transport.udp": {
-    "message": "UDP"
-  },
-  "bench.transport.tcp": {
-    "message": "TCP"
-  },
-  "bench.direction.clientServer": {
-    "message": "Klien -> Server"
-  },
-  "bench.direction.serverClient": {
-    "message": "Server -> Klien"
-  },
-  "bench.parallel.clientServer": {
-    "message": "UDP Klien -> Server"
-  },
-  "bench.parallel.serverClient": {
-    "message": "UDP Server -> Klien"
-  },
-  "bench.lookup.exactInternal": {
-    "message": "Lookup internal yang tepat"
-  },
-  "bench.lookup.allowedHost": {
-    "message": "Lookup host yang diizinkan"
-  },
-  "bench.lookup.routeId": {
-    "message": "Lookup ID rute"
-  },
-  "bench.table.fullCycleAria": {
-    "message": "Hasil benchmark dataplane siklus penuh"
-  },
-  "bench.table.path": {
-    "message": "Jalur"
-  },
-  "bench.table.latency": {
-    "message": "Latensi"
-  },
-  "bench.table.throughput": {
-    "message": "Throughput"
-  },
-  "bench.table.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.lookup.missPath": {
-    "message": "Jalur gagal"
-  },
-  "bench.table.lookupAria": {
-    "message": "Hasil benchmark lookup repositori dan miss path"
-  },
-  "bench.table.lookup": {
-    "message": "Pencarian"
-  },
-  "bench.table.peers": {
-    "message": "Peer"
-  },
-  "bench.page.title": {
-    "message": "Benchmark"
-  },
-  "bench.page.description": {
-    "message": "Dashboard benchmark dataplane TunGo: throughput, latensi, biaya lookup repositori, dan contention pada egress."
-  },
-  "bench.hero.lead": {
-    "message": "Snapshot manual yang diukur pada {machine} dengan {goVersion}."
-  },
-  "bench.metric.throughput": {
-    "message": "Throughput"
-  },
-  "bench.metric.throughputNote": {
-    "message": "Jalur full-cycle terbaik"
-  },
-  "bench.metric.latency": {
-    "message": "Latensi"
-  },
-  "bench.metric.latencyNote": {
-    "message": "Jalur full-cycle terendah"
-  },
-  "bench.metric.lookup": {
-    "message": "Pencarian fast-path"
-  },
-  "bench.metric.lookupNote": {
-    "message": "Tetap datar dari {minCount} sampai {maxCount}"
-  },
-  "bench.metric.allocs": {
-    "message": "Allocs/op"
-  },
-  "bench.metric.allocsNote": {
-    "message": "Jalur kritis"
-  },
-  "bench.summary.egress": {
-    "message": "Jalur egress"
-  },
-  "bench.summary.egressNote": {
-    "message": "Dari pengiriman tanpa kontensi ke pengiriman dengan kontensi"
-  },
-  "bench.summary.missPath": {
-    "message": "Jalur gagal"
-  },
-  "bench.summary.linear": {
-    "message": "Linear"
-  },
-  "bench.summary.missPathNote": {
-    "message": "{startLatency} pada {firstCount} -> {endLatency} pada {lastCount}"
+    "message": "Kode sumber tersedia dengan lisensi AGPLv3."
   },
   "footer.iconsBy": {
-    "message": "Ikon oleh"
+    "message": "Ikon:"
   },
   "footer.builtWith": {
-    "message": "Dibangun dengan"
+    "message": "Situs dibuat dengan {docusaurus}"
   },
   "footer.contributors": {
     "message": "Kontributor TunGo"
+  },
+  "homepage.heroTitle": {
+    "message": "VPN cepat dan ringan"
   }
 }

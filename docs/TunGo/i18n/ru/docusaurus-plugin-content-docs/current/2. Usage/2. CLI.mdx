@@ -1,0 +1,101 @@
+---
+id: CLI
+slug: /CLI
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# CLI
+
+Запуск сервера и клиента из командной строки.
+
+Сначала [установите TunGo](../1.%20Install.mdx).
+
+## Настройка сервера {#server}
+
+Разрешите входящие подключения к используемым портам. Подробнее: [Сеть и порты сервера](../3.%20Server%20networking.mdx).
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
+**Создайте конфигурацию клиента**
+
+```bash
+sudo tungo s gen
+```
+
+Скопируйте конфигурацию — она понадобится для подключения клиента.
+
+Запустите сервер:
+
+```bash
+sudo tungo s
+```
+
+</TabItem>
+<TabItem value="docker" label="Docker">
+
+Команды ниже — для Docker Engine в Linux с доступным `/dev/net/tun`.
+
+**Создайте конфигурацию клиента**
+
+```bash
+docker run --rm --network host \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest s gen
+```
+
+Скопируйте конфигурацию — она понадобится для подключения клиента.
+
+В томе `tungo_volume` хранятся конфигурации и ключи из `/etc/tungo`. Сохраните том при замене контейнера.
+
+**Запустите сервер**
+
+На машине с Docker включите пересылку пакетов так, чтобы она оставалась включённой после перезагрузки:
+
+```bash
+printf '%s\n' 'net.ipv4.ip_forward = 1' 'net.ipv6.conf.all.forwarding = 1' | \
+  sudo tee /etc/sysctl.d/90-tungo.conf
+sudo sysctl -p /etc/sysctl.d/90-tungo.conf
+```
+
+```bash
+docker run -d \
+  --name tungo \
+  --restart unless-stopped \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -v tungo_volume:/etc/tungo \
+  nlipatov/tungo:latest
+```
+
+- Смотреть логи: `docker logs -f tungo`
+- Остановить сервер: `docker stop tungo`
+- Запустить снова: `docker start tungo`
+
+</TabItem>
+</Tabs>
+
+## Настройка клиента {#client}
+
+На **Linux / macOS** создайте папку `/etc/tungo`, если её нет, и сохраните полученную конфигурацию клиента в `/etc/tungo/client_configuration.json`. Установите для файла права `600`. Для этих действий нужны права администратора. Запустите клиент:
+
+```bash
+sudo tungo c
+```
+
+<details>
+<summary>Windows</summary>
+
+На **Windows** сохраните конфигурацию в `%ProgramData%\TunGo\client_configuration.json`. В PowerShell от имени администратора выполните:
+
+```powershell
+cd "$env:ProgramFiles\TunGo"
+.\tungo-windows-amd64.exe c
+```
+
+Для arm64 замените `amd64` на `arm64` в имени файла.
+
+</details>
