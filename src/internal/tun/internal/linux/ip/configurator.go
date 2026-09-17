@@ -94,10 +94,7 @@ func (i *Configurator) parseDefaultRoute(name string, args ...string) (string, e
 	return "", fmt.Errorf("no default route found")
 }
 
-// RouteAddSplitDefaultDev adds IPv4 split default routes (0.0.0.0/1 + 128.0.0.0/1)
-// through the given device. These are more specific than 0.0.0.0/0 so they take
-// priority without replacing the original default route. When the TUN device is
-// deleted, the kernel removes these routes automatically.
+// The kernel removes these routes when their device is deleted.
 func (i *Configurator) RouteAddSplitDefaultDev(devName string, split []string) error {
 	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
@@ -109,8 +106,6 @@ func (i *Configurator) RouteAddSplitDefaultDev(devName string, split []string) e
 	return nil
 }
 
-// Route6AddSplitDefaultDev adds IPv6 split default routes (::/1 + 8000::/1)
-// through the given device.
 func (i *Configurator) Route6AddSplitDefaultDev(devName string, split []string) error {
 	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
@@ -122,7 +117,6 @@ func (i *Configurator) Route6AddSplitDefaultDev(devName string, split []string) 
 	return nil
 }
 
-// RouteDelSplitDefault removes IPv4 split default routes through the given device.
 func (i *Configurator) RouteDelSplitDefault(devName string, split []string) error {
 	for _, prefix := range split {
 		_, _ = i.runner.CombinedOutput("ip", "route", "del", prefix, "dev", devName)
@@ -130,7 +124,6 @@ func (i *Configurator) RouteDelSplitDefault(devName string, split []string) erro
 	return nil
 }
 
-// Route6DelSplitDefault removes IPv6 split default routes through the given device.
 func (i *Configurator) Route6DelSplitDefault(devName string, split []string) error {
 	for _, prefix := range split {
 		_, _ = i.runner.CombinedOutput("ip", "-6", "route", "del", prefix, "dev", devName)

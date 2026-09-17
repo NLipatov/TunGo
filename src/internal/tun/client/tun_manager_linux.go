@@ -169,9 +169,6 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		m.pinnedServerAddr = serverAddr
 	}
 
-	// Set split default routes — more specific than 0.0.0.0/0 so they take
-	// priority without destroying the original default route. On crash or
-	// device deletion the kernel removes them automatically.
 	if m.settings.HasIPv4() {
 		if err := m.ip.RouteAddSplitDefaultDev(m.settings.TunName, m.splitsv4); err != nil {
 			return err
