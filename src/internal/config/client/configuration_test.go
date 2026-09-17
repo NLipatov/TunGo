@@ -244,12 +244,12 @@ func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
 		{
 			name:     "IPv4",
 			network:  settings.Network{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")},
-			wantDNS4: settings.DefaultClientDNSv4Resolvers,
+			wantDNS4: []string{"1.1.1.1", "8.8.8.8"},
 		},
 		{
 			name:     "IPv6",
 			network:  settings.Network{IPv6Subnet: netip.MustParsePrefix("fd00::/64")},
-			wantDNS6: settings.DefaultClientDNSv6Resolvers,
+			wantDNS6: []string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 		},
 		{
 			name: "dual stack preserves explicit DNS",
@@ -284,9 +284,7 @@ func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
 	}
 }
 
-func TestConfiguration_ApplyDefaultsCopiesDNSDefaults(t *testing.T) {
-	wantDNS4 := append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
-	wantDNS6 := append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+func TestConfiguration_ApplyDefaultsKeepsDNSIndependent(t *testing.T) {
 	cfg := Configuration{
 		Protocol: settings.UDP,
 		UDPSettings: settings.Settings{Network: settings.Network{
@@ -294,12 +292,16 @@ func TestConfiguration_ApplyDefaultsCopiesDNSDefaults(t *testing.T) {
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 		}},
 	}
+	other := cfg
 	cfg.applyDefaults()
+	other.applyDefaults()
+	wantDNS4 := append([]string(nil), other.UDPSettings.DNSv4...)
+	wantDNS6 := append([]string(nil), other.UDPSettings.DNSv6...)
 
 	cfg.UDPSettings.DNSv4[0] = "9.9.9.9"
 	cfg.UDPSettings.DNSv6[0] = "2620:fe::9"
-	if !reflect.DeepEqual(settings.DefaultClientDNSv4Resolvers, wantDNS4) ||
-		!reflect.DeepEqual(settings.DefaultClientDNSv6Resolvers, wantDNS6) {
-		t.Fatal("applyDefaults shared DNS backing arrays with global defaults")
+	if !reflect.DeepEqual(other.UDPSettings.DNSv4, wantDNS4) ||
+		!reflect.DeepEqual(other.UDPSettings.DNSv6, wantDNS6) {
+		t.Fatal("applyDefaults shared DNS backing arrays between configurations")
 	}
 }

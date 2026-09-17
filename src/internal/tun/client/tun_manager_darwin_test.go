@@ -96,12 +96,12 @@ func darwinSettings(v4, v6 bool) settings.Settings {
 	if v4 {
 		active.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
 		active.IPv4 = netip.MustParseAddr("10.0.0.2")
-		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
 	}
 	if v6 {
 		active.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 		active.IPv6 = netip.MustParseAddr("fd00::2")
-		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+		active.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
 	}
 	return active
 }
@@ -130,13 +130,13 @@ func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
 		v6   bool
 		want []string
 	}{
-		{name: "IPv4", v4: true, want: settings.DefaultClientDNSv4Resolvers},
-		{name: "IPv6", v6: true, want: settings.DefaultClientDNSv6Resolvers},
+		{name: "IPv4", v4: true, want: []string{"1.1.1.1", "8.8.8.8"}},
+		{name: "IPv6", v6: true, want: []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}},
 		{
 			name: "dual stack",
 			v4:   true,
 			v6:   true,
-			want: append(append([]string(nil), settings.DefaultClientDNSv4Resolvers...), settings.DefaultClientDNSv6Resolvers...),
+			want: []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -168,7 +168,7 @@ func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "set DNS") {
 		t.Fatalf("setDNS() error = %q, want operation context", err)
 	}
-	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{settings.DefaultClientDNSv4Resolvers}) {
+	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{{"1.1.1.1", "8.8.8.8"}}) {
 		t.Fatalf("DNS resolvers = %v, want configured IPv4 resolvers", dnsMock.setResolvers)
 	}
 }

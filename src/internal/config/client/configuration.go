@@ -31,10 +31,10 @@ func (c *Configuration) applyDefaults() {
 		return
 	}
 	if active.IPv4Subnet.IsValid() && active.IPv4Subnet.Addr().Is4() && len(active.DNSv4) == 0 {
-		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
 	}
 	if active.IPv6Subnet.IsValid() && active.IPv6Subnet.Addr().Unmap().Is6() && len(active.DNSv6) == 0 {
-		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+		active.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
 	}
 	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
 	if active.MTU != 0 && active.MTU != effectiveMTU {

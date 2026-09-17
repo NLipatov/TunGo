@@ -216,7 +216,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.0/30"),
 				IPv4:       mustAddr("10.0.0.2"),
 				Server:     mustHost("198.51.100.1"),
-				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
+				DNSv4:      []string{"1.1.1.1", "8.8.8.8"},
 			},
 			MTU:      1400,
 			Protocol: settings.UDP,
@@ -227,7 +227,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.4/30"),
 				IPv4:       mustAddr("10.0.0.6"),
 				Server:     mustHost("203.0.113.1"),
-				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
+				DNSv4:      []string{"1.1.1.1", "8.8.8.8"},
 			},
 			MTU:      1400,
 			Protocol: settings.TCP,
@@ -238,7 +238,7 @@ func newMgr(
 				IPv4Subnet: mustPrefix("10.0.0.8/30"),
 				IPv4:       mustAddr("10.0.0.10"),
 				Server:     mustHost("203.0.113.2"),
-				DNSv4:      append([]string(nil), settings.DefaultClientDNSv4Resolvers...),
+				DNSv4:      []string{"1.1.1.1", "8.8.8.8"},
 			},
 			MTU:      1250,
 			Protocol: settings.WS,
@@ -284,10 +284,10 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 
 func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 	if active.IPv4Subnet.IsValid() && len(active.DNSv4) == 0 {
-		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
 	}
 	if active.IPv6Subnet.IsValid() && len(active.DNSv6) == 0 {
-		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+		active.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
 	}
 	m.settings = active
 	switch active.Protocol {
@@ -367,7 +367,7 @@ func TestOpenTunnelConfiguresAndRestoresDNS(t *testing.T) {
 		t.Fatalf("OpenTunnel() error = %v", err)
 	}
 	if !reflect.DeepEqual(dnsMock.setInterfaces, []string{"tun0"}) ||
-		!reflect.DeepEqual(dnsMock.setResolvers4, [][]string{settings.DefaultClientDNSv4Resolvers}) ||
+		!reflect.DeepEqual(dnsMock.setResolvers4, [][]string{{"1.1.1.1", "8.8.8.8"}}) ||
 		!reflect.DeepEqual(dnsMock.setResolvers6, [][]string{nil}) {
 		t.Fatalf(
 			"DNS setup = interfaces %v IPv4 %v IPv6 %v",
@@ -673,7 +673,7 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	// Enable IPv6 on the active protocol's settings.
 	mgr.settings.IPv6 = mustAddr("fd00::2")
 	mgr.settings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.settings.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+	mgr.settings.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
 	mgr.configuration.UDPSettings = mgr.settings
 
 	_, err := mgr.OpenTunnel(testServerAddrV6)
