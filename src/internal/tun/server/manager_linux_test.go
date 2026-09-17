@@ -29,17 +29,17 @@ import (
 // TunFactoryMockIP implements ip.Contract (only the methods we need in tests).
 type TunFactoryMockIP struct{ log bytes.Buffer }
 
-func (m *TunFactoryMockIP) add(tag string)                          { m.log.WriteString(tag + ";") }
-func (m *TunFactoryMockIP) TunTapAddDevTun(_ string) error          { m.add("add"); return nil }
-func (m *TunFactoryMockIP) LinkDelete(_ string) error               { m.add("del"); return nil }
-func (m *TunFactoryMockIP) LinkSetDevUp(_ string) error             { m.add("up"); return nil }
-func (m *TunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error     { m.add("mtu"); return nil }
-func (m *TunFactoryMockIP) AddrAddDev(_, _ string) error            { m.add("addr"); return nil }
-func (m *TunFactoryMockIP) RouteDefault() (string, error)           { m.add("route"); return "eth0", nil }
-func (m *TunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error  { return nil }
-func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error { return nil }
-func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string) error     { return nil }
-func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string) error    { return nil }
+func (m *TunFactoryMockIP) add(tag string)                                      { m.log.WriteString(tag + ";") }
+func (m *TunFactoryMockIP) TunTapAddDevTun(_ string) error                      { m.add("add"); return nil }
+func (m *TunFactoryMockIP) LinkDelete(_ string) error                           { m.add("del"); return nil }
+func (m *TunFactoryMockIP) LinkSetDevUp(_ string) error                         { m.add("up"); return nil }
+func (m *TunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error                 { m.add("mtu"); return nil }
+func (m *TunFactoryMockIP) AddrAddDev(_, _ string) error                        { m.add("addr"); return nil }
+func (m *TunFactoryMockIP) RouteDefault() (string, error)                       { m.add("route"); return "eth0", nil }
+func (m *TunFactoryMockIP) RouteAddSplitDefaultDev(_ string, _ []string) error  { return nil }
+func (m *TunFactoryMockIP) Route6AddSplitDefaultDev(_ string, _ []string) error { return nil }
+func (m *TunFactoryMockIP) RouteDelSplitDefault(_ string, _ []string) error     { return nil }
+func (m *TunFactoryMockIP) Route6DelSplitDefault(_ string, _ []string) error    { return nil }
 
 func (m *TunFactoryMockIP) RouteGet(_ netip.Addr) (string, error)        { return "", nil }
 func (m *TunFactoryMockIP) RouteReplaceDev(_ netip.Addr, _ string) error { return nil }

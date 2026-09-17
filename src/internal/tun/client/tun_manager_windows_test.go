@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,15 +43,17 @@ type windowsNetConfigMock struct {
 	setDNSErrAt      int
 	flushDNSErr      error
 
-	addresses     []netip.Prefix
-	mtus          []int
-	dnsNames      []string
-	dnsValues     [][]string
-	addedRoutes   []string
-	deletedRoutes []string
-	addedSplits   []string
-	deletedSplits []string
-	flushDNSCalls int
+	addresses       []netip.Prefix
+	mtus            []int
+	dnsNames        []string
+	dnsValues       [][]string
+	addedRoutes     []string
+	deletedRoutes   []string
+	addedSplits     []string
+	addedPrefixes   [][]string
+	deletedSplits   []string
+	deletedPrefixes [][]string
+	flushDNSCalls   int
 }
 
 func (m *windowsNetConfigMock) FlushDNS() error {
@@ -87,13 +90,15 @@ func (m *windowsNetConfigMock) AddHostRouteOnLink(host netip.Addr, ifName string
 	return m.addRouteErr
 }
 
-func (m *windowsNetConfigMock) AddDefaultSplitRoutes(ifName string) error {
+func (m *windowsNetConfigMock) AddDefaultSplitRoutes(ifName string, prefixes []string) error {
 	m.addedSplits = append(m.addedSplits, ifName)
+	m.addedPrefixes = append(m.addedPrefixes, slices.Clone(prefixes))
 	return m.addSplitErr
 }
 
-func (m *windowsNetConfigMock) DeleteDefaultSplitRoutes(ifName string) error {
+func (m *windowsNetConfigMock) DeleteDefaultSplitRoutes(ifName string, prefixes []string) error {
 	m.deletedSplits = append(m.deletedSplits, ifName)
+	m.deletedPrefixes = append(m.deletedPrefixes, slices.Clone(prefixes))
 	return m.deleteSplitErr
 }
 
@@ -155,6 +160,62 @@ func newWindowsTestManager(t *testing.T, active settings.Settings) (*Manager, *w
 		netConfig6:    netConfig6,
 	}
 	return manager, netConfig4, netConfig6
+}
+
+func TestWindowsManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		v4   []string
+		v6   []string
+	}{
+		{name: "custom prefixes", v4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}},
+		{name: "both empty", v4: []string{}, v6: []string{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := New(&clientconfig.Configuration{
+				ClientID:     1,
+				Protocol:     settings.UDP,
+				UDPSettings:  windowsSettings(true, true),
+				AllowedIPsv4: test.v4,
+				AllowedIPsv6: test.v6,
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			netConfig4, netConfig6 := &windowsNetConfigMock{}, &windowsNetConfigMock{}
+			manager.netConfig4, manager.netConfig6 = netConfig4, netConfig6
+			manager.tun = &windowsTunMock{}
+			if err := manager.addSplitRoutes(); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+
+			for _, check := range []struct {
+				name  string
+				calls [][]string
+				want  []string
+				count int
+			}{
+				{name: "add IPv4", calls: netConfig4.addedPrefixes, want: test.v4, count: 1},
+				{name: "add IPv6", calls: netConfig6.addedPrefixes, want: test.v6, count: 1},
+				{name: "delete IPv4", calls: netConfig4.deletedPrefixes, want: test.v4, count: 2},
+				{name: "delete IPv6", calls: netConfig6.deletedPrefixes, want: test.v6, count: 2},
+			} {
+				if len(check.calls) != check.count {
+					t.Fatalf("%s calls = %v, want %d calls", check.name, check.calls, check.count)
+				}
+				for _, prefixes := range check.calls {
+					if !slices.Equal(prefixes, check.want) {
+						t.Errorf("%s prefixes = %v, want %v", check.name, prefixes, check.want)
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {

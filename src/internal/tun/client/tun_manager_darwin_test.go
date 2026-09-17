@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
 )
 
@@ -30,14 +32,16 @@ func (m *darwinIfconfigMock) SetMTU(_ string, mtu int) error {
 }
 
 type darwinRouteMock struct {
-	added        []string
-	addedSplit   []string
-	deleted      []string
-	deletedSplit []string
-	addErr       error
-	splitErr     error
-	delErr       error
-	delSplitErr  error
+	added           []string
+	addedSplit      []string
+	addedPrefixes   [][]string
+	deleted         []string
+	deletedSplit    []string
+	deletedPrefixes [][]string
+	addErr          error
+	splitErr        error
+	delErr          error
+	delSplitErr     error
 }
 
 type darwinDNSMock struct {
@@ -62,13 +66,15 @@ func (m *darwinRouteMock) Add(destination string) error {
 	return m.addErr
 }
 
-func (m *darwinRouteMock) AddSplit(ifName string) error {
+func (m *darwinRouteMock) AddSplit(ifName string, prefixes []string) error {
 	m.addedSplit = append(m.addedSplit, ifName)
+	m.addedPrefixes = append(m.addedPrefixes, slices.Clone(prefixes))
 	return m.splitErr
 }
 
-func (m *darwinRouteMock) DelSplit(ifName string) error {
+func (m *darwinRouteMock) DelSplit(ifName string, prefixes []string) error {
 	m.deletedSplit = append(m.deletedSplit, ifName)
+	m.deletedPrefixes = append(m.deletedPrefixes, slices.Clone(prefixes))
 	return m.delSplitErr
 }
 
@@ -170,6 +176,63 @@ func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
 	}
 	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{{"1.1.1.1", "8.8.8.8"}}) {
 		t.Fatalf("DNS resolvers = %v, want configured IPv4 resolvers", dnsMock.setResolvers)
+	}
+}
+
+func TestDarwinManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		v4   []string
+		v6   []string
+	}{
+		{name: "custom prefixes", v4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}},
+		{name: "both empty", v4: []string{}, v6: []string{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := New(&clientconfig.Configuration{
+				ClientID:     1,
+				Protocol:     settings.UDP,
+				UDPSettings:  darwinSettings(true, true),
+				AllowedIPsv4: test.v4,
+				AllowedIPsv6: test.v6,
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			route4, route6 := &darwinRouteMock{}, &darwinRouteMock{}
+			manager.route4, manager.route6 = route4, route6
+			manager.dns = &darwinDNSMock{}
+			manager.tun = &tunMock{name: "utun42"}
+			if err := manager.addSplitRoutes(); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+
+			for _, check := range []struct {
+				name  string
+				calls [][]string
+				want  []string
+				count int
+			}{
+				{name: "add IPv4", calls: route4.addedPrefixes, want: test.v4, count: 1},
+				{name: "add IPv6", calls: route6.addedPrefixes, want: test.v6, count: 1},
+				{name: "delete IPv4", calls: route4.deletedPrefixes, want: test.v4, count: 2},
+				{name: "delete IPv6", calls: route6.deletedPrefixes, want: test.v6, count: 2},
+			} {
+				if len(check.calls) != check.count {
+					t.Fatalf("%s calls = %v, want %d calls", check.name, check.calls, check.count)
+				}
+				for _, prefixes := range check.calls {
+					if !slices.Equal(prefixes, check.want) {
+						t.Errorf("%s prefixes = %v, want %v", check.name, prefixes, check.want)
+					}
+				}
+			}
+		})
 	}
 }
 

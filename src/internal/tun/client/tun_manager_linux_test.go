@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,6 +29,10 @@ type clienttunManagerIPMock struct {
 	routeGetTargets     []netip.Addr
 	routeReplaceTargets []netip.Addr
 	routeDelTargets     []netip.Addr
+	addedSplits4        [][]string
+	addedSplits6        [][]string
+	deletedSplits4      [][]string
+	deletedSplits6      [][]string
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -56,13 +61,21 @@ func (m *clienttunManagerIPMock) RouteReplaceViaDev(target netip.Addr, _ string,
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplacevia")
 }
-func (m *clienttunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
-func (m *clienttunManagerIPMock) Route6AddSplitDefaultDev(string) error { return m.mark("splitdef6") }
-func (m *clienttunManagerIPMock) RouteDelSplitDefault(string) error {
+func (m *clienttunManagerIPMock) RouteAddSplitDefaultDev(_ string, prefixes []string) error {
+	m.addedSplits4 = append(m.addedSplits4, slices.Clone(prefixes))
+	return m.mark("splitdef")
+}
+func (m *clienttunManagerIPMock) Route6AddSplitDefaultDev(_ string, prefixes []string) error {
+	m.addedSplits6 = append(m.addedSplits6, slices.Clone(prefixes))
+	return m.mark("splitdef6")
+}
+func (m *clienttunManagerIPMock) RouteDelSplitDefault(_ string, prefixes []string) error {
+	m.deletedSplits4 = append(m.deletedSplits4, slices.Clone(prefixes))
 	m.log.WriteString("splitdel;")
 	return nil
 }
-func (m *clienttunManagerIPMock) Route6DelSplitDefault(string) error {
+func (m *clienttunManagerIPMock) Route6DelSplitDefault(_ string, prefixes []string) error {
+	m.deletedSplits6 = append(m.deletedSplits6, slices.Clone(prefixes))
 	m.log.WriteString("splitdel6;")
 	return nil
 }
@@ -191,10 +204,10 @@ func newMgr(
 		LinkSetDevMTU(string, int) error
 		AddrAddDev(string, string) error
 		RouteDefault() (string, error)
-		RouteAddSplitDefaultDev(string) error
-		Route6AddSplitDefaultDev(string) error
-		RouteDelSplitDefault(string) error
-		Route6DelSplitDefault(string) error
+		RouteAddSplitDefaultDev(string, []string) error
+		Route6AddSplitDefaultDev(string, []string) error
+		RouteDelSplitDefault(string, []string) error
+		Route6DelSplitDefault(string, []string) error
 		RouteGet(netip.Addr) (string, error)
 		RouteReplaceDev(netip.Addr, string) error
 		RouteReplaceViaDev(netip.Addr, string, netip.Addr) error
@@ -303,6 +316,70 @@ func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 //
 // ============================ Tests ===========================
 //
+
+func TestLinuxManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		v4   []string
+		v6   []string
+	}{
+		{name: "custom prefixes", v4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}},
+		{name: "both empty", v4: []string{}, v6: []string{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := New(&client.Configuration{
+				ClientID: 1,
+				Protocol: settings.UDP,
+				UDPSettings: settings.Settings{
+					Network: settings.Network{
+						TunName:    "tun0",
+						IPv4Subnet: mustPrefix("10.0.0.0/24"),
+						IPv6Subnet: mustPrefix("fd00::/64"),
+					},
+					MTU: settings.DefaultMTU,
+				},
+				AllowedIPsv4: test.v4,
+				AllowedIPsv6: test.v6,
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+			manager.ip = ipMock
+			manager.dns = &clienttunManagerDNSMock{}
+			manager.mss = clienttunManagerMSSMock{}
+			if err := manager.configureTunnel(testServerAddrV4); err != nil {
+				t.Fatalf("configureTunnel() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+
+			for _, check := range []struct {
+				name  string
+				calls [][]string
+				want  []string
+				count int
+			}{
+				{name: "add IPv4", calls: ipMock.addedSplits4, want: test.v4, count: 1},
+				{name: "add IPv6", calls: ipMock.addedSplits6, want: test.v6, count: 1},
+				{name: "delete IPv4", calls: ipMock.deletedSplits4, want: test.v4, count: 1},
+				{name: "delete IPv6", calls: ipMock.deletedSplits6, want: test.v6, count: 1},
+			} {
+				if len(check.calls) != check.count {
+					t.Fatalf("%s calls = %v, want %d calls", check.name, check.calls, check.count)
+				}
+				for _, prefixes := range check.calls {
+					if !slices.Equal(prefixes, check.want) {
+						t.Errorf("%s prefixes = %v, want %v", check.name, prefixes, check.want)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestNewLinuxManager(t *testing.T) {
 	configuration := &client.Configuration{
