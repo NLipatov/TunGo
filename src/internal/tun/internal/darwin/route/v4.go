@@ -4,13 +4,10 @@ package route
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"tungo/internal/tun/internal/splitroute"
-
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -102,26 +99,28 @@ func (v *V4) Del(destIP string) error {
 	return nil
 }
 
-func (v *V4) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev)
-	_ = v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev)
-
-	if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4LowerHalf, "-interface", dev); err != nil &&
-		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4LowerHalf, err, out)
+func (v *V4) AddSplit(dev string, splits []string) error {
+	for _, cidr := range splits {
+		_ = v.runDeleteSplit("-net", cidr, "-interface", dev)
 	}
-	if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", splitroute.IPv4UpperHalf, "-interface", dev); err != nil &&
-		!bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv4UpperHalf, err, out)
+
+	for _, cidr := range splits {
+		if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", cidr, "-interface", dev); err != nil &&
+			!bytes.Contains(out, []byte("File exists")) {
+			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
+		}
 	}
 	return nil
 }
 
-func (v *V4) DelSplit(dev string) error {
-	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4LowerHalf, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-net", splitroute.IPv4UpperHalf, "-interface", dev) })
-	return eg.Wait()
+func (v *V4) DelSplit(dev string, split []string) error {
+	var errs []error
+	for _, cidr := range split {
+		if err := v.runDeleteSplit("-net", cidr, "-interface", dev); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (v *V4) addOnLink(ip, iFace string) error {

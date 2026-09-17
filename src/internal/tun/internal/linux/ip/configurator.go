@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"tungo/internal/tun/internal/splitroute"
 )
 
 type runner interface {
@@ -100,8 +98,8 @@ func (i *Configurator) parseDefaultRoute(name string, args ...string) (string, e
 // through the given device. These are more specific than 0.0.0.0/0 so they take
 // priority without replacing the original default route. When the TUN device is
 // deleted, the kernel removes these routes automatically.
-func (i *Configurator) RouteAddSplitDefaultDev(devName string) error {
-	for _, prefix := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
+func (i *Configurator) RouteAddSplitDefaultDev(devName string, split []string) error {
+	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
 		if err != nil {
 			return fmt.Errorf("failed to add split route %s via %s: %v, output: %s",
@@ -113,8 +111,8 @@ func (i *Configurator) RouteAddSplitDefaultDev(devName string) error {
 
 // Route6AddSplitDefaultDev adds IPv6 split default routes (::/1 + 8000::/1)
 // through the given device.
-func (i *Configurator) Route6AddSplitDefaultDev(devName string) error {
-	for _, prefix := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
+func (i *Configurator) Route6AddSplitDefaultDev(devName string, split []string) error {
+	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
 		if err != nil {
 			return fmt.Errorf("failed to add IPv6 split route %s via %s: %v, output: %s",
@@ -125,16 +123,16 @@ func (i *Configurator) Route6AddSplitDefaultDev(devName string) error {
 }
 
 // RouteDelSplitDefault removes IPv4 split default routes through the given device.
-func (i *Configurator) RouteDelSplitDefault(devName string) error {
-	for _, prefix := range []string{splitroute.IPv4LowerHalf, splitroute.IPv4UpperHalf} {
+func (i *Configurator) RouteDelSplitDefault(devName string, split []string) error {
+	for _, prefix := range split {
 		_, _ = i.runner.CombinedOutput("ip", "route", "del", prefix, "dev", devName)
 	}
 	return nil
 }
 
 // Route6DelSplitDefault removes IPv6 split default routes through the given device.
-func (i *Configurator) Route6DelSplitDefault(devName string) error {
-	for _, prefix := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
+func (i *Configurator) Route6DelSplitDefault(devName string, split []string) error {
+	for _, prefix := range split {
 		_, _ = i.runner.CombinedOutput("ip", "-6", "route", "del", prefix, "dev", devName)
 	}
 	return nil

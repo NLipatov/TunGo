@@ -10,10 +10,10 @@ type Contract interface {
 	LinkSetDevMTU(devName string, mtu int) error
 	AddrAddDev(devName string, cidr string) error
 	RouteDefault() (string, error)
-	RouteAddSplitDefaultDev(devName string) error
-	Route6AddSplitDefaultDev(devName string) error
-	RouteDelSplitDefault(devName string) error
-	Route6DelSplitDefault(devName string) error
+	RouteAddSplitDefaultDev(devName string, split []string) error
+	Route6AddSplitDefaultDev(devName string, split []string) error
+	RouteDelSplitDefault(devName string, split []string) error
+	Route6DelSplitDefault(devName string, split []string) error
 	RouteGet(hostAddr netip.Addr) (string, error)
 	RouteReplaceDev(hostAddr netip.Addr, ifName string) error
 	RouteReplaceViaDev(hostAddr netip.Addr, ifName string, gateway netip.Addr) error

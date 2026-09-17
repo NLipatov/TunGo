@@ -100,6 +100,101 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 	})
 }
 
+func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
+	configuration := validTestConfiguration()
+	configuration.AllowedIPsv4 = []string{
+		"10.20.1.99/24", "192.0.2.42/24", "10.20.1.0/24", "192.0.2.42/24",
+	}
+	configuration.AllowedIPsv6 = []string{
+		"2001:db8:2::99/64", "2001:db8:1::42/64", "2001:0db8:0002::/64", "2001:db8:1::42/64",
+	}
+	path := filepath.Join(t.TempDir(), "client_configuration.json")
+	writeConfiguration(t, path, configuration)
+
+	loaded, err := (&Configurations{activePath: path}).Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"10.20.1.0/24", "192.0.2.0/24"}; !slices.Equal(loaded.AllowedIPsv4, want) {
+		t.Errorf("AllowedIPsv4 = %v, want %v", loaded.AllowedIPsv4, want)
+	}
+	if want := []string{"2001:db8:2::/64", "2001:db8:1::/64"}; !slices.Equal(loaded.AllowedIPsv6, want) {
+		t.Errorf("AllowedIPsv6 = %v, want %v", loaded.AllowedIPsv6, want)
+	}
+}
+
+func TestConfigurationsAllowedIPsPreserveEmptyLists(t *testing.T) {
+	configuration := validTestConfiguration()
+	configuration.AllowedIPsv4 = []string{}
+	configuration.AllowedIPsv6 = []string{}
+	data, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
+	if err := configurations.Import("empty", string(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := configurations.Activate("empty"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := configurations.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AllowedIPsv4 == nil || len(loaded.AllowedIPsv4) != 0 {
+		t.Errorf("AllowedIPsv4 = %#v, want a non-nil empty list", loaded.AllowedIPsv4)
+	}
+	if loaded.AllowedIPsv6 == nil || len(loaded.AllowedIPsv6) != 0 {
+		t.Errorf("AllowedIPsv6 = %#v, want a non-nil empty list", loaded.AllowedIPsv6)
+	}
+}
+
+func TestConfigurationsActiveDefaultsInvalidAllowedIPs(t *testing.T) {
+	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
+	defaultV6 := []string{"::/1", "8000::/1"}
+	customV4 := []string{"192.0.2.0/24"}
+	customV6 := []string{"2001:db8::/64"}
+	for _, tt := range []struct {
+		name   string
+		v4     []string
+		v6     []string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{name: "missing lists", wantV4: defaultV4, wantV6: defaultV6},
+		{name: "invalid IPv4 CIDR", v4: []string{"10.0.0.0/33"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
+		{name: "invalid IPv6 CIDR", v4: customV4, v6: []string{"2001:db8::/129"}, wantV4: customV4, wantV6: defaultV6},
+		{name: "IPv6 in IPv4 list", v4: customV6, v6: customV6, wantV4: defaultV4, wantV6: customV6},
+		{name: "IPv4 in IPv6 list", v4: customV4, v6: customV4, wantV4: customV4, wantV6: defaultV6},
+		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
+		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantV4: customV4, wantV6: defaultV6},
+		{name: "partially invalid IPv4 list", v4: []string{"192.0.2.1/24", "bad CIDR"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
+		{name: "partially invalid IPv6 list", v4: customV4, v6: []string{"2001:db8::1/64", "bad CIDR"}, wantV4: customV4, wantV6: defaultV6},
+		{name: "invalid IPv4 preserves empty IPv6", v4: []string{"bad CIDR"}, v6: []string{}, wantV4: defaultV4, wantV6: []string{}},
+		{name: "invalid IPv6 preserves empty IPv4", v4: []string{}, v6: []string{"bad CIDR"}, wantV4: []string{}, wantV6: defaultV6},
+		{name: "both lists invalid", v4: []string{"bad CIDR"}, v6: []string{"bad CIDR"}, wantV4: defaultV4, wantV6: defaultV6},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configuration := validTestConfiguration()
+			configuration.AllowedIPsv4 = tt.v4
+			configuration.AllowedIPsv6 = tt.v6
+			path := filepath.Join(t.TempDir(), "client_configuration.json")
+			writeConfiguration(t, path, configuration)
+			loaded, err := (&Configurations{activePath: path}).Active()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.AllowedIPsv4 == nil || !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
+				t.Errorf("AllowedIPsv4 = %#v, want %#v", loaded.AllowedIPsv4, tt.wantV4)
+			}
+			if loaded.AllowedIPsv6 == nil || !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
+				t.Errorf("AllowedIPsv6 = %#v, want %#v", loaded.AllowedIPsv6, tt.wantV6)
+			}
+		})
+	}
+}
+
 func TestConfigurationsListActivateAndDelete(t *testing.T) {
 	directory := t.TempDir()
 	activePath := filepath.Join(directory, "client_configuration.json")

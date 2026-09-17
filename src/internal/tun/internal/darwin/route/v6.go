@@ -4,13 +4,10 @@ package route
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"tungo/internal/tun/internal/splitroute"
-
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -105,28 +102,29 @@ func (v *V6) Del(destIP string) error {
 	return nil
 }
 
-func (v *V6) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev)
-	_ = v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev)
-
-	if out, err := v.runner.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", dev,
-	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6LowerHalf, err, out)
+func (v *V6) AddSplit(dev string, split []string) error {
+	for _, cidr := range split {
+		_ = v.runDeleteSplit("-inet6", cidr, "-interface", dev)
 	}
-	if out, err := v.runner.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", dev,
-	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6UpperHalf, err, out)
+
+	for _, cidr := range split {
+		if out, err := v.runner.CombinedOutput(
+			"route", "-q", "-n", "add", "-inet6", cidr, "-interface", dev,
+		); err != nil && !bytes.Contains(out, []byte("File exists")) {
+			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
+		}
 	}
 	return nil
 }
 
-func (v *V6) DelSplit(dev string) error {
-	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev) })
-	return eg.Wait()
+func (v *V6) DelSplit(dev string, split []string) error {
+	var errs []error
+	for _, cidr := range split {
+		if err := v.runDeleteSplit("-inet6", cidr, "-interface", dev); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (v *V6) addOnLink(ip, iface string) error {

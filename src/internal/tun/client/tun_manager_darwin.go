@@ -32,8 +32,8 @@ type interfaceConfigurator interface {
 
 type routeConfigurator interface {
 	Add(destIP string) error
-	AddSplit(ifName string) error
-	DelSplit(ifName string) error
+	AddSplit(ifName string, split []string) error
+	DelSplit(ifName string, split []string) error
 	Del(destIP string) error
 }
 
@@ -52,6 +52,8 @@ type Manager struct {
 	route6                    routeConfigurator
 	pinnedServerAddr          netip.Addr
 	defaultRouteWatcherCancel context.CancelFunc
+	splitsv4                  []string
+	splitsv6                  []string
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -68,6 +70,8 @@ func New(configuration *client.Configuration) (*Manager, error) {
 		ifconfig6: ifconfig.NewV6(cmd),
 		route4:    route.NewV4(cmd),
 		route6:    route.NewV6(cmd),
+		splitsv4:  configuration.AllowedIPsv4,
+		splitsv6:  configuration.AllowedIPsv6,
 	}, nil
 }
 
@@ -187,14 +191,14 @@ func (m *Manager) assignAddresses() error {
 
 func (m *Manager) addSplitRoutes() error {
 	if m.settings.HasIPv4() {
-		_ = m.route4.DelSplit(m.tun.Name())
-		if err := m.route4.AddSplit(m.tun.Name()); err != nil {
+		_ = m.route4.DelSplit(m.tun.Name(), m.splitsv4)
+		if err := m.route4.AddSplit(m.tun.Name(), m.splitsv4); err != nil {
 			return fmt.Errorf("add IPv4 split default: %w", err)
 		}
 	}
 	if m.settings.HasIPv6() {
-		_ = m.route6.DelSplit(m.tun.Name())
-		if err := m.route6.AddSplit(m.tun.Name()); err != nil {
+		_ = m.route6.DelSplit(m.tun.Name(), m.splitsv6)
+		if err := m.route6.AddSplit(m.tun.Name(), m.splitsv6); err != nil {
 			return fmt.Errorf("add IPv6 split default: %w", err)
 		}
 	}
@@ -211,12 +215,12 @@ func (m *Manager) CloseTunnel() error {
 	}
 	if m.tun != nil {
 		if m.settings.HasIPv4() {
-			if err := m.route4.DelSplit(m.tun.Name()); err != nil {
+			if err := m.route4.DelSplit(m.tun.Name(), m.splitsv4); err != nil {
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))
 			}
 		}
 		if m.settings.HasIPv6() {
-			if err := m.route6.DelSplit(m.tun.Name()); err != nil {
+			if err := m.route6.DelSplit(m.tun.Name(), m.splitsv6); err != nil {
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
 			}
 		}

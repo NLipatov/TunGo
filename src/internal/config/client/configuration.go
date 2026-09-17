@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 
 	"tungo/internal/config/settings"
 )
@@ -22,10 +23,28 @@ type Configuration struct {
 
 	// ClientPrivateKey is the client's X25519 static private key (32 bytes).
 	// MUST derive ClientPublicKey when processed with X25519.
-	ClientPrivateKey []byte `json:"ClientPrivateKey"`
+	ClientPrivateKey []byte   `json:"ClientPrivateKey"`
+	AllowedIPsv4     []string `json:"AllowedIPsv4"`
+	AllowedIPsv6     []string `json:"AllowedIPsv6"`
 }
 
 func (c *Configuration) applyDefaults() {
+	effectiveV4, effectiveV6 := effectiveAllowedIPs(c.AllowedIPsv4, c.AllowedIPsv6)
+	if c.AllowedIPsv4 != nil && !slices.Equal(c.AllowedIPsv4, effectiveV4) {
+		slog.Warn(
+			"client AllowedIPsv4 were changed",
+			"configured", c.AllowedIPsv4,
+			"effective", effectiveV4,
+		)
+	}
+	if c.AllowedIPsv6 != nil && !slices.Equal(c.AllowedIPsv6, effectiveV6) {
+		slog.Warn(
+			"client AllowedIPsv6 were changed",
+			"configured", c.AllowedIPsv6,
+			"effective", effectiveV6,
+		)
+	}
+	c.AllowedIPsv4, c.AllowedIPsv6 = effectiveV4, effectiveV6
 	active, err := c.selectedSettings()
 	if err != nil {
 		return
@@ -63,6 +82,50 @@ func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 		}
 	}
 	return mtu
+}
+
+// effectiveAllowedIPs replaces each missing or invalid family list with full-tunnel defaults.
+// Explicitly empty lists remain empty.
+func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
+	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
+	defaultV6 := []string{"::/1", "8000::/1"}
+	if v4 == nil {
+		v4 = defaultV4
+	}
+	if v6 == nil {
+		v6 = defaultV6
+	}
+	seen := make(map[netip.Prefix]struct{}, len(v4)+len(v6))
+	normalizedV4 := make([]string, 0, len(v4))
+	for _, cidr := range v4 {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil || !prefix.Addr().Is4() {
+			normalizedV4 = defaultV4
+			break
+		}
+		prefix = prefix.Masked()
+		if _, ok := seen[prefix]; ok {
+			continue
+		}
+		seen[prefix] = struct{}{}
+		normalizedV4 = append(normalizedV4, prefix.String())
+	}
+
+	normalizedV6 := make([]string, 0, len(v6))
+	for _, cidr := range v6 {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil || prefix.Addr().Unmap().Is4() {
+			normalizedV6 = defaultV6
+			break
+		}
+		prefix = prefix.Masked()
+		if _, ok := seen[prefix]; ok {
+			continue
+		}
+		seen[prefix] = struct{}{}
+		normalizedV6 = append(normalizedV6, prefix.String())
+	}
+	return normalizedV4, normalizedV6
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

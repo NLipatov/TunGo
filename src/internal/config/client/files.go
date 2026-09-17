@@ -39,7 +39,7 @@ func Files() *Configurations {
 	}
 }
 
-// Active reads, defaults, and validates the active client configuration.
+// Active reads, defaults, normalizes, and validates the active client configuration.
 func (c *Configurations) Active() (*Configuration, error) {
 	data, err := os.ReadFile(c.activePath)
 	if err != nil {
@@ -131,7 +131,7 @@ func (c *Configurations) alternativePath(name string) (string, error) {
 	return c.activePath + "." + name, nil
 }
 
-// decode parses, defaults, and validates a client configuration from JSON data.
+// decode parses, defaults, normalizes, and validates a client configuration from JSON data.
 func decode(data []byte) (Configuration, error) {
 	var configuration Configuration
 	if err := json.Unmarshal(data, &configuration); err != nil {
