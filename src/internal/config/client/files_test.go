@@ -123,6 +123,64 @@ func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
 	}
 }
 
+func TestConfigurationsActiveExpandsDefaultAllowedIPs(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		v4     []string
+		v6     []string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			name:   "default prefixes",
+			v4:     []string{"0.0.0.0/0"},
+			v6:     []string{"::/0"},
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantV6: []string{"::/1", "8000::/1"},
+		},
+		{
+			name:   "default prefixes with host bits",
+			v4:     []string{"203.0.113.42/0"},
+			v6:     []string{"2001:db8::42/0"},
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantV6: []string{"::/1", "8000::/1"},
+		},
+		{
+			name:   "deduplicates expanded and explicit halves in first occurrence order",
+			v4:     []string{"128.0.0.0/1", "0.0.0.0/0", "0.0.0.0/1", "0.0.0.0/0"},
+			v6:     []string{"8000::/1", "::/0", "::/1", "::/0"},
+			wantV4: []string{"128.0.0.0/1", "0.0.0.0/1"},
+			wantV6: []string{"8000::/1", "::/1"},
+		},
+		{
+			name:   "preserves other prefixes around the expansion",
+			v4:     []string{"192.0.2.42/24", "0.0.0.0/0", "198.51.100.42/24"},
+			v6:     []string{"2001:db8:1::42/64", "::/0", "2001:db8:2::42/64"},
+			wantV4: []string{"192.0.2.0/24", "0.0.0.0/1", "128.0.0.0/1", "198.51.100.0/24"},
+			wantV6: []string{"2001:db8:1::/64", "::/1", "8000::/1", "2001:db8:2::/64"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configuration := validTestConfiguration()
+			configuration.AllowedIPsv4 = tt.v4
+			configuration.AllowedIPsv6 = tt.v6
+			path := filepath.Join(t.TempDir(), "client_configuration.json")
+			writeConfiguration(t, path, configuration)
+
+			loaded, err := (&Configurations{activePath: path}).Active()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
+				t.Errorf("AllowedIPsv4 = %v, want %v", loaded.AllowedIPsv4, tt.wantV4)
+			}
+			if !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
+				t.Errorf("AllowedIPsv6 = %v, want %v", loaded.AllowedIPsv6, tt.wantV6)
+			}
+		})
+	}
+}
+
 func TestConfigurationsAllowedIPsPreserveEmptyLists(t *testing.T) {
 	configuration := validTestConfiguration()
 	configuration.AllowedIPsv4 = []string{}

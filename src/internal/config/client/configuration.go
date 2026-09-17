@@ -85,6 +85,7 @@ func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
 }
 
 // effectiveAllowedIPs replaces each missing or invalid family list with full-tunnel defaults.
+// Valid /0 prefixes expand into two /1 routes to preserve the system default route.
 // Explicitly empty lists remain empty.
 func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
 	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
@@ -95,7 +96,7 @@ func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
 	if v6 == nil {
 		v6 = defaultV6
 	}
-	seen := make(map[netip.Prefix]struct{}, len(v4)+len(v6))
+	seen := make(map[string]struct{}, len(v4)+len(v6))
 	normalizedV4 := make([]string, 0, len(v4))
 	for _, cidr := range v4 {
 		prefix, err := netip.ParsePrefix(cidr)
@@ -103,12 +104,17 @@ func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
 			normalizedV4 = defaultV4
 			break
 		}
-		prefix = prefix.Masked()
-		if _, ok := seen[prefix]; ok {
-			continue
+		routes := []string{prefix.Masked().String()}
+		if prefix.Bits() == 0 {
+			routes = defaultV4
 		}
-		seen[prefix] = struct{}{}
-		normalizedV4 = append(normalizedV4, prefix.String())
+		for _, route := range routes {
+			if _, ok := seen[route]; ok {
+				continue
+			}
+			seen[route] = struct{}{}
+			normalizedV4 = append(normalizedV4, route)
+		}
 	}
 
 	normalizedV6 := make([]string, 0, len(v6))
@@ -118,12 +124,17 @@ func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
 			normalizedV6 = defaultV6
 			break
 		}
-		prefix = prefix.Masked()
-		if _, ok := seen[prefix]; ok {
-			continue
+		routes := []string{prefix.Masked().String()}
+		if prefix.Bits() == 0 {
+			routes = defaultV6
 		}
-		seen[prefix] = struct{}{}
-		normalizedV6 = append(normalizedV6, prefix.String())
+		for _, route := range routes {
+			if _, ok := seen[route]; ok {
+				continue
+			}
+			seen[route] = struct{}{}
+			normalizedV6 = append(normalizedV6, route)
+		}
 	}
 	return normalizedV4, normalizedV6
 }
