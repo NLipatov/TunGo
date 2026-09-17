@@ -86,7 +86,7 @@ func (c *Crypto) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	cipherPayload := ciphertext[NonceOffset:]
-	epoch := binary.BigEndian.Uint16(cipherPayload[NonceEpochOffset : NonceEpochOffset+2])
+	epoch := binary.BigEndian.Uint16(cipherPayload[core.NonceEpochOffset:chacha20poly1305.NonceSize])
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, ErrUnknownEpoch
