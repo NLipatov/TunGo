@@ -100,12 +100,12 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 	})
 }
 
-func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
+func TestConfigurationsActiveNormalizesTunnelRoutes(t *testing.T) {
 	configuration := validTestConfiguration()
-	configuration.AllowedIPsv4 = []string{
+	configuration.TunnelRoutesV4 = []string{
 		"10.20.1.99/24", "192.0.2.42/24", "10.20.1.0/24", "192.0.2.42/24",
 	}
-	configuration.AllowedIPsv6 = []string{
+	configuration.TunnelRoutesV6 = []string{
 		"2001:db8:2::99/64", "2001:db8:1::42/64", "2001:0db8:0002::/64", "2001:db8:1::42/64",
 	}
 	path := filepath.Join(t.TempDir(), "client_configuration.json")
@@ -119,11 +119,11 @@ func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"10.20.1.0/24", "192.0.2.0/24", "1.1.1.1/32", "8.8.8.8/32"}; !slices.Equal(loaded.AllowedIPsv4, want) {
-		t.Errorf("AllowedIPsv4 = %v, want %v", loaded.AllowedIPsv4, want)
+	if want := []string{"10.20.1.0/24", "192.0.2.0/24", "1.1.1.1/32", "8.8.8.8/32"}; !slices.Equal(loaded.TunnelRoutesV4, want) {
+		t.Errorf("TunnelRoutesV4 = %v, want %v", loaded.TunnelRoutesV4, want)
 	}
-	if want := []string{"2001:db8:2::/64", "2001:db8:1::/64"}; !slices.Equal(loaded.AllowedIPsv6, want) {
-		t.Errorf("AllowedIPsv6 = %v, want %v", loaded.AllowedIPsv6, want)
+	if want := []string{"2001:db8:2::/64", "2001:db8:1::/64"}; !slices.Equal(loaded.TunnelRoutesV6, want) {
+		t.Errorf("TunnelRoutesV6 = %v, want %v", loaded.TunnelRoutesV6, want)
 	}
 	persisted, err := os.ReadFile(path)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
 	}
 }
 
-func TestConfigurationsActiveExpandsDefaultAllowedIPs(t *testing.T) {
+func TestConfigurationsActiveExpandsDefaultTunnelRoutes(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		v4     []string
@@ -173,8 +173,8 @@ func TestConfigurationsActiveExpandsDefaultAllowedIPs(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()
-			configuration.AllowedIPsv4 = tt.v4
-			configuration.AllowedIPsv6 = tt.v6
+			configuration.TunnelRoutesV4 = tt.v4
+			configuration.TunnelRoutesV6 = tt.v6
 			path := filepath.Join(t.TempDir(), "client_configuration.json")
 			writeConfiguration(t, path, configuration)
 
@@ -182,17 +182,17 @@ func TestConfigurationsActiveExpandsDefaultAllowedIPs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
-				t.Errorf("AllowedIPsv4 = %v, want %v", loaded.AllowedIPsv4, tt.wantV4)
+			if !slices.Equal(loaded.TunnelRoutesV4, tt.wantV4) {
+				t.Errorf("TunnelRoutesV4 = %v, want %v", loaded.TunnelRoutesV4, tt.wantV4)
 			}
-			if !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
-				t.Errorf("AllowedIPsv6 = %v, want %v", loaded.AllowedIPsv6, tt.wantV6)
+			if !slices.Equal(loaded.TunnelRoutesV6, tt.wantV6) {
+				t.Errorf("TunnelRoutesV6 = %v, want %v", loaded.TunnelRoutesV6, tt.wantV6)
 			}
 		})
 	}
 }
 
-func TestConfigurationsEmptyAllowedIPs(t *testing.T) {
+func TestConfigurationsEmptyTunnelRoutes(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		dns4   []string
@@ -217,7 +217,7 @@ func TestConfigurationsEmptyAllowedIPs(t *testing.T) {
 			configuration := validTestConfiguration()
 			configuration.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 			configuration.UDPSettings.DNSv4, configuration.UDPSettings.DNSv6 = tt.dns4, tt.dns6
-			configuration.AllowedIPsv4, configuration.AllowedIPsv6 = []string{}, []string{}
+			configuration.TunnelRoutesV4, configuration.TunnelRoutesV6 = []string{}, []string{}
 			data, err := json.Marshal(configuration)
 			if err != nil {
 				t.Fatal(err)
@@ -233,17 +233,17 @@ func TestConfigurationsEmptyAllowedIPs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if loaded.AllowedIPsv4 == nil || !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
-				t.Errorf("AllowedIPsv4 = %#v, want %#v", loaded.AllowedIPsv4, tt.wantV4)
+			if loaded.TunnelRoutesV4 == nil || !slices.Equal(loaded.TunnelRoutesV4, tt.wantV4) {
+				t.Errorf("TunnelRoutesV4 = %#v, want %#v", loaded.TunnelRoutesV4, tt.wantV4)
 			}
-			if loaded.AllowedIPsv6 == nil || !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
-				t.Errorf("AllowedIPsv6 = %#v, want %#v", loaded.AllowedIPsv6, tt.wantV6)
+			if loaded.TunnelRoutesV6 == nil || !slices.Equal(loaded.TunnelRoutesV6, tt.wantV6) {
+				t.Errorf("TunnelRoutesV6 = %#v, want %#v", loaded.TunnelRoutesV6, tt.wantV6)
 			}
 		})
 	}
 }
 
-func TestConfigurationsActiveDefaultsInvalidAllowedIPs(t *testing.T) {
+func TestConfigurationsActiveDefaultsInvalidTunnelRoutes(t *testing.T) {
 	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
 	defaultV6 := []string{"::/1", "8000::/1"}
 	customV4 := []string{"192.0.2.0/24"}
@@ -271,19 +271,19 @@ func TestConfigurationsActiveDefaultsInvalidAllowedIPs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()
 			configuration.UDPSettings.DNSv4 = []string{"10.0.1.1"}
-			configuration.AllowedIPsv4 = tt.v4
-			configuration.AllowedIPsv6 = tt.v6
+			configuration.TunnelRoutesV4 = tt.v4
+			configuration.TunnelRoutesV6 = tt.v6
 			path := filepath.Join(t.TempDir(), "client_configuration.json")
 			writeConfiguration(t, path, configuration)
 			loaded, err := (&Configurations{activePath: path}).Active()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if loaded.AllowedIPsv4 == nil || !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
-				t.Errorf("AllowedIPsv4 = %#v, want %#v", loaded.AllowedIPsv4, tt.wantV4)
+			if loaded.TunnelRoutesV4 == nil || !slices.Equal(loaded.TunnelRoutesV4, tt.wantV4) {
+				t.Errorf("TunnelRoutesV4 = %#v, want %#v", loaded.TunnelRoutesV4, tt.wantV4)
 			}
-			if loaded.AllowedIPsv6 == nil || !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
-				t.Errorf("AllowedIPsv6 = %#v, want %#v", loaded.AllowedIPsv6, tt.wantV6)
+			if loaded.TunnelRoutesV6 == nil || !slices.Equal(loaded.TunnelRoutesV6, tt.wantV6) {
+				t.Errorf("TunnelRoutesV6 = %#v, want %#v", loaded.TunnelRoutesV6, tt.wantV6)
 			}
 		})
 	}

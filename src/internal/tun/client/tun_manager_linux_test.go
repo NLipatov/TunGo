@@ -322,7 +322,7 @@ func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 // ============================ Tests ===========================
 //
 
-func TestLinuxManagerAppliesAllowedIPs(t *testing.T) {
+func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		v4     []string
@@ -368,8 +368,8 @@ func TestLinuxManagerAppliesAllowedIPs(t *testing.T) {
 					},
 					MTU: settings.DefaultMTU,
 				},
-				AllowedIPsv4: test.v4,
-				AllowedIPsv6: test.v6,
+				TunnelRoutesV4: test.v4,
+				TunnelRoutesV6: test.v6,
 			})
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
@@ -390,9 +390,9 @@ func TestLinuxManagerAppliesAllowedIPs(t *testing.T) {
 				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
 			}
 
-			if !slices.Equal(manager.configuration.AllowedIPsv4, originalV4) ||
-				!slices.Equal(manager.configuration.AllowedIPsv6, originalV6) {
-				t.Fatalf("manager changed configured AllowedIPs: IPv4=%v IPv6=%v", manager.configuration.AllowedIPsv4, manager.configuration.AllowedIPsv6)
+			if !slices.Equal(manager.configuration.TunnelRoutesV4, originalV4) ||
+				!slices.Equal(manager.configuration.TunnelRoutesV6, originalV6) {
+				t.Fatalf("manager changed configured TunnelRoutes: IPv4=%v IPv6=%v", manager.configuration.TunnelRoutesV4, manager.configuration.TunnelRoutesV6)
 			}
 
 			for _, check := range []struct {
@@ -438,8 +438,8 @@ func TestLinuxManagerDeletesInterfacesWithDifferentSubnets(t *testing.T) {
 			},
 			MTU: settings.DefaultMTU,
 		},
-		AllowedIPsv4: []string{"10.0.0.0/24", "10.1.0.0/24", "192.0.2.0/24"},
-		AllowedIPsv6: []string{"fd00::/64", "fd01::/64", "2001:db8::/64"},
+		TunnelRoutesV4: []string{"10.0.0.0/24", "10.1.0.0/24", "192.0.2.0/24"},
+		TunnelRoutesV6: []string{"fd00::/64", "fd01::/64", "2001:db8::/64"},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

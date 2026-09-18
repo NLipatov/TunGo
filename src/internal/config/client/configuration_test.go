@@ -409,16 +409,16 @@ func TestConfiguration_ApplyDefaultsRoutesDNS(t *testing.T) {
 			cfg.UDPSettings.IPv4Subnet = netip.MustParsePrefix("10.0.1.42/24")
 			cfg.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::42/64")
 			cfg.UDPSettings.DNSv4, cfg.UDPSettings.DNSv6 = tt.dns4, tt.dns6
-			cfg.AllowedIPsv4, cfg.AllowedIPsv6 = tt.v4, tt.v6
+			cfg.TunnelRoutesV4, cfg.TunnelRoutesV6 = tt.v4, tt.v6
 			cfg.applyDefaults()
-			if !slices.Equal(cfg.AllowedIPsv4, tt.wantV4) {
-				t.Fatalf("AllowedIPsv4 = %v, want %v", cfg.AllowedIPsv4, tt.wantV4)
+			if !slices.Equal(cfg.TunnelRoutesV4, tt.wantV4) {
+				t.Fatalf("TunnelRoutesV4 = %v, want %v", cfg.TunnelRoutesV4, tt.wantV4)
 			}
-			if !slices.Equal(cfg.AllowedIPsv6, tt.wantV6) {
-				t.Fatalf("AllowedIPsv6 = %v, want %v", cfg.AllowedIPsv6, tt.wantV6)
+			if !slices.Equal(cfg.TunnelRoutesV6, tt.wantV6) {
+				t.Fatalf("TunnelRoutesV6 = %v, want %v", cfg.TunnelRoutesV6, tt.wantV6)
 			}
 			cfg.applyDefaults()
-			if !slices.Equal(cfg.AllowedIPsv4, tt.wantV4) || !slices.Equal(cfg.AllowedIPsv6, tt.wantV6) {
+			if !slices.Equal(cfg.TunnelRoutesV4, tt.wantV4) || !slices.Equal(cfg.TunnelRoutesV6, tt.wantV6) {
 				t.Fatal("reapplying defaults changed the DNS routes")
 			}
 		})
@@ -437,7 +437,7 @@ func TestConfiguration_ApplyDefaultsRoutesDNSForActiveProtocolAndFamilies(t *tes
 				}}
 				cfg := Configuration{
 					Protocol: protocol, UDPSettings: inactive, TCPSettings: inactive, WSSettings: inactive,
-					AllowedIPsv4: []string{}, AllowedIPsv6: []string{},
+					TunnelRoutesV4: []string{}, TunnelRoutesV6: []string{},
 				}
 				active, err := cfg.selectedSettings()
 				if err != nil {
@@ -452,8 +452,8 @@ func TestConfiguration_ApplyDefaultsRoutesDNSForActiveProtocolAndFamilies(t *tes
 					active.IPv4Subnet = netip.MustParsePrefix("10.0.1.0/24")
 				}
 				cfg.applyDefaults()
-				if !slices.Equal(cfg.AllowedIPsv4, wantV4) || !slices.Equal(cfg.AllowedIPsv6, wantV6) {
-					t.Fatalf("AllowedIPs = %v, %v; want %v, %v", cfg.AllowedIPsv4, cfg.AllowedIPsv6, wantV4, wantV6)
+				if !slices.Equal(cfg.TunnelRoutesV4, wantV4) || !slices.Equal(cfg.TunnelRoutesV6, wantV6) {
+					t.Fatalf("TunnelRoutes = %v, %v; want %v, %v", cfg.TunnelRoutesV4, cfg.TunnelRoutesV6, wantV4, wantV6)
 				}
 			})
 		}
@@ -470,11 +470,11 @@ func TestConfiguration_ApplyDefaultsWarnsAboutDNSRoutes(t *testing.T) {
 	cfg.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	cfg.UDPSettings.DNSv4 = []string{"9.9.9.9"}
 	cfg.UDPSettings.DNSv6 = []string{"2620:fe::9"}
-	cfg.AllowedIPsv4, cfg.AllowedIPsv6 = []string{}, []string{}
+	cfg.TunnelRoutesV4, cfg.TunnelRoutesV6 = []string{}, []string{}
 	cfg.applyDefaults()
 	for _, message := range []string{
-		`level=WARN msg="client AllowedIPsv4 were changed" configured=[] effective=[9.9.9.9/32]`,
-		`level=WARN msg="client AllowedIPsv6 were changed" configured=[] effective=[2620:fe::9/128]`,
+		`level=WARN msg="client TunnelRoutesV4 were changed" configured=[] effective=[9.9.9.9/32]`,
+		`level=WARN msg="client TunnelRoutesV6 were changed" configured=[] effective=[2620:fe::9/128]`,
 	} {
 		if !strings.Contains(logs.String(), message) {
 			t.Errorf("log does not contain %q: %q", message, logs.String())

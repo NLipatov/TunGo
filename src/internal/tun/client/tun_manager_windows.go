@@ -61,8 +61,8 @@ func New(configuration *client.Configuration) (*Manager, error) {
 		settings:      active,
 		netConfig4:    ipcfg.NewV4(),
 		netConfig6:    ipcfg.NewV6(),
-		splitsv4:      configuration.AllowedIPsv4,
-		splitsv6:      configuration.AllowedIPsv6,
+		splitsv4:      configuration.TunnelRoutesV4,
+		splitsv6:      configuration.TunnelRoutesV6,
 	}, nil
 }
 

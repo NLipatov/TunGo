@@ -173,7 +173,7 @@ func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerAppliesAllowedIPs(t *testing.T) {
+func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		v4     []string
@@ -213,11 +213,11 @@ func TestDarwinManagerAppliesAllowedIPs(t *testing.T) {
 			active.IPv4Subnet = netip.MustParsePrefix("10.0.0.17/24")
 			active.IPv6Subnet = netip.MustParsePrefix("fd00::17/64")
 			configuration := &clientconfig.Configuration{
-				ClientID:     1,
-				Protocol:     settings.UDP,
-				UDPSettings:  active,
-				AllowedIPsv4: test.v4,
-				AllowedIPsv6: test.v6,
+				ClientID:       1,
+				Protocol:       settings.UDP,
+				UDPSettings:    active,
+				TunnelRoutesV4: test.v4,
+				TunnelRoutesV6: test.v6,
 			}
 			manager, err := New(configuration)
 			if err != nil {
@@ -242,9 +242,9 @@ func TestDarwinManagerAppliesAllowedIPs(t *testing.T) {
 				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
 			}
 
-			if !slices.Equal(configuration.AllowedIPsv4, originalV4) ||
-				!slices.Equal(configuration.AllowedIPsv6, originalV6) {
-				t.Fatalf("manager changed configured AllowedIPs: IPv4=%v IPv6=%v", configuration.AllowedIPsv4, configuration.AllowedIPsv6)
+			if !slices.Equal(configuration.TunnelRoutesV4, originalV4) ||
+				!slices.Equal(configuration.TunnelRoutesV6, originalV6) {
+				t.Fatalf("manager changed configured TunnelRoutes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
 			}
 
 			for _, check := range []struct {

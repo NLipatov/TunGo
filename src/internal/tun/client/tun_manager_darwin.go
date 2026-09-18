@@ -76,7 +76,7 @@ func New(configuration *client.Configuration) (*Manager, error) {
 }
 
 func effectiveSplits(configuration *client.Configuration, active settings.Settings) ([]string, []string) {
-	splitsv4 := slices.Clone(configuration.AllowedIPsv4)
+	splitsv4 := slices.Clone(configuration.TunnelRoutesV4)
 	if active.HasIPv4() {
 		// Unlike Linux, macOS does not create an IPv4 subnet route when assigning
 		// an address to utun, so add it explicitly.
@@ -85,7 +85,7 @@ func effectiveSplits(configuration *client.Configuration, active settings.Settin
 			splitsv4 = append(splitsv4, tunSubnet)
 		}
 	}
-	splitsv6 := withoutTunSubnet(configuration.AllowedIPsv6, active.IPv6Subnet.Masked().String())
+	splitsv6 := withoutTunSubnet(configuration.TunnelRoutesV6, active.IPv6Subnet.Masked().String())
 	return splitsv4, splitsv6
 }
 

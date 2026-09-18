@@ -25,8 +25,8 @@ type Configuration struct {
 	// ClientPrivateKey is the client's X25519 static private key (32 bytes).
 	// MUST derive ClientPublicKey when processed with X25519.
 	ClientPrivateKey []byte   `json:"ClientPrivateKey"`
-	AllowedIPsv4     []string `json:"AllowedIPsv4"`
-	AllowedIPsv6     []string `json:"AllowedIPsv6"`
+	TunnelRoutesV4   []string `json:"TunnelRoutesV4"`
+	TunnelRoutesV6   []string `json:"TunnelRoutesV6"`
 }
 
 func (c *Configuration) applyDefaults() {
@@ -35,15 +35,15 @@ func (c *Configuration) applyDefaults() {
 		return
 	}
 	dnsV4, dnsV6 := effectiveDNS(activeSettings.Network)
-	allowedV4, allowedV6 := effectiveAllowedIPs(
-		c.AllowedIPsv4, c.AllowedIPsv6,
+	routesV4, routesV6 := effectiveTunnelRoutes(
+		c.TunnelRoutesV4, c.TunnelRoutesV6,
 		dnsV4, dnsV6,
 		activeSettings.IPv4Subnet, activeSettings.IPv6Subnet,
 	)
 	mtu := effectiveMTU(*activeSettings, c.Protocol)
 
 	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
-	c.AllowedIPsv4, c.AllowedIPsv6 = allowedV4, allowedV6
+	c.TunnelRoutesV4, c.TunnelRoutesV6 = routesV4, routesV6
 	activeSettings.MTU = mtu
 }
 
@@ -62,10 +62,10 @@ func effectiveDNS(network settings.Network) ([]string, []string) {
 	return v4, v6
 }
 
-// effectiveAllowedIPs replaces each missing or invalid family list with full-tunnel defaults.
+// effectiveTunnelRoutes replaces each missing or invalid family list with full-tunnel defaults.
 // Valid /0 prefixes expand into two /1 routes to preserve the system default route.
 // DNS routes are added unless covered by a split or the TUN subnet.
-func effectiveAllowedIPs(
+func effectiveTunnelRoutes(
 	v4, v6 []string,
 	dnsV4, dnsV6 []string,
 	tunSubnetV4, tunSubnetV6 netip.Prefix,
@@ -127,14 +127,14 @@ func effectiveAllowedIPs(
 	}
 	if configuredV4 != nil && !slices.Equal(configuredV4, normalizedV4) {
 		slog.Warn(
-			"client AllowedIPsv4 were changed",
+			"client TunnelRoutesV4 were changed",
 			"configured", configuredV4,
 			"effective", normalizedV4,
 		)
 	}
 	if configuredV6 != nil && !slices.Equal(configuredV6, normalizedV6) {
 		slog.Warn(
-			"client AllowedIPsv6 were changed",
+			"client TunnelRoutesV6 were changed",
 			"configured", configuredV6,
 			"effective", normalizedV6,
 		)

@@ -53,8 +53,8 @@ func New(conf *client.Configuration) (*Manager, error) {
 		ip:            ip.New(cmd),
 		ioctl:         ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:           mssclamp.NewManager(cmd),
-		splitsv4:      withoutTunSubnet(conf.AllowedIPsv4, active.IPv4Subnet.Masked().String()),
-		splitsv6:      withoutTunSubnet(conf.AllowedIPsv6, active.IPv6Subnet.Masked().String()),
+		splitsv4:      withoutTunSubnet(conf.TunnelRoutesV4, active.IPv4Subnet.Masked().String()),
+		splitsv6:      withoutTunSubnet(conf.TunnelRoutesV6, active.IPv6Subnet.Masked().String()),
 	}, nil
 }
 

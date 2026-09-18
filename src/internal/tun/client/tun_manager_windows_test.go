@@ -162,7 +162,7 @@ func newWindowsTestManager(t *testing.T, active settings.Settings) (*Manager, *w
 	return manager, netConfig4, netConfig6
 }
 
-func TestWindowsManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
+func TestWindowsManagerAppliesAndRemovesTunnelRoutes(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		v4   []string
@@ -175,11 +175,11 @@ func TestWindowsManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			manager, err := New(&clientconfig.Configuration{
-				ClientID:     1,
-				Protocol:     settings.UDP,
-				UDPSettings:  windowsSettings(true, true),
-				AllowedIPsv4: test.v4,
-				AllowedIPsv6: test.v6,
+				ClientID:       1,
+				Protocol:       settings.UDP,
+				UDPSettings:    windowsSettings(true, true),
+				TunnelRoutesV4: test.v4,
+				TunnelRoutesV6: test.v6,
 			})
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
