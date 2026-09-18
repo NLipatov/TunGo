@@ -31,11 +31,15 @@ func (i *Configurator) TunTapAddDevTun(devName string) error {
 	return nil
 }
 
-// LinkDelete Deletes network device by name
+// LinkDelete removes a network device if it exists.
 func (i *Configurator) LinkDelete(devName string) error {
 	output, err := i.runner.CombinedOutput("ip", "link", "delete", devName)
 	if err != nil {
-		return fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
+		switch strings.TrimSpace(string(output)) {
+		case fmt.Sprintf("Cannot find device %q", devName), "RTNETLINK answers: No such device":
+			return nil
+		}
+		return fmt.Errorf("failed to delete interface %s: %w, output: %s", devName, err, output)
 	}
 
 	return nil

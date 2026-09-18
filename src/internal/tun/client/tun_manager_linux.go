@@ -247,10 +247,12 @@ func (m *Manager) removeTunInterface(s settings.Settings) error {
 	if s.TunName == "" {
 		return nil
 	}
-	var cleanupErrs []error
+	var errs []error
 	if err := m.mss.Remove(s.TunName); err != nil {
-		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
+		errs = append(errs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
 	}
-	_ = m.ip.LinkDelete(s.TunName)
-	return errors.Join(cleanupErrs...)
+	if err := m.ip.LinkDelete(s.TunName); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }

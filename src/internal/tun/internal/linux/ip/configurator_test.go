@@ -79,18 +79,37 @@ func TestTunTapAddDevTun(t *testing.T) {
 }
 
 func TestLinkDelete(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		err := newConfigurator(true, "", nil).LinkDelete("tun0")
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "error", errors.New("fail")).LinkDelete("tun0")
-		if err == nil || !strings.Contains(err.Error(), "failed to delete interface") {
-			t.Fatal("expected failure")
-		}
-	})
+	commandErr := errors.New("command failed")
+	for _, test := range []struct {
+		name    string
+		output  string
+		err     error
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "already absent", output: "Cannot find device \"tun0\"\n", err: commandErr},
+		{name: "disappeared during deletion", output: "RTNETLINK answers: No such device\n", err: commandErr},
+		{name: "permission denied", output: "RTNETLINK answers: Operation not permitted\n", err: commandErr, wantErr: true},
+		{name: "device busy", output: "RTNETLINK answers: Device or resource busy\n", err: commandErr, wantErr: true},
+		{name: "missing file", output: "RTNETLINK answers: No such file or directory\n", err: commandErr, wantErr: true},
+		{name: "command could not start", err: commandErr, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := newConfigurator(test.err == nil, test.output, test.err).LinkDelete("tun0")
+			if !test.wantErr {
+				if err != nil {
+					t.Fatalf("LinkDelete() error = %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, test.err) {
+				t.Fatalf("LinkDelete() error = %v, want wrapped %v", err, test.err)
+			}
+			if !strings.Contains(err.Error(), "tun0") || !strings.Contains(err.Error(), strings.TrimSpace(test.output)) {
+				t.Fatalf("LinkDelete() error = %v, want interface name and command output", err)
+			}
+		})
+	}
 }
 
 func TestLinkSetDevUp(t *testing.T) {

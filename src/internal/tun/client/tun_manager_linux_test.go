@@ -34,6 +34,7 @@ type clienttunManagerIPMock struct {
 	deletedSplits4      [][]string
 	deletedSplits6      [][]string
 	deletedInterfaces   []string
+	linkDeleteErr       error
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -48,7 +49,7 @@ func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error { return m.mark("
 func (m *clienttunManagerIPMock) LinkDelete(devName string) error {
 	m.deletedInterfaces = append(m.deletedInterfaces, devName)
 	m.log.WriteString("ldel;")
-	return nil
+	return m.linkDeleteErr
 }
 func (m *clienttunManagerIPMock) LinkSetDevUp(string) error       { return m.mark("up") }
 func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
@@ -688,6 +689,25 @@ func TestOpenTunnel_OpenTunError(t *testing.T) {
 	}
 }
 
+func TestOpenTunnelReturnsInterfaceCleanupError(t *testing.T) {
+	openErr := errors.New("open TUN failed")
+	deleteErr := errors.New("delete interface failed")
+	mssErr := errors.New("remove MSS clamping failed")
+	m := newMgr(
+		settings.UDP,
+		&clienttunManagerIPMock{linkDeleteErr: deleteErr},
+		clienttunManagerIOCTLMock{openErr: openErr},
+		clienttunManagerMSSMock{removeErr: mssErr},
+	)
+
+	_, err := m.OpenTunnel(testServerAddrV4)
+	for _, wantErr := range []error{openErr, deleteErr, mssErr} {
+		if !errors.Is(err, wantErr) {
+			t.Errorf("OpenTunnel() error = %v, want %v", err, wantErr)
+		}
+	}
+}
+
 func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
 	tunFile, err := os.Open(os.DevNull)
 	if err != nil {
@@ -1044,6 +1064,28 @@ func TestCloseTunnelReturnsTunCloseErrorAndClearsTun(t *testing.T) {
 	}
 	if mgr.tun != nil {
 		t.Fatal("CloseTunnel() retained TUN after Close returned an error")
+	}
+}
+
+func TestCloseTunnelReturnsLinkDeleteErrorAndContinuesCleanup(t *testing.T) {
+	deleteErr := errors.New("delete interface failed")
+	ipMock := &clienttunManagerIPMock{linkDeleteErr: deleteErr}
+	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	tun := &clientTunMock{}
+	mgr.tun = tun
+	mgr.pinnedServerAddr = testServerAddrV4
+
+	if err := mgr.CloseTunnel(); !errors.Is(err, deleteErr) {
+		t.Errorf("CloseTunnel() error = %v, want %v", err, deleteErr)
+	}
+	if tun.closeCalls != 1 || mgr.tun != nil {
+		t.Errorf("TUN cleanup: close calls = %d, TUN = %v", tun.closeCalls, mgr.tun)
+	}
+	if !slices.Equal(ipMock.deletedInterfaces, []string{"tun1", "tun0", "tun2"}) {
+		t.Errorf("deleted interfaces = %v, want all configured interfaces", ipMock.deletedInterfaces)
+	}
+	if !slices.Equal(ipMock.routeDelTargets, []netip.Addr{testServerAddrV4}) || mgr.pinnedServerAddr.IsValid() {
+		t.Errorf("server route cleanup: deleted = %v, pinned = %v", ipMock.routeDelTargets, mgr.pinnedServerAddr)
 	}
 }
 
