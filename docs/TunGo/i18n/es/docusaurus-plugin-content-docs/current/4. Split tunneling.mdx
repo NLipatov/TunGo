@@ -1,0 +1,21 @@
+---
+id: SplitTunneling
+slug: /SplitTunneling
+---
+
+# Túnel dividido
+
+`TunnelRoutesV4` y `TunnelRoutesV6` son campos de nivel superior de la configuración del cliente que contienen subredes de destino en notación CIDR. El tráfico hacia estas subredes se envía a través de la VPN; los demás destinos utilizan las rutas restantes del sistema. Estos campos no restringen las direcciones de origen de los paquetes.
+
+Por ejemplo, para enviar el tráfico hacia dos subredes de destino a través de la VPN:
+
+```json
+{
+  "TunnelRoutesV4": ["192.0.2.0/24"],
+  "TunnelRoutesV6": ["2001:db8::/64"]
+}
+```
+
+## Comportamiento predeterminado
+
+Si se omite un campo o se usa `null`, se aplican las rutas predeterminadas de túnel completo para esa familia de direcciones. Un array vacío no añade rutas de esa lista. Las rutas hacia la subred de la VPN y los servidores DNS configurados siguen aplicándose. Los CIDR no válidos también se sustituyen por las rutas de túnel completo, con una advertencia en el registro del cliente.

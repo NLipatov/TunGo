@@ -1,0 +1,21 @@
+---
+id: SplitTunneling
+slug: /SplitTunneling
+---
+
+# Tunneling fractionné
+
+`TunnelRoutesV4` et `TunnelRoutesV6` sont des champs de premier niveau de la configuration client contenant les sous-réseaux de destination en notation CIDR. Le trafic vers ces sous-réseaux passe par le VPN ; les autres destinations utilisent les routes restantes du système. Ces champs ne restreignent pas les adresses source des paquets.
+
+Par exemple, pour acheminer le trafic vers deux sous-réseaux de destination via le VPN :
+
+```json
+{
+  "TunnelRoutesV4": ["192.0.2.0/24"],
+  "TunnelRoutesV6": ["2001:db8::/64"]
+}
+```
+
+## Comportement par défaut
+
+Un champ absent ou défini sur `null` applique les routes par défaut du tunnel complet pour cette famille d’adresses. Un tableau vide n’ajoute aucune route de cette liste. Les routes vers le sous-réseau VPN et les serveurs DNS configurés restent actives. Les CIDR invalides sont également remplacés par les routes du tunnel complet, avec un avertissement dans le journal du client.
