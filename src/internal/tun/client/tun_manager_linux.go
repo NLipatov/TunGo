@@ -53,8 +53,8 @@ func New(conf *client.Configuration) (*Manager, error) {
 		ip:            ip.New(cmd),
 		ioctl:         ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:           mssclamp.NewManager(cmd),
-		splitsv4:      withoutTunSubnet(conf.TunnelRoutesV4, active.IPv4Subnet.Masked().String()),
-		splitsv6:      withoutTunSubnet(conf.TunnelRoutesV6, active.IPv6Subnet.Masked().String()),
+		splitsv4:      conf.TunnelRoutesV4,
+		splitsv6:      conf.TunnelRoutesV6,
 	}, nil
 }
 
@@ -169,16 +169,8 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		m.pinnedServerAddr = serverAddr
 	}
 
-	if m.settings.HasIPv4() {
-		if err := m.ip.RouteAddSplitDev(m.settings.TunName, m.splitsv4); err != nil {
-			return err
-		}
-	}
-
-	if m.settings.HasIPv6() {
-		if err := m.ip.Route6AddSplitDev(m.settings.TunName, m.splitsv6); err != nil {
-			return err
-		}
+	if err := m.addSplitRoutes(serverAddr); err != nil {
+		return err
 	}
 
 	if setMtuErr := m.ip.LinkSetDevMTU(m.settings.TunName, m.settings.MTU); setMtuErr != nil {
@@ -195,6 +187,23 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", m.settings.TunName, err)
 	}
 
+	return nil
+}
+
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
+	if m.settings.HasIPv4() {
+		splits := withoutRoutes(m.splitsv4, m.settings.IPv4Subnet.Masked().String(), serverRoute)
+		if err := m.ip.RouteAddSplitDev(m.settings.TunName, splits); err != nil {
+			return err
+		}
+	}
+	if m.settings.HasIPv6() {
+		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := m.ip.Route6AddSplitDev(m.settings.TunName, splits); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

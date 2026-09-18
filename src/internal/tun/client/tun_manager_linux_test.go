@@ -354,6 +354,13 @@ func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
 			wantV4: []string{},
 			wantV6: []string{},
 		},
+		{
+			name:   "TUN subnets and server host route",
+			v4:     []string{"10.0.0.0/24", "198.51.100.1/32", "198.51.100.0/24"},
+			v6:     []string{"fd00::/64", "2001:db8::1/128"},
+			wantV4: []string{"198.51.100.0/24"},
+			wantV6: []string{"2001:db8::1/128"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			originalV4, originalV6 := slices.Clone(test.v4), slices.Clone(test.v6)
@@ -510,6 +517,99 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	}
 	if len(installedFamilies) != 1 || installedFamilies[0] != (mssclamp.Families{IPv4: true}) {
 		t.Fatalf("MSS families = %v, want IPv4 only", installedFamilies)
+	}
+}
+
+func TestOpenTunnelExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
+	routesV4 := []string{"128.0.0.0/1", "198.51.100.0/24", "198.51.100.1/32", "198.51.100.2/32"}
+	routesV6 := []string{"::/1", "2001:db8::/64", "2001:db8::1/128", "2001:db8::2/128"}
+	configuration := &client.Configuration{
+		ClientID: 1,
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun0",
+				IPv4Subnet: mustPrefix("10.0.0.0/24"),
+				IPv6Subnet: mustPrefix("fd00::/64"),
+			},
+			MTU: settings.DefaultMTU,
+		},
+		TunnelRoutesV4: slices.Clone(routesV4),
+		TunnelRoutesV6: slices.Clone(routesV6),
+	}
+	manager, err := New(configuration)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ipMock := &clienttunManagerIPMock{}
+	manager.ip = ipMock
+	manager.ioctl = clienttunManagerIOCTLMock{}
+	manager.dns = &clienttunManagerDNSMock{}
+	manager.mss = clienttunManagerMSSMock{}
+
+	for _, test := range []struct {
+		server string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			server: "198.51.100.1",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.0/24", "198.51.100.2/32"},
+			wantV6: routesV6,
+		},
+		{
+			server: "198.51.100.2",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.0/24", "198.51.100.1/32"},
+			wantV6: routesV6,
+		},
+		{
+			server: "2001:db8::1",
+			wantV4: routesV4,
+			wantV6: []string{"::/1", "2001:db8::/64", "2001:db8::2/128"},
+		},
+		{
+			server: "2001:db8::2",
+			wantV4: routesV4,
+			wantV6: []string{"::/1", "2001:db8::/64", "2001:db8::1/128"},
+		},
+		{
+			server: "::ffff:198.51.100.1",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.0/24", "198.51.100.2/32"},
+			wantV6: routesV6,
+		},
+		{
+			server: "203.0.113.1",
+			wantV4: routesV4,
+			wantV6: routesV6,
+		},
+	} {
+		t.Run(test.server, func(t *testing.T) {
+			serverAddr := mustAddr(test.server)
+			ipMock.routeReply = serverAddr.Unmap().String() + " dev eth0"
+			ipMock.addedSplits4, ipMock.addedSplits6 = nil, nil
+			if _, err := manager.OpenTunnel(serverAddr); err != nil {
+				t.Fatalf("OpenTunnel() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := manager.CloseTunnel(); err != nil {
+					t.Errorf("CloseTunnel() error = %v", err)
+				}
+			})
+			if !reflect.DeepEqual(ipMock.addedSplits4, [][]string{test.wantV4}) ||
+				!reflect.DeepEqual(ipMock.addedSplits6, [][]string{test.wantV6}) {
+				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
+					ipMock.addedSplits4, ipMock.addedSplits6, test.wantV4, test.wantV6)
+			}
+			if manager.pinnedServerAddr != serverAddr.Unmap() {
+				t.Errorf("pinned server = %s, want %s", manager.pinnedServerAddr, serverAddr.Unmap())
+			}
+			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
+				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			}
+			if !slices.Equal(configuration.TunnelRoutesV4, routesV4) || !slices.Equal(configuration.TunnelRoutesV6, routesV6) {
+				t.Errorf("manager changed configured routes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
+			}
+		})
 	}
 }
 

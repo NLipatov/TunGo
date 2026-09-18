@@ -85,7 +85,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.assignAddresses(); err != nil {
 		return nil, errors.Join(err, m.closeActiveTunnel())
 	}
-	if err := m.addSplitRoutes(); err != nil {
+	if err := m.addSplitRoutes(serverAddr); err != nil {
 		return nil, errors.Join(err, m.closeActiveTunnel())
 	}
 	if err := m.setMTU(); err != nil {
@@ -198,16 +198,19 @@ func (m *Manager) assignAddresses() error {
 	return nil
 }
 
-func (m *Manager) addSplitRoutes() error {
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
 	if m.settings.HasIPv4() {
-		_ = m.netConfig4.DeleteSplitRoutes(m.settings.TunName, m.splitsv4)
-		if err := m.netConfig4.AddSplitRoutes(m.settings.TunName, m.splitsv4); err != nil {
+		splits := withoutRoutes(m.splitsv4, serverRoute)
+		_ = m.netConfig4.DeleteSplitRoutes(m.settings.TunName, splits)
+		if err := m.netConfig4.AddSplitRoutes(m.settings.TunName, splits); err != nil {
 			return fmt.Errorf("add IPv4 split routes: %w", err)
 		}
 	}
 	if m.settings.HasIPv6() {
-		_ = m.netConfig6.DeleteSplitRoutes(m.settings.TunName, m.splitsv6)
-		if err := m.netConfig6.AddSplitRoutes(m.settings.TunName, m.splitsv6); err != nil {
+		splits := withoutRoutes(m.splitsv6, serverRoute)
+		_ = m.netConfig6.DeleteSplitRoutes(m.settings.TunName, splits)
+		if err := m.netConfig6.AddSplitRoutes(m.settings.TunName, splits); err != nil {
 			return fmt.Errorf("add IPv6 split routes: %w", err)
 		}
 	}

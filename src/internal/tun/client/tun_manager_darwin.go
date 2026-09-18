@@ -63,30 +63,16 @@ func New(configuration *client.Configuration) (*Manager, error) {
 		return nil, err
 	}
 	cmd := command.New()
-	manager := &Manager{
+	return &Manager{
 		settings:  active,
 		dns:       dns.New(cmd),
 		ifconfig4: ifconfig.NewV4(cmd),
 		ifconfig6: ifconfig.NewV6(cmd),
 		route4:    route.NewV4(cmd),
 		route6:    route.NewV6(cmd),
-	}
-	manager.splitsv4, manager.splitsv6 = effectiveSplits(configuration, active)
-	return manager, nil
-}
-
-func effectiveSplits(configuration *client.Configuration, active settings.Settings) ([]string, []string) {
-	splitsv4 := slices.Clone(configuration.TunnelRoutesV4)
-	if active.HasIPv4() {
-		// Unlike Linux, macOS does not create an IPv4 subnet route when assigning
-		// an address to utun, so add it explicitly.
-		tunSubnet := active.IPv4Subnet.Masked().String()
-		if !slices.Contains(splitsv4, tunSubnet) {
-			splitsv4 = append(splitsv4, tunSubnet)
-		}
-	}
-	splitsv6 := withoutTunSubnet(configuration.TunnelRoutesV6, active.IPv6Subnet.Masked().String())
-	return splitsv4, splitsv6
+		splitsv4:  configuration.TunnelRoutesV4,
+		splitsv6:  configuration.TunnelRoutesV6,
+	}, nil
 }
 
 func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
@@ -111,7 +97,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.assignAddresses(); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
 	}
-	if err := m.addSplitRoutes(); err != nil {
+	if err := m.addSplitRoutes(serverAddr); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
 	}
 	if err := m.setDNS(); err != nil {
@@ -203,14 +189,24 @@ func (m *Manager) assignAddresses() error {
 	return nil
 }
 
-func (m *Manager) addSplitRoutes() error {
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
 	if m.settings.HasIPv4() {
-		if err := m.route4.AddSplit(m.tun.Name(), m.splitsv4); err != nil {
+		// Unlike Linux, macOS does not create an IPv4 subnet route when assigning
+		// an address to utun, so add it explicitly.
+		splits := slices.Clone(m.splitsv4)
+		tunSubnet := m.settings.IPv4Subnet.Masked().String()
+		if !slices.Contains(splits, tunSubnet) {
+			splits = append(splits, tunSubnet)
+		}
+		splits = withoutRoutes(splits, serverRoute)
+		if err := m.route4.AddSplit(m.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv4 split default: %w", err)
 		}
 	}
 	if m.settings.HasIPv6() {
-		if err := m.route6.AddSplit(m.tun.Name(), m.splitsv6); err != nil {
+		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := m.route6.AddSplit(m.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv6 split default: %w", err)
 		}
 	}

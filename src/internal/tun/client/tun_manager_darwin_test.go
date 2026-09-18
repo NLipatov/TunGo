@@ -232,7 +232,7 @@ func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
 			if err := manager.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			if err := manager.addSplitRoutes(); err != nil {
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 			if err := manager.CloseTunnel(); err != nil {
@@ -268,6 +268,46 @@ func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
 	}
 }
 
+func TestDarwinManagerFiltersRoutesForCurrentServer(t *testing.T) {
+	routesV4 := []string{"128.0.0.0/1", "198.51.100.1/32"}
+	routesV6 := []string{"::/1", "fd00::/64", "2001:db8::1/128"}
+	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
+	manager.splitsv4, manager.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
+	manager.tun = &tunMock{name: "utun42"}
+
+	for _, test := range []struct {
+		server string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			server: "198.51.100.1",
+			wantV4: []string{"128.0.0.0/1", "10.0.0.0/24"},
+			wantV6: []string{"::/1", "2001:db8::1/128"},
+		},
+		{
+			server: "2001:db8::1",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.1/32", "10.0.0.0/24"},
+			wantV6: []string{"::/1"},
+		},
+	} {
+		t.Run(test.server, func(t *testing.T) {
+			route4.addedPrefixes, route6.addedPrefixes = nil, nil
+			if err := manager.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if !reflect.DeepEqual(route4.addedPrefixes, [][]string{test.wantV4}) ||
+				!reflect.DeepEqual(route6.addedPrefixes, [][]string{test.wantV6}) {
+				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
+					route4.addedPrefixes, route6.addedPrefixes, test.wantV4, test.wantV6)
+			}
+			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
+				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			}
+		})
+	}
+}
+
 func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -288,21 +328,26 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 			if err := manager.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			if err := manager.addSplitRoutes(); err != nil {
+			manager.splitsv4 = []string{"192.0.2.0/24"}
+			manager.splitsv6 = []string{"2001:db8::/64"}
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 
 			var wantAddresses4, wantAddresses6 []netip.Prefix
 			var wantSplits4, wantSplits6 []string
+			var wantPrefixes4, wantPrefixes6 [][]string
 			var wantMTUs4, wantMTUs6 []int
 			if test.v4 {
 				wantAddresses4 = []netip.Prefix{netip.MustParsePrefix("10.0.0.2/24")}
 				wantSplits4 = []string{"utun42"}
+				wantPrefixes4 = [][]string{{"192.0.2.0/24", "10.0.0.0/24"}}
 				wantMTUs4 = []int{1400}
 			}
 			if test.v6 {
 				wantAddresses6 = []netip.Prefix{netip.MustParsePrefix("fd00::2/64")}
 				wantSplits6 = []string{"utun42"}
+				wantPrefixes6 = [][]string{{"2001:db8::/64"}}
 				if !test.v4 {
 					wantMTUs6 = []int{1400}
 				}
@@ -319,6 +364,12 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 			}
 			if !reflect.DeepEqual(route6.addedSplit, wantSplits6) {
 				t.Fatalf("IPv6 split interfaces = %v, want %v", route6.addedSplit, wantSplits6)
+			}
+			if !reflect.DeepEqual(route4.addedPrefixes, wantPrefixes4) {
+				t.Fatalf("IPv4 split prefixes = %v, want %v", route4.addedPrefixes, wantPrefixes4)
+			}
+			if !reflect.DeepEqual(route6.addedPrefixes, wantPrefixes6) {
+				t.Fatalf("IPv6 split prefixes = %v, want %v", route6.addedPrefixes, wantPrefixes6)
 			}
 			if !reflect.DeepEqual(ifconfig4.mtus, wantMTUs4) {
 				t.Fatalf("IPv4 MTUs = %v, want %v", ifconfig4.mtus, wantMTUs4)
@@ -366,13 +417,17 @@ func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
 			name:   "IPv4 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, v4, _ *darwinRouteMock) { v4.splitErr = failure },
-			run:    (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 		{
 			name:   "IPv6 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, _, v6 *darwinRouteMock) { v6.splitErr = failure },
-			run:    (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 	}
 
@@ -470,7 +525,7 @@ func TestDarwinManagerClosesTunAfterIPv6RouteFailure(t *testing.T) {
 	if len(route4.addedPrefixes) != 0 || len(route6.addedPrefixes) != 0 {
 		t.Fatal("address assignment installed split routes")
 	}
-	if err := manager.addSplitRoutes(); !errors.Is(err, failure) {
+	if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
 		t.Fatalf("addSplitRoutes() error = %v, want %v", err, failure)
 	}
 	wantAddress := []netip.Prefix{netip.MustParsePrefix("10.8.0.2/20")}

@@ -1,11 +1,11 @@
-//go:build linux || darwin
-
 package client
 
-func withoutTunSubnet(splits []string, tunSubnet string) []string {
+import "slices"
+
+func withoutRoutes(splits []string, excluded ...string) []string {
 	routes := make([]string, 0, len(splits))
 	for _, split := range splits {
-		if split != tunSubnet {
+		if !slices.Contains(excluded, split) {
 			routes = append(routes, split)
 		}
 	}
