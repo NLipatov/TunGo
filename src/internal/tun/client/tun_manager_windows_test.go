@@ -90,13 +90,13 @@ func (m *windowsNetConfigMock) AddHostRouteOnLink(host netip.Addr, ifName string
 	return m.addRouteErr
 }
 
-func (m *windowsNetConfigMock) AddDefaultSplitRoutes(ifName string, prefixes []string) error {
+func (m *windowsNetConfigMock) AddSplitRoutes(ifName string, prefixes []string) error {
 	m.addedSplits = append(m.addedSplits, ifName)
 	m.addedPrefixes = append(m.addedPrefixes, slices.Clone(prefixes))
 	return m.addSplitErr
 }
 
-func (m *windowsNetConfigMock) DeleteDefaultSplitRoutes(ifName string, prefixes []string) error {
+func (m *windowsNetConfigMock) DeleteSplitRoutes(ifName string, prefixes []string) error {
 	m.deletedSplits = append(m.deletedSplits, ifName)
 	m.deletedPrefixes = append(m.deletedPrefixes, slices.Clone(prefixes))
 	return m.deleteSplitErr

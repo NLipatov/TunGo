@@ -121,7 +121,7 @@ func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string) error {
 	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), netip.IPv6Unspecified(), ipcfgMetric)
 }
 
-func (v *V6) AddDefaultSplitRoutes(ifName string, split []string) error {
+func (v *V6) AddSplitRoutes(ifName string, split []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -129,13 +129,13 @@ func (v *V6) AddDefaultSplitRoutes(ifName string, split []string) error {
 	for _, cidr := range split {
 		pfx, _ := netip.ParsePrefix(cidr)
 		if err = luid.AddRoute(pfx, netip.IPv6Unspecified(), ipcfgMetric); err != nil {
-			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s): %w", cidr, err)
+			return fmt.Errorf("AddSplitRoutes(v6 %s): %w", cidr, err)
 		}
 	}
 	return nil
 }
 
-func (v *V6) DeleteDefaultSplitRoutes(ifName string, split []string) error {
+func (v *V6) DeleteSplitRoutes(ifName string, split []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func (v *V6) DeleteDefaultSplitRoutes(ifName string, split []string) error {
 	for _, cidr := range split {
 		pfx, _ := netip.ParsePrefix(cidr)
 		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
-			errs = append(errs, fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", cidr, err))
+			errs = append(errs, fmt.Errorf("DeleteSplitRoutes(v6 %s): %w", cidr, err))
 		}
 	}
 	return errors.Join(errs...)

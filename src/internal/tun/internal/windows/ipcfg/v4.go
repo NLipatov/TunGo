@@ -120,7 +120,7 @@ func (v *V4) AddHostRouteOnLink(hostIP netip.Addr, ifName string) error {
 	return luid.AddRoute(netip.PrefixFrom(hostIP, 32), netip.IPv4Unspecified(), ipcfgMetric)
 }
 
-func (v *V4) AddDefaultSplitRoutes(ifName string, split []string) error {
+func (v *V4) AddSplitRoutes(ifName string, split []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -132,13 +132,13 @@ func (v *V4) AddDefaultSplitRoutes(ifName string, split []string) error {
 			netip.IPv4Unspecified(),
 			ipcfgMetric,
 		); roteErr != nil {
-			return fmt.Errorf("AddDefaultSplitRoutes(%s): %w", cidr, roteErr)
+			return fmt.Errorf("AddSplitRoutes(%s): %w", cidr, roteErr)
 		}
 	}
 	return nil
 }
 
-func (v *V4) DeleteDefaultSplitRoutes(ifName string, split []string) error {
+func (v *V4) DeleteSplitRoutes(ifName string, split []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (v *V4) DeleteDefaultSplitRoutes(ifName string, split []string) error {
 	for _, cidr := range split {
 		pfx, _ := netip.ParsePrefix(cidr)
 		if err := luid.DeleteRoute(pfx, netip.IPv4Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
-			last = fmt.Errorf("DeleteDefaultSplitRoutes(%s): %w", cidr, err)
+			last = fmt.Errorf("DeleteSplitRoutes(%s): %w", cidr, err)
 		}
 	}
 	return last
