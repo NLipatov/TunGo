@@ -67,11 +67,11 @@ func (m *clienttunManagerIPMock) RouteReplaceViaDev(target netip.Addr, _ string,
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplacevia")
 }
-func (m *clienttunManagerIPMock) RouteAddSplitDefaultDev(_ string, prefixes []string) error {
+func (m *clienttunManagerIPMock) RouteAddSplitDev(_ string, prefixes []string) error {
 	m.addedSplits4 = append(m.addedSplits4, slices.Clone(prefixes))
 	return m.mark("splitdef")
 }
-func (m *clienttunManagerIPMock) Route6AddSplitDefaultDev(_ string, prefixes []string) error {
+func (m *clienttunManagerIPMock) Route6AddSplitDev(_ string, prefixes []string) error {
 	m.addedSplits6 = append(m.addedSplits6, slices.Clone(prefixes))
 	return m.mark("splitdef6")
 }

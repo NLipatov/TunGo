@@ -170,13 +170,13 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 	}
 
 	if m.settings.HasIPv4() {
-		if err := m.ip.RouteAddSplitDefaultDev(m.settings.TunName, m.splitsv4); err != nil {
+		if err := m.ip.RouteAddSplitDev(m.settings.TunName, m.splitsv4); err != nil {
 			return err
 		}
 	}
 
 	if m.settings.HasIPv6() {
-		if err := m.ip.Route6AddSplitDefaultDev(m.settings.TunName, m.splitsv6); err != nil {
+		if err := m.ip.Route6AddSplitDev(m.settings.TunName, m.splitsv6); err != nil {
 			return err
 		}
 	}
