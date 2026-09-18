@@ -168,9 +168,9 @@ func TestRouteDefault(t *testing.T) {
 
 func TestSplitRoutesEmpty(t *testing.T) {
 	for name, run := range map[string]func(*Configurator, string, []string) error{
-		"add IPv4":    (*Configurator).RouteAddSplitDefaultDev,
+		"add IPv4":    (*Configurator).RouteAddSplitDev,
 		"delete IPv4": (*Configurator).RouteDelSplitDefault,
-		"add IPv6":    (*Configurator).Route6AddSplitDefaultDev,
+		"add IPv6":    (*Configurator).Route6AddSplitDev,
 		"delete IPv6": (*Configurator).Route6DelSplitDefault,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -188,11 +188,11 @@ func TestSplitRoutesEmpty(t *testing.T) {
 	}
 }
 
-func TestRouteAddSplitDefaultDev(t *testing.T) {
+func TestRouteAddSplitDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		rec := &recordingRunner{}
 		w := New(rec)
-		if err := w.RouteAddSplitDefaultDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
+		if err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		want := [][]string{
@@ -208,7 +208,7 @@ func TestRouteAddSplitDefaultDev(t *testing.T) {
 	t.Run("error on second route", func(t *testing.T) {
 		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
-		err := w.RouteAddSplitDefaultDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"})
+		err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"})
 		if err == nil || !strings.Contains(err.Error(), "failed to add split route 198.51.100.0/24") {
 			t.Fatalf("expected split-route error, got %v", err)
 		}
@@ -218,11 +218,11 @@ func TestRouteAddSplitDefaultDev(t *testing.T) {
 	})
 }
 
-func TestRoute6AddSplitDefaultDev(t *testing.T) {
+func TestRoute6AddSplitDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		rec := &recordingRunner{}
 		w := New(rec)
-		if err := w.Route6AddSplitDefaultDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
+		if err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		want := [][]string{
@@ -238,7 +238,7 @@ func TestRoute6AddSplitDefaultDev(t *testing.T) {
 	t.Run("error on second route", func(t *testing.T) {
 		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
-		err := w.Route6AddSplitDefaultDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"})
+		err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"})
 		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 2001:db8:2::/64") {
 			t.Fatalf("expected IPv6 split-route error, got %v", err)
 		}

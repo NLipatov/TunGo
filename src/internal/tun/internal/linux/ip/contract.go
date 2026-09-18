@@ -10,8 +10,8 @@ type Contract interface {
 	LinkSetDevMTU(devName string, mtu int) error
 	AddrAddDev(devName string, cidr string) error
 	RouteDefault() (string, error)
-	RouteAddSplitDefaultDev(devName string, split []string) error
-	Route6AddSplitDefaultDev(devName string, split []string) error
+	RouteAddSplitDev(devName string, split []string) error
+	Route6AddSplitDev(devName string, split []string) error
 	RouteDelSplitDefault(devName string, split []string) error
 	Route6DelSplitDefault(devName string, split []string) error
 	RouteGet(hostAddr netip.Addr) (string, error)

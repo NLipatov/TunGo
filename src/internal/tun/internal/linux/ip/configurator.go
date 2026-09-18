@@ -99,7 +99,7 @@ func (i *Configurator) parseDefaultRoute(name string, args ...string) (string, e
 }
 
 // The kernel removes these routes when their device is deleted.
-func (i *Configurator) RouteAddSplitDefaultDev(devName string, split []string) error {
+func (i *Configurator) RouteAddSplitDev(devName string, split []string) error {
 	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
 		if err != nil {
@@ -110,7 +110,7 @@ func (i *Configurator) RouteAddSplitDefaultDev(devName string, split []string) e
 	return nil
 }
 
-func (i *Configurator) Route6AddSplitDefaultDev(devName string, split []string) error {
+func (i *Configurator) Route6AddSplitDev(devName string, split []string) error {
 	for _, prefix := range split {
 		output, err := i.runner.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
 		if err != nil {
