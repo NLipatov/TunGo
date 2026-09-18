@@ -110,16 +110,27 @@ func TestConfigurationsActiveNormalizesAllowedIPs(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "client_configuration.json")
 	writeConfiguration(t, path, configuration)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	loaded, err := (&Configurations{activePath: path}).Active()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"10.20.1.0/24", "192.0.2.0/24"}; !slices.Equal(loaded.AllowedIPsv4, want) {
+	if want := []string{"10.20.1.0/24", "192.0.2.0/24", "1.1.1.1/32", "8.8.8.8/32"}; !slices.Equal(loaded.AllowedIPsv4, want) {
 		t.Errorf("AllowedIPsv4 = %v, want %v", loaded.AllowedIPsv4, want)
 	}
 	if want := []string{"2001:db8:2::/64", "2001:db8:1::/64"}; !slices.Equal(loaded.AllowedIPsv6, want) {
 		t.Errorf("AllowedIPsv6 = %v, want %v", loaded.AllowedIPsv6, want)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(persisted) != string(original) {
+		t.Fatal("loading the active configuration rewrote the file")
 	}
 }
 
@@ -181,30 +192,54 @@ func TestConfigurationsActiveExpandsDefaultAllowedIPs(t *testing.T) {
 	}
 }
 
-func TestConfigurationsAllowedIPsPreserveEmptyLists(t *testing.T) {
-	configuration := validTestConfiguration()
-	configuration.AllowedIPsv4 = []string{}
-	configuration.AllowedIPsv6 = []string{}
-	data, err := json.Marshal(configuration)
-	if err != nil {
-		t.Fatal(err)
-	}
-	configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
-	if err := configurations.Import("empty", string(data)); err != nil {
-		t.Fatal(err)
-	}
-	if err := configurations.Activate("empty"); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := configurations.Active()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.AllowedIPsv4 == nil || len(loaded.AllowedIPsv4) != 0 {
-		t.Errorf("AllowedIPsv4 = %#v, want a non-nil empty list", loaded.AllowedIPsv4)
-	}
-	if loaded.AllowedIPsv6 == nil || len(loaded.AllowedIPsv6) != 0 {
-		t.Errorf("AllowedIPsv6 = %#v, want a non-nil empty list", loaded.AllowedIPsv6)
+func TestConfigurationsEmptyAllowedIPs(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		dns4   []string
+		dns6   []string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			name:   "default DNS needs host routes",
+			wantV4: []string{"1.1.1.1/32", "8.8.8.8/32"},
+			wantV6: []string{"2606:4700:4700::1111/128", "2001:4860:4860::8888/128"},
+		},
+		{
+			name:   "DNS inside TUN subnets keeps empty lists",
+			dns4:   []string{"10.0.1.1"},
+			dns6:   []string{"fd00::1"},
+			wantV4: []string{},
+			wantV6: []string{},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configuration := validTestConfiguration()
+			configuration.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+			configuration.UDPSettings.DNSv4, configuration.UDPSettings.DNSv6 = tt.dns4, tt.dns6
+			configuration.AllowedIPsv4, configuration.AllowedIPsv6 = []string{}, []string{}
+			data, err := json.Marshal(configuration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configurations := &Configurations{activePath: filepath.Join(t.TempDir(), "client_configuration.json")}
+			if err := configurations.Import("empty", string(data)); err != nil {
+				t.Fatal(err)
+			}
+			if err := configurations.Activate("empty"); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := configurations.Active()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.AllowedIPsv4 == nil || !slices.Equal(loaded.AllowedIPsv4, tt.wantV4) {
+				t.Errorf("AllowedIPsv4 = %#v, want %#v", loaded.AllowedIPsv4, tt.wantV4)
+			}
+			if loaded.AllowedIPsv6 == nil || !slices.Equal(loaded.AllowedIPsv6, tt.wantV6) {
+				t.Errorf("AllowedIPsv6 = %#v, want %#v", loaded.AllowedIPsv6, tt.wantV6)
+			}
+		})
 	}
 }
 
@@ -235,6 +270,7 @@ func TestConfigurationsActiveDefaultsInvalidAllowedIPs(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()
+			configuration.UDPSettings.DNSv4 = []string{"10.0.1.1"}
 			configuration.AllowedIPsv4 = tt.v4
 			configuration.AllowedIPsv6 = tt.v6
 			path := filepath.Join(t.TempDir(), "client_configuration.json")

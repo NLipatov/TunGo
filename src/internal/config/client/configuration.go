@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"slices"
+	"strings"
 
 	"tungo/internal/config/settings"
 )
@@ -29,65 +30,47 @@ type Configuration struct {
 }
 
 func (c *Configuration) applyDefaults() {
-	effectiveV4, effectiveV6 := effectiveAllowedIPs(c.AllowedIPsv4, c.AllowedIPsv6)
-	if c.AllowedIPsv4 != nil && !slices.Equal(c.AllowedIPsv4, effectiveV4) {
-		slog.Warn(
-			"client AllowedIPsv4 were changed",
-			"configured", c.AllowedIPsv4,
-			"effective", effectiveV4,
-		)
-	}
-	if c.AllowedIPsv6 != nil && !slices.Equal(c.AllowedIPsv6, effectiveV6) {
-		slog.Warn(
-			"client AllowedIPsv6 were changed",
-			"configured", c.AllowedIPsv6,
-			"effective", effectiveV6,
-		)
-	}
-	c.AllowedIPsv4, c.AllowedIPsv6 = effectiveV4, effectiveV6
-	active, err := c.selectedSettings()
+	activeSettings, err := c.selectedSettings()
 	if err != nil {
 		return
 	}
-	if active.IPv4Subnet.IsValid() && active.IPv4Subnet.Addr().Is4() && len(active.DNSv4) == 0 {
-		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
-	}
-	if active.IPv6Subnet.IsValid() && active.IPv6Subnet.Addr().Unmap().Is6() && len(active.DNSv6) == 0 {
-		active.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
-	}
-	effectiveMTU := effectiveMTU(active.MTU, active.IPv4Subnet, active.IPv6Subnet)
-	if active.MTU != 0 && active.MTU != effectiveMTU {
-		slog.Warn(
-			"client MTU was changed to a supported default",
-			"protocol", c.Protocol.String(),
-			"configured", active.MTU,
-			"effective", effectiveMTU,
-		)
-	}
-	active.MTU = effectiveMTU
+	dnsV4, dnsV6 := effectiveDNS(activeSettings.Network)
+	allowedV4, allowedV6 := effectiveAllowedIPs(
+		c.AllowedIPsv4, c.AllowedIPsv6,
+		dnsV4, dnsV6,
+		activeSettings.IPv4Subnet, activeSettings.IPv6Subnet,
+	)
+	mtu := effectiveMTU(*activeSettings, c.Protocol)
+
+	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
+	c.AllowedIPsv4, c.AllowedIPsv6 = allowedV4, allowedV6
+	activeSettings.MTU = mtu
 }
 
-// effectiveMTU determines the usable MTU for the configured address families.
-// It returns the default MTU when the value falls outside the applicable IPv4 or IPv6 limits.
-func effectiveMTU(mtu int, v4Subnet, v6Subnet netip.Prefix) int {
-	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
-	switch {
-	case v6Subnet.IsValid() && v6Subnet.Addr().Unmap().Is6():
-		if mtu < settings.MinimumIPv6MTU || mtu > settings.MaximumMTU {
-			return settings.DefaultMTU
-		}
-	case v4Subnet.IsValid() && v4Subnet.Addr().Is4():
-		if mtu < settings.MinimumIPv4MTU || mtu > settings.MaximumMTU {
-			return settings.DefaultMTU
-		}
+func effectiveDNS(network settings.Network) ([]string, []string) {
+	defaultv4 := []string{"1.1.1.1", "8.8.8.8"}
+	defaultv6 := []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
+	v4, v6 := network.DNSv4, network.DNSv6
+	if network.IPv4Subnet.IsValid() && network.IPv4Subnet.Addr().Is4() && len(v4) == 0 {
+		v4 = defaultv4
+		slog.Info("client DNSv4 defaults applied", "effective", v4)
 	}
-	return mtu
+	if network.IPv6Subnet.IsValid() && network.IPv6Subnet.Addr().Unmap().Is6() && len(v6) == 0 {
+		v6 = defaultv6
+		slog.Info("client DNSv6 defaults applied", "effective", v6)
+	}
+	return v4, v6
 }
 
 // effectiveAllowedIPs replaces each missing or invalid family list with full-tunnel defaults.
 // Valid /0 prefixes expand into two /1 routes to preserve the system default route.
-// Explicitly empty lists remain empty.
-func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
+// DNS routes are added unless covered by a split or the TUN subnet.
+func effectiveAllowedIPs(
+	v4, v6 []string,
+	dnsV4, dnsV6 []string,
+	tunSubnetV4, tunSubnetV6 netip.Prefix,
+) ([]string, []string) {
+	configuredV4, configuredV6 := v4, v6
 	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
 	defaultV6 := []string{"::/1", "8000::/1"}
 	if v4 == nil {
@@ -136,7 +119,74 @@ func effectiveAllowedIPs(v4, v6 []string) ([]string, []string) {
 			normalizedV6 = append(normalizedV6, route)
 		}
 	}
+	if tunSubnetV4.IsValid() && tunSubnetV4.Addr().Is4() {
+		normalizedV4 = withDNSRoutes(normalizedV4, dnsV4, tunSubnetV4)
+	}
+	if tunSubnetV6.IsValid() && tunSubnetV6.Addr().Unmap().Is6() {
+		normalizedV6 = withDNSRoutes(normalizedV6, dnsV6, tunSubnetV6)
+	}
+	if configuredV4 != nil && !slices.Equal(configuredV4, normalizedV4) {
+		slog.Warn(
+			"client AllowedIPsv4 were changed",
+			"configured", configuredV4,
+			"effective", normalizedV4,
+		)
+	}
+	if configuredV6 != nil && !slices.Equal(configuredV6, normalizedV6) {
+		slog.Warn(
+			"client AllowedIPsv6 were changed",
+			"configured", configuredV6,
+			"effective", normalizedV6,
+		)
+	}
 	return normalizedV4, normalizedV6
+}
+
+func withDNSRoutes(splits, resolvers []string, tunSubnet netip.Prefix) []string {
+	for _, resolver := range resolvers {
+		addr, err := netip.ParseAddr(strings.TrimSpace(resolver))
+		if err != nil {
+			continue
+		}
+		addr = addr.WithZone("")
+		if tunSubnet.Contains(addr) {
+			continue
+		}
+		if slices.ContainsFunc(splits, func(split string) bool {
+			prefix, _ := netip.ParsePrefix(split)
+			return prefix.Contains(addr)
+		}) {
+			continue
+		}
+		splits = append(splits, netip.PrefixFrom(addr, addr.BitLen()).String())
+	}
+	return splits
+}
+
+// effectiveMTU determines the usable MTU for the configured address families.
+// It returns the default MTU when the value falls outside the applicable IPv4 or IPv6 limits.
+func effectiveMTU(configured settings.Settings, protocol settings.Protocol) int {
+	mtu := configured.MTU
+	// Use IPv6 limits for dual-stack because its minimum MTU is higher.
+	switch {
+	case configured.IPv6Subnet.IsValid() && configured.IPv6Subnet.Addr().Unmap().Is6():
+		if mtu < settings.MinimumIPv6MTU || mtu > settings.MaximumMTU {
+			mtu = settings.DefaultMTU
+		}
+	case configured.IPv4Subnet.IsValid() && configured.IPv4Subnet.Addr().Is4():
+		if mtu < settings.MinimumIPv4MTU || mtu > settings.MaximumMTU {
+			mtu = settings.DefaultMTU
+		}
+	}
+	if configured.MTU != 0 && configured.MTU != mtu {
+		slog.Warn(
+			"client MTU was changed to a supported default",
+			"protocol", protocol.String(),
+			"configured", configured.MTU,
+			"effective", mtu,
+		)
+	}
+	return mtu
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {
