@@ -33,6 +33,7 @@ type clienttunManagerIPMock struct {
 	addedSplits6        [][]string
 	deletedSplits4      [][]string
 	deletedSplits6      [][]string
+	deletedInterfaces   []string
 }
 
 func (m *clienttunManagerIPMock) mark(s string) error {
@@ -43,8 +44,12 @@ func (m *clienttunManagerIPMock) mark(s string) error {
 	return nil
 }
 
-func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error    { return m.mark("add") }
-func (m *clienttunManagerIPMock) LinkDelete(string) error         { m.log.WriteString("ldel;"); return nil }
+func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error { return m.mark("add") }
+func (m *clienttunManagerIPMock) LinkDelete(devName string) error {
+	m.deletedInterfaces = append(m.deletedInterfaces, devName)
+	m.log.WriteString("ldel;")
+	return nil
+}
 func (m *clienttunManagerIPMock) LinkSetDevUp(string) error       { return m.mark("up") }
 func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
 func (m *clienttunManagerIPMock) AddrAddDev(string, string) error { return m.mark("addr") }
@@ -281,14 +286,13 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4 {
 		t.Fatalf("RouteDel() targets = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
-	cleanupSteps := []string{"ldel;", "rdel;"}
-	if m.settings.HasIPv4() {
-		cleanupSteps = append(cleanupSteps, "splitdel;")
+	if m.tun != nil {
+		t.Fatal("failed OpenTunnel retained TUN")
 	}
-	if m.settings.HasIPv6() {
-		cleanupSteps = append(cleanupSteps, "splitdel6;")
+	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
+		t.Fatalf("rollback explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
 	}
-	for _, cleanupStep := range cleanupSteps {
+	for _, cleanupStep := range []string{"ldel;", "rdel;"} {
 		if !strings.Contains(ipMock.log.String(), cleanupStep) {
 			t.Errorf("cleanup log = %q, want %q", ipMock.log.String(), cleanupStep)
 		}
@@ -317,26 +321,49 @@ func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 // ============================ Tests ===========================
 //
 
-func TestLinuxManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
+func TestLinuxManagerAppliesAllowedIPs(t *testing.T) {
 	for _, test := range []struct {
-		name string
-		v4   []string
-		v6   []string
+		name   string
+		v4     []string
+		v6     []string
+		wantV4 []string
+		wantV6 []string
 	}{
-		{name: "custom prefixes", v4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}, v6: []string{"2001:db8:1::/64"}},
-		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}},
-		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}},
-		{name: "both empty", v4: []string{}, v6: []string{}},
+		{
+			name:   "custom prefixes",
+			v4:     []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"},
+			v6:     []string{"2001:db8:1::/64"},
+			wantV4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"},
+			wantV6: []string{"2001:db8:1::/64"},
+		},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}, wantV4: []string{}, wantV6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}, wantV4: []string{"192.0.2.0/24"}, wantV6: []string{}},
+		{name: "both empty", v4: []string{}, v6: []string{}, wantV4: []string{}, wantV6: []string{}},
+		{
+			name:   "connected subnets preserve broader and narrower routes",
+			v4:     []string{"10.0.0.0/16", "10.0.0.0/24", "10.0.0.0/25", "192.0.2.0/24"},
+			v6:     []string{"fd00::/48", "fd00::/64", "fd00::/80", "2001:db8::/64"},
+			wantV4: []string{"10.0.0.0/16", "10.0.0.0/25", "192.0.2.0/24"},
+			wantV6: []string{"fd00::/48", "fd00::/80", "2001:db8::/64"},
+		},
+		{
+			name:   "only connected subnets",
+			v4:     []string{"10.0.0.0/24"},
+			v6:     []string{"fd00::/64"},
+			wantV4: []string{},
+			wantV6: []string{},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			originalV4, originalV6 := slices.Clone(test.v4), slices.Clone(test.v6)
 			manager, err := New(&client.Configuration{
 				ClientID: 1,
 				Protocol: settings.UDP,
 				UDPSettings: settings.Settings{
 					Network: settings.Network{
 						TunName:    "tun0",
-						IPv4Subnet: mustPrefix("10.0.0.0/24"),
-						IPv6Subnet: mustPrefix("fd00::/64"),
+						IPv4Subnet: mustPrefix("10.0.0.17/24"),
+						IPv6Subnet: mustPrefix("fd00::17/64"),
 					},
 					MTU: settings.DefaultMTU,
 				},
@@ -350,11 +377,21 @@ func TestLinuxManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
 			manager.ip = ipMock
 			manager.dns = &clienttunManagerDNSMock{}
 			manager.mss = clienttunManagerMSSMock{}
+			tun := &clientTunMock{}
+			manager.tun = tun
 			if err := manager.configureTunnel(testServerAddrV4); err != nil {
 				t.Fatalf("configureTunnel() error = %v", err)
 			}
 			if err := manager.CloseTunnel(); err != nil {
 				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+			if tun.closeCalls != 1 || manager.tun != nil {
+				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+			}
+
+			if !slices.Equal(manager.configuration.AllowedIPsv4, originalV4) ||
+				!slices.Equal(manager.configuration.AllowedIPsv6, originalV6) {
+				t.Fatalf("manager changed configured AllowedIPs: IPv4=%v IPv6=%v", manager.configuration.AllowedIPsv4, manager.configuration.AllowedIPsv6)
 			}
 
 			for _, check := range []struct {
@@ -363,10 +400,10 @@ func TestLinuxManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
 				want  []string
 				count int
 			}{
-				{name: "add IPv4", calls: ipMock.addedSplits4, want: test.v4, count: 1},
-				{name: "add IPv6", calls: ipMock.addedSplits6, want: test.v6, count: 1},
-				{name: "delete IPv4", calls: ipMock.deletedSplits4, want: test.v4, count: 1},
-				{name: "delete IPv6", calls: ipMock.deletedSplits6, want: test.v6, count: 1},
+				{name: "add IPv4", calls: ipMock.addedSplits4, want: test.wantV4, count: 1},
+				{name: "add IPv6", calls: ipMock.addedSplits6, want: test.wantV6, count: 1},
+				{name: "delete IPv4", calls: ipMock.deletedSplits4, count: 0},
+				{name: "delete IPv6", calls: ipMock.deletedSplits6, count: 0},
 			} {
 				if len(check.calls) != check.count {
 					t.Fatalf("%s calls = %v, want %d calls", check.name, check.calls, check.count)
@@ -378,6 +415,47 @@ func TestLinuxManagerAppliesAndRemovesAllowedIPs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLinuxManagerDeletesInterfacesWithDifferentSubnets(t *testing.T) {
+	manager, err := New(&client.Configuration{
+		ClientID: 1,
+		Protocol: settings.UDP,
+		TCPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun1",
+				IPv4Subnet: mustPrefix("10.1.0.17/24"),
+				IPv6Subnet: mustPrefix("fd01::17/64"),
+			},
+		},
+		UDPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun0",
+				IPv4Subnet: mustPrefix("10.0.0.17/24"),
+				IPv6Subnet: mustPrefix("fd00::17/64"),
+			},
+			MTU: settings.DefaultMTU,
+		},
+		AllowedIPsv4: []string{"10.0.0.0/24", "10.1.0.0/24", "192.0.2.0/24"},
+		AllowedIPsv6: []string{"fd00::/64", "fd01::/64", "2001:db8::/64"},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ipMock := &clienttunManagerIPMock{}
+	manager.ip = ipMock
+	manager.dns = &clienttunManagerDNSMock{}
+	manager.mss = clienttunManagerMSSMock{}
+	if err := manager.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+
+	if want := []string{"tun1", "tun0"}; !slices.Equal(ipMock.deletedInterfaces, want) {
+		t.Errorf("deleted interfaces = %v, want %v", ipMock.deletedInterfaces, want)
+	}
+	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
+		t.Fatalf("CloseTunnel() explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
 	}
 }
 

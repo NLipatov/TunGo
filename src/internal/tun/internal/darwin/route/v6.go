@@ -4,7 +4,6 @@ package route
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -104,27 +103,13 @@ func (v *V6) Del(destIP string) error {
 
 func (v *V6) AddSplit(dev string, split []string) error {
 	for _, cidr := range split {
-		_ = v.runDeleteSplit("-inet6", cidr, "-interface", dev)
-	}
-
-	for _, cidr := range split {
 		if out, err := v.runner.CombinedOutput(
 			"route", "-q", "-n", "add", "-inet6", cidr, "-interface", dev,
-		); err != nil && !bytes.Contains(out, []byte("File exists")) {
+		); err != nil {
 			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
 		}
 	}
 	return nil
-}
-
-func (v *V6) DelSplit(dev string, split []string) error {
-	var errs []error
-	for _, cidr := range split {
-		if err := v.runDeleteSplit("-inet6", cidr, "-interface", dev); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }
 
 func (v *V6) addOnLink(ip, iface string) error {
@@ -139,15 +124,6 @@ func (v *V6) addViaGateway(ip, gw string) error {
 	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
-	}
-	return nil
-}
-
-func (v *V6) runDeleteSplit(args ...string) error {
-	full := append([]string{"-q", "-n", "delete"}, args...)
-	out, err := v.runner.CombinedOutput("route", full...)
-	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
-		return fmt.Errorf("route delete %v failed: %v (%s)", args, err, out)
 	}
 	return nil
 }

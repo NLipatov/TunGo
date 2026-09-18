@@ -53,8 +53,8 @@ func New(conf *client.Configuration) (*Manager, error) {
 		ip:            ip.New(cmd),
 		ioctl:         ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:           mssclamp.NewManager(cmd),
-		splitsv4:      conf.AllowedIPsv4,
-		splitsv6:      conf.AllowedIPsv6,
+		splitsv4:      withoutTunSubnet(conf.AllowedIPsv4, active.IPv4Subnet.Masked().String()),
+		splitsv6:      withoutTunSubnet(conf.AllowedIPsv6, active.IPv6Subnet.Masked().String()),
 	}, nil
 }
 
@@ -222,11 +222,10 @@ func (m *Manager) CloseTunnel() error {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
 	}
 	if m.tun != nil {
-		tun := m.tun
-		m.tun = nil
-		if err := tun.Close(); err != nil {
+		if err := m.tun.Close(); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
+		m.tun = nil
 	}
 
 	cleanupErrs = append(cleanupErrs,
@@ -251,12 +250,6 @@ func (m *Manager) removeTunInterface(s settings.Settings) error {
 	var cleanupErrs []error
 	if err := m.mss.Remove(s.TunName); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
-	}
-	if s.IPv4Subnet.IsValid() {
-		_ = m.ip.RouteDelSplitDefault(s.TunName, m.splitsv4)
-	}
-	if s.IPv6Subnet.IsValid() {
-		_ = m.ip.Route6DelSplitDefault(s.TunName, m.splitsv6)
 	}
 	_ = m.ip.LinkDelete(s.TunName)
 	return errors.Join(cleanupErrs...)

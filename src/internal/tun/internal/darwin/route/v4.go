@@ -4,7 +4,6 @@ package route
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -101,26 +100,11 @@ func (v *V4) Del(destIP string) error {
 
 func (v *V4) AddSplit(dev string, splits []string) error {
 	for _, cidr := range splits {
-		_ = v.runDeleteSplit("-net", cidr, "-interface", dev)
-	}
-
-	for _, cidr := range splits {
-		if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", cidr, "-interface", dev); err != nil &&
-			!bytes.Contains(out, []byte("File exists")) {
+		if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", cidr, "-interface", dev); err != nil {
 			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
 		}
 	}
 	return nil
-}
-
-func (v *V4) DelSplit(dev string, split []string) error {
-	var errs []error
-	for _, cidr := range split {
-		if err := v.runDeleteSplit("-net", cidr, "-interface", dev); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }
 
 func (v *V4) addOnLink(ip, iFace string) error {
@@ -135,15 +119,6 @@ func (v *V4) addViaGateway(ip, gw string) error {
 	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
-	}
-	return nil
-}
-
-func (v *V4) runDeleteSplit(args ...string) error {
-	full := append([]string{"-q", "-n", "delete"}, args...)
-	out, err := v.runner.CombinedOutput("route", full...)
-	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
-		return fmt.Errorf("route delete %v failed: %v (%s)", args, err, out)
 	}
 	return nil
 }
