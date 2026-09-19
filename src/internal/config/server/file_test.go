@@ -46,13 +46,17 @@ func testX25519KeyPair(t *testing.T, seed byte) ([]byte, []byte) {
 }
 
 func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
+	t.Setenv("EnableTCP", "")
+	t.Setenv("EnableUDP", "")
+	t.Setenv("EnableWS", "")
 	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	configuration, err := NewFile(path).Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !configuration.EnableUDP || configuration.UDPSettings.TunName == "" {
+	if !configuration.EnableTCP || !configuration.EnableUDP || !configuration.EnableWS ||
+		configuration.UDPSettings.TunName == "" {
 		t.Fatalf("unexpected default configuration: %+v", configuration)
 	}
 	if _, err := os.Stat(path); err != nil {
