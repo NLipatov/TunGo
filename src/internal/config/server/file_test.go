@@ -46,13 +46,17 @@ func testX25519KeyPair(t *testing.T, seed byte) ([]byte, []byte) {
 }
 
 func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
+	t.Setenv("EnableTCP", "")
+	t.Setenv("EnableUDP", "")
+	t.Setenv("EnableWS", "")
 	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	configuration, err := NewFile(path).Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !configuration.EnableUDP || configuration.UDPSettings.TunName == "" {
+	if !configuration.EnableTCP || !configuration.EnableUDP || !configuration.EnableWS ||
+		configuration.UDPSettings.TunName == "" {
 		t.Fatalf("unexpected default configuration: %+v", configuration)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -67,13 +71,13 @@ func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
 func TestFileLoadAppliesEnvironmentWhenCreatingDefaultConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	t.Setenv("Host", "env.example")
-	t.Setenv("EnableTCP", "true")
+	t.Setenv("EnableTCP", "false")
 
 	configuration, err := NewFile(path).Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configuration.Host != "env.example" || !configuration.EnableTCP {
+	if configuration.Host != "env.example" || configuration.EnableTCP {
 		t.Fatalf("environment overrides not applied: %+v", configuration)
 	}
 
@@ -85,7 +89,7 @@ func TestFileLoadAppliesEnvironmentWhenCreatingDefaultConfiguration(t *testing.T
 	if err := json.Unmarshal(data, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted.Host != "" || persisted.EnableTCP {
+	if persisted.Host != "" || !persisted.EnableTCP {
 		t.Fatalf("environment overrides were persisted: %+v", persisted)
 	}
 }
@@ -124,7 +128,7 @@ func TestFileMutationPersistsEnvironmentOverrides(t *testing.T) {
 	}}
 	writeServerConfiguration(t, path, *configuration)
 	t.Setenv("Host", "environment.example")
-	t.Setenv("EnableTCP", "true")
+	t.Setenv("EnableTCP", "false")
 
 	if err := NewFile(path).SetPeerEnabled(1, false); err != nil {
 		t.Fatal(err)
@@ -137,7 +141,7 @@ func TestFileMutationPersistsEnvironmentOverrides(t *testing.T) {
 	if err := json.Unmarshal(data, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted.Host != "environment.example" || !persisted.EnableTCP {
+	if persisted.Host != "environment.example" || persisted.EnableTCP {
 		t.Fatalf("persisted configuration does not contain environment overrides: %+v", persisted)
 	}
 }
