@@ -138,21 +138,6 @@ func (v *V4) AddSplitRoutes(ifName string, split []string) error {
 	return nil
 }
 
-func (v *V4) DeleteSplitRoutes(ifName string, split []string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	var last error
-	for _, cidr := range split {
-		pfx, _ := netip.ParsePrefix(cidr)
-		if err := luid.DeleteRoute(pfx, netip.IPv4Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
-			last = fmt.Errorf("DeleteSplitRoutes(%s): %w", cidr, err)
-		}
-	}
-	return last
-}
-
 // DeleteRoute removes all IPv4 routes that exactly match dst (host "a.b.c.d" → /32, or CIDR).
 func (v *V4) DeleteRoute(destination netip.Addr) error {
 	if !destination.Is4() {

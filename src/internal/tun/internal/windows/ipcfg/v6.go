@@ -135,21 +135,6 @@ func (v *V6) AddSplitRoutes(ifName string, split []string) error {
 	return nil
 }
 
-func (v *V6) DeleteSplitRoutes(ifName string, split []string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, cidr := range split {
-		pfx, _ := netip.ParsePrefix(cidr)
-		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
-			errs = append(errs, fmt.Errorf("DeleteSplitRoutes(v6 %s): %w", cidr, err))
-		}
-	}
-	return errors.Join(errs...)
-}
-
 // DeleteRoute removes all IPv6 routes that exactly match dst (host "::1" → /128, or CIDR).
 func (v *V6) DeleteRoute(destination netip.Addr) error {
 	if !destination.Is6() || destination.Is4In6() {
