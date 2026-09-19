@@ -7,10 +7,6 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"tungo/internal/tun/internal/splitroute"
-
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -105,28 +101,15 @@ func (v *V6) Del(destIP string) error {
 	return nil
 }
 
-func (v *V6) AddSplit(dev string) error {
-	_ = v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev)
-	_ = v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev)
-
-	if out, err := v.runner.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6LowerHalf, "-interface", dev,
-	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6LowerHalf, err, out)
-	}
-	if out, err := v.runner.CombinedOutput(
-		"route", "-q", "-n", "add", "-inet6", splitroute.IPv6UpperHalf, "-interface", dev,
-	); err != nil && !bytes.Contains(out, []byte("File exists")) {
-		return fmt.Errorf("route add %s failed: %v (%s)", splitroute.IPv6UpperHalf, err, out)
+func (v *V6) AddSplit(dev string, split []string) error {
+	for _, cidr := range split {
+		if out, err := v.runner.CombinedOutput(
+			"route", "-q", "-n", "add", "-inet6", cidr, "-interface", dev,
+		); err != nil {
+			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
+		}
 	}
 	return nil
-}
-
-func (v *V6) DelSplit(dev string) error {
-	var eg errgroup.Group
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6LowerHalf, "-interface", dev) })
-	eg.Go(func() error { return v.runDeleteSplit("-inet6", splitroute.IPv6UpperHalf, "-interface", dev) })
-	return eg.Wait()
 }
 
 func (v *V6) addOnLink(ip, iface string) error {
@@ -141,15 +124,6 @@ func (v *V6) addViaGateway(ip, gw string) error {
 	out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
 	if err != nil && !bytes.Contains(out, []byte("File exists")) {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
-	}
-	return nil
-}
-
-func (v *V6) runDeleteSplit(args ...string) error {
-	full := append([]string{"-q", "-n", "delete"}, args...)
-	out, err := v.runner.CombinedOutput("route", full...)
-	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
-		return fmt.Errorf("route delete %v failed: %v (%s)", args, err, out)
 	}
 	return nil
 }

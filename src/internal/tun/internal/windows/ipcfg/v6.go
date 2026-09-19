@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/internal/tun/internal/splitroute"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
@@ -122,33 +121,18 @@ func (v *V6) AddHostRouteOnLink(hostIP netip.Addr, ifName string) error {
 	return luid.AddRoute(netip.PrefixFrom(hostIP, 128), netip.IPv6Unspecified(), ipcfgMetric)
 }
 
-func (v *V6) AddDefaultSplitRoutes(ifName string) error {
+func (v *V6) AddSplitRoutes(ifName string, split []string) error {
 	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	for _, s := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
-		pfx, _ := netip.ParsePrefix(s)
+	for _, cidr := range split {
+		pfx, _ := netip.ParsePrefix(cidr)
 		if err = luid.AddRoute(pfx, netip.IPv6Unspecified(), ipcfgMetric); err != nil {
-			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s): %w", s, err)
+			return fmt.Errorf("AddSplitRoutes(v6 %s): %w", cidr, err)
 		}
 	}
 	return nil
-}
-
-func (v *V6) DeleteDefaultSplitRoutes(ifName string) error {
-	luid, err := v.resolver.NetworkInterfaceByName(ifName)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, s := range []string{splitroute.IPv6LowerHalf, splitroute.IPv6UpperHalf} {
-		pfx, _ := netip.ParsePrefix(s)
-		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil && !errors.Is(err, windows.ERROR_NOT_FOUND) {
-			errs = append(errs, fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", s, err))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // DeleteRoute removes all IPv6 routes that exactly match dst (host "::1" → /128, or CIDR).

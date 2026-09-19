@@ -30,8 +30,7 @@ type networkConfigurator interface {
 	SetMTU(ifName string, mtu int) error
 	AddHostRouteViaGateway(hostIP netip.Addr, ifName string, gateway netip.Addr) error
 	AddHostRouteOnLink(hostIP netip.Addr, ifName string) error
-	AddDefaultSplitRoutes(ifName string) error
-	DeleteDefaultSplitRoutes(ifName string) error
+	AddSplitRoutes(ifName string, split []string) error
 	DeleteRoute(destination netip.Addr) error
 	DeleteRouteOnInterface(destination netip.Addr, ifName string) error
 	BestRoute(dest netip.Addr) (netip.Addr, string, int, int, error)
@@ -46,6 +45,8 @@ type Manager struct {
 	pinnedServerAddr          netip.Addr
 	pinnedServerIf            string
 	defaultRouteWatcherCancel context.CancelFunc
+	splitsv4                  []string
+	splitsv6                  []string
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -59,6 +60,8 @@ func New(configuration *client.Configuration) (*Manager, error) {
 		settings:      active,
 		netConfig4:    ipcfg.NewV4(),
 		netConfig6:    ipcfg.NewV6(),
+		splitsv4:      configuration.TunnelRoutesV4,
+		splitsv6:      configuration.TunnelRoutesV6,
 	}, nil
 }
 
@@ -81,7 +84,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.assignAddresses(); err != nil {
 		return nil, errors.Join(err, m.closeActiveTunnel())
 	}
-	if err := m.addSplitRoutes(); err != nil {
+	if err := m.addSplitRoutes(serverAddr); err != nil {
 		return nil, errors.Join(err, m.closeActiveTunnel())
 	}
 	if err := m.setMTU(); err != nil {
@@ -96,16 +99,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 func (m *Manager) createTun() (io.ReadWriteCloser, error) {
 	adapter, err := wintun.CreateAdapter(m.settings.TunName, windowsTunnelType, nil)
 	if err != nil {
-		existing, openErr := wintun.OpenAdapter(m.settings.TunName)
-		if openErr != nil {
-			return nil, fmt.Errorf("create/open adapter: %w", err)
-		}
-		tun, err := wtun.NewTUN(existing)
-		if err != nil {
-			_ = existing.Close()
-			return nil, err
-		}
-		return tun, nil
+		return nil, fmt.Errorf("create adapter: %w", err)
 	}
 	tun, err := wtun.NewTUN(adapter)
 	if err != nil {
@@ -194,16 +188,17 @@ func (m *Manager) assignAddresses() error {
 	return nil
 }
 
-func (m *Manager) addSplitRoutes() error {
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
 	if m.settings.HasIPv4() {
-		_ = m.netConfig4.DeleteDefaultSplitRoutes(m.settings.TunName)
-		if err := m.netConfig4.AddDefaultSplitRoutes(m.settings.TunName); err != nil {
+		splits := withoutRoutes(m.splitsv4, m.settings.IPv4Subnet.Masked().String(), serverRoute)
+		if err := m.netConfig4.AddSplitRoutes(m.settings.TunName, splits); err != nil {
 			return fmt.Errorf("add IPv4 split routes: %w", err)
 		}
 	}
 	if m.settings.HasIPv6() {
-		_ = m.netConfig6.DeleteDefaultSplitRoutes(m.settings.TunName)
-		if err := m.netConfig6.AddDefaultSplitRoutes(m.settings.TunName); err != nil {
+		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := m.netConfig6.AddSplitRoutes(m.settings.TunName, splits); err != nil {
 			return fmt.Errorf("add IPv6 split routes: %w", err)
 		}
 	}
@@ -279,6 +274,12 @@ func (m *Manager) closeActiveTunnel() error {
 		m.defaultRouteWatcherCancel()
 	}
 	cleanupErrs := m.cleanupSettings(m.settings)
+	if m.tun != nil {
+		if err := m.tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
+		}
+		m.tun = nil
+	}
 	if m.pinnedServerAddr.IsValid() {
 		netConfig := m.netConfig6
 		if m.pinnedServerAddr.Is4() {
@@ -291,30 +292,17 @@ func (m *Manager) closeActiveTunnel() error {
 			m.pinnedServerIf = ""
 		}
 	}
-	if m.tun != nil {
-		tun := m.tun
-		m.tun = nil
-		if err := tun.Close(); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
-		}
-	}
 	return errors.Join(cleanupErrs...)
 }
 
 func (m *Manager) cleanupSettings(active settings.Settings) []error {
 	var cleanupErrs []error
 	if active.IPv4Subnet.IsValid() {
-		if err := m.netConfig4.DeleteDefaultSplitRoutes(active.TunName); err != nil && !errors.Is(err, ipcfg.ErrInterfaceNotFound) {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))
-		}
 		if err := m.netConfig4.SetDNS(active.TunName, nil); err != nil && !errors.Is(err, ipcfg.ErrInterfaceNotFound) {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("clear IPv4 DNS: %w", err))
 		}
 	}
 	if active.IPv6Subnet.IsValid() {
-		if err := m.netConfig6.DeleteDefaultSplitRoutes(active.TunName); err != nil && !errors.Is(err, ipcfg.ErrInterfaceNotFound) {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
-		}
 		if err := m.netConfig6.SetDNS(active.TunName, nil); err != nil && !errors.Is(err, ipcfg.ErrInterfaceNotFound) {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("clear IPv6 DNS: %w", err))
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,7 +35,6 @@ type windowsNetConfigMock struct {
 	bestRouteErr     error
 	addRouteErr      error
 	deleteRouteErr   error
-	deleteSplitErr   error
 	setAddressErr    error
 	addSplitErr      error
 	setMTUErr        error
@@ -49,7 +49,7 @@ type windowsNetConfigMock struct {
 	addedRoutes   []string
 	deletedRoutes []string
 	addedSplits   []string
-	deletedSplits []string
+	addedPrefixes [][]string
 	flushDNSCalls int
 }
 
@@ -87,14 +87,10 @@ func (m *windowsNetConfigMock) AddHostRouteOnLink(host netip.Addr, ifName string
 	return m.addRouteErr
 }
 
-func (m *windowsNetConfigMock) AddDefaultSplitRoutes(ifName string) error {
+func (m *windowsNetConfigMock) AddSplitRoutes(ifName string, prefixes []string) error {
 	m.addedSplits = append(m.addedSplits, ifName)
+	m.addedPrefixes = append(m.addedPrefixes, slices.Clone(prefixes))
 	return m.addSplitErr
-}
-
-func (m *windowsNetConfigMock) DeleteDefaultSplitRoutes(ifName string) error {
-	m.deletedSplits = append(m.deletedSplits, ifName)
-	return m.deleteSplitErr
 }
 
 func (m *windowsNetConfigMock) DeleteRoute(destination netip.Addr) error {
@@ -157,6 +153,109 @@ func newWindowsTestManager(t *testing.T, active settings.Settings) (*Manager, *w
 	return manager, netConfig4, netConfig6
 }
 
+func TestWindowsManagerAppliesTunnelRoutesAndClosesTun(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		v4   []string
+		v6   []string
+	}{
+		{name: "custom prefixes", v4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}},
+		{name: "both empty", v4: []string{}, v6: []string{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := New(&clientconfig.Configuration{
+				ClientID:       1,
+				Protocol:       settings.UDP,
+				UDPSettings:    windowsSettings(true, true),
+				TunnelRoutesV4: test.v4,
+				TunnelRoutesV6: test.v6,
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			netConfig4, netConfig6 := &windowsNetConfigMock{}, &windowsNetConfigMock{}
+			manager.netConfig4, manager.netConfig6 = netConfig4, netConfig6
+			tun := &windowsTunMock{}
+			manager.tun = tun
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("repeated CloseTunnel() error = %v", err)
+			}
+			if tun.closeCalls != 1 || manager.tun != nil {
+				t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, manager.tun != nil)
+			}
+
+			for _, check := range []struct {
+				name  string
+				calls [][]string
+				want  []string
+			}{
+				{name: "add IPv4", calls: netConfig4.addedPrefixes, want: test.v4},
+				{name: "add IPv6", calls: netConfig6.addedPrefixes, want: test.v6},
+			} {
+				if len(check.calls) != 1 {
+					t.Fatalf("%s calls = %v, want one call", check.name, check.calls)
+				}
+				for _, prefixes := range check.calls {
+					if !slices.Equal(prefixes, check.want) {
+						t.Errorf("%s prefixes = %v, want %v", check.name, prefixes, check.want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestWindowsManagerFiltersTunSubnetAndCurrentServerRoutes(t *testing.T) {
+	routesV4 := []string{"128.0.0.0/1", "198.51.100.1/32", "10.0.0.0/24", "10.0.0.0/16"}
+	routesV6 := []string{"::/1", "2001:db8::1/128", "fd00::/64", "fd00::/48"}
+	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+	manager.splitsv4, manager.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
+
+	for _, test := range []struct {
+		server string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			server: "198.51.100.1",
+			wantV4: []string{"128.0.0.0/1", "10.0.0.0/16"},
+			wantV6: []string{"::/1", "2001:db8::1/128", "fd00::/48"},
+		},
+		{
+			server: "2001:db8::1",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.1/32", "10.0.0.0/16"},
+			wantV6: []string{"::/1", "fd00::/48"},
+		},
+	} {
+		t.Run(test.server, func(t *testing.T) {
+			netConfig4.addedPrefixes, netConfig6.addedPrefixes = nil, nil
+			manager.tun = &windowsTunMock{}
+			if err := manager.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if !reflect.DeepEqual(netConfig4.addedPrefixes, [][]string{test.wantV4}) ||
+				!reflect.DeepEqual(netConfig6.addedPrefixes, [][]string{test.wantV6}) {
+				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
+					netConfig4.addedPrefixes, netConfig6.addedPrefixes, test.wantV4, test.wantV6)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
+				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			}
+		})
+	}
+}
+
 func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -172,7 +271,9 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 			if err := manager.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			if err := manager.addSplitRoutes(); err != nil {
+			manager.splitsv4 = []string{"192.0.2.0/24"}
+			manager.splitsv6 = []string{"2001:db8::/64"}
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 			if err := manager.setMTU(); err != nil {
@@ -184,12 +285,14 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 
 			var wantAddresses4, wantAddresses6 []netip.Prefix
 			var wantSplits4, wantSplits6 []string
+			var wantPrefixes4, wantPrefixes6 [][]string
 			var wantMTUs4, wantMTUs6 []int
 			var wantDNSNames4, wantDNSNames6 []string
 			var wantDNS4, wantDNS6 [][]string
 			if test.v4 {
 				wantAddresses4 = []netip.Prefix{netip.MustParsePrefix("10.0.0.2/24")}
 				wantSplits4 = []string{"tun0"}
+				wantPrefixes4 = [][]string{{"192.0.2.0/24"}}
 				wantMTUs4 = []int{settings.DefaultMTU}
 				wantDNSNames4 = []string{"tun0"}
 				wantDNS4 = [][]string{{"9.9.9.9"}}
@@ -197,6 +300,7 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 			if test.v6 {
 				wantAddresses6 = []netip.Prefix{netip.MustParsePrefix("fd00::2/64")}
 				wantSplits6 = []string{"tun0"}
+				wantPrefixes6 = [][]string{{"2001:db8::/64"}}
 				wantMTUs6 = []int{settings.DefaultMTU}
 				wantDNSNames6 = []string{"tun0"}
 				wantDNS6 = [][]string{{"2620:fe::9"}}
@@ -213,6 +317,12 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 			}
 			if !reflect.DeepEqual(netConfig6.addedSplits, wantSplits6) {
 				t.Fatalf("IPv6 split interfaces = %v, want %v", netConfig6.addedSplits, wantSplits6)
+			}
+			if !reflect.DeepEqual(netConfig4.addedPrefixes, wantPrefixes4) {
+				t.Fatalf("IPv4 split prefixes = %v, want %v", netConfig4.addedPrefixes, wantPrefixes4)
+			}
+			if !reflect.DeepEqual(netConfig6.addedPrefixes, wantPrefixes6) {
+				t.Fatalf("IPv6 split prefixes = %v, want %v", netConfig6.addedPrefixes, wantPrefixes6)
 			}
 			if !reflect.DeepEqual(netConfig4.mtus, wantMTUs4) {
 				t.Fatalf("IPv4 MTUs = %v, want %v", netConfig4.mtus, wantMTUs4)
@@ -256,12 +366,16 @@ func TestWindowsManagerReturnsConfigurationErrors(t *testing.T) {
 		{
 			name: "IPv4 split routes",
 			fail: func(v4, _ *windowsNetConfigMock) { v4.addSplitErr = failure },
-			run:  (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 		{
 			name: "IPv6 split routes",
 			fail: func(_, v6 *windowsNetConfigMock) { v6.addSplitErr = failure },
-			run:  (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 		{
 			name: "IPv4 MTU",
@@ -474,22 +588,21 @@ func TestWindowsManagerCloseTunnelRetriesServerRouteCleanup(t *testing.T) {
 
 func TestWindowsManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
-	netConfig4.deleteSplitErr = errors.New("split4 failed")
 	netConfig4.setDNSErr = errors.New("dns4 failed")
 	netConfig4.flushDNSErr = errors.New("flush4 failed")
-	netConfig6.deleteSplitErr = errors.New("split6 failed")
 	netConfig6.setDNSErr = errors.New("dns6 failed")
 	netConfig6.flushDNSErr = errors.New("flush6 failed")
 	manager.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
 	manager.pinnedServerIf = "Ethernet6"
 	netConfig6.deleteRouteErr = errors.New("route6 failed")
-	manager.tun = &windowsTunMock{closeErr: errors.New("TUN close failed")}
+	tun := &windowsTunMock{closeErr: errors.New("TUN close failed")}
+	manager.tun = tun
 
 	err := manager.CloseTunnel()
 	if err == nil {
 		t.Fatal("CloseTunnel() error = nil")
 	}
-	for _, want := range []string{"split4 failed", "dns4 failed", "split6 failed", "dns6 failed", "route6 failed", "TUN close failed"} {
+	for _, want := range []string{"dns4 failed", "dns6 failed", "route6 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
 		}
@@ -502,8 +615,8 @@ func TestWindowsManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	if netConfig4.flushDNSCalls != 1 || netConfig6.flushDNSCalls != 1 {
 		t.Fatalf("FlushDNS() calls = IPv4:%d IPv6:%d, want 1 each", netConfig4.flushDNSCalls, netConfig6.flushDNSCalls)
 	}
-	if manager.tun != nil {
-		t.Fatal("CloseTunnel() retained a closed TUN")
+	if tun.closeCalls != 1 || manager.tun != nil {
+		t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, manager.tun != nil)
 	}
 }
 
@@ -514,7 +627,7 @@ func TestWindowsManagerCloseTunnelReturnsStaleCleanupError(t *testing.T) {
 	stale.TunName = "stale6"
 	manager.configuration.TCPSettings = stale
 	staleErr := errors.New("stale cleanup failed")
-	netConfig6.deleteSplitErr = staleErr
+	netConfig6.setDNSErr = staleErr
 
 	if err := manager.CloseTunnel(); !errors.Is(err, staleErr) {
 		t.Fatalf("CloseTunnel() error = %v, want %v", err, staleErr)
@@ -528,7 +641,6 @@ func TestWindowsManagerCloseTunnelIgnoresMissingStaleInterface(t *testing.T) {
 	stale.TunName = "stale6"
 	manager.configuration.TCPSettings = stale
 	missing := fmt.Errorf("%w: %q", ipcfg.ErrInterfaceNotFound, stale.TunName)
-	netConfig6.deleteSplitErr = missing
 	netConfig6.setDNSErr = missing
 
 	if err := manager.CloseTunnel(); err != nil {
@@ -540,7 +652,6 @@ func TestWindowsManagerCloseTunnelIgnoresMissingActiveInterface(t *testing.T) {
 	active := windowsSettings(true, false)
 	manager, netConfig4, _ := newWindowsTestManager(t, active)
 	missing := fmt.Errorf("%w: %q", ipcfg.ErrInterfaceNotFound, active.TunName)
-	netConfig4.deleteSplitErr = missing
 	netConfig4.setDNSErr = missing
 
 	if err := manager.CloseTunnel(); err != nil {
@@ -566,9 +677,6 @@ func TestWindowsManagerCloseTunnelCleansStaleSettings(t *testing.T) {
 
 	if err := manager.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel() error = %v", err)
-	}
-	if !reflect.DeepEqual(netConfig6.deletedSplits, []string{"stale6"}) {
-		t.Fatalf("stale split cleanup = %v", netConfig6.deletedSplits)
 	}
 	if !reflect.DeepEqual(netConfig6.dnsNames, []string{"stale6"}) {
 		t.Fatalf("stale DNS cleanup = %v", netConfig6.dnsNames)

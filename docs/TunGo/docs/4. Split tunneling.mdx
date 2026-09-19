@@ -1,0 +1,21 @@
+---
+id: SplitTunneling
+slug: /SplitTunneling
+---
+
+# Split tunneling
+
+`TunnelRoutesV4` and `TunnelRoutesV6` are top-level client configuration fields containing destination subnets in CIDR notation. Traffic to these subnets is routed through the VPN; other destinations use the remaining system routes. These fields do not restrict packet source addresses.
+
+For example, to route two destination subnets through the VPN:
+
+```json
+{
+  "TunnelRoutesV4": ["192.0.2.0/24"],
+  "TunnelRoutesV6": ["2001:db8::/64"]
+}
+```
+
+## Default behavior
+
+An omitted field or `null` uses full-tunnel defaults for that address family. An empty array adds no routes from that list. Routes to the VPN subnet and configured DNS resolvers still apply. Invalid CIDRs also fall back to full-tunnel defaults, with a warning in the client log.
