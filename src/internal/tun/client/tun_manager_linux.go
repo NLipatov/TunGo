@@ -35,6 +35,8 @@ type Manager struct {
 	pinnedServerAddr          netip.Addr
 	tun                       io.ReadWriteCloser
 	defaultRouteWatcherCancel context.CancelFunc
+	splitsv4                  []string
+	splitsv6                  []string
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -51,6 +53,8 @@ func New(conf *client.Configuration) (*Manager, error) {
 		ip:            ip.New(cmd),
 		ioctl:         ioctl.New(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		mss:           mssclamp.NewManager(cmd),
+		splitsv4:      conf.TunnelRoutesV4,
+		splitsv6:      conf.TunnelRoutesV6,
 	}, nil
 }
 
@@ -165,19 +169,8 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		m.pinnedServerAddr = serverAddr
 	}
 
-	// Set split default routes — more specific than 0.0.0.0/0 so they take
-	// priority without destroying the original default route. On crash or
-	// device deletion the kernel removes them automatically.
-	if m.settings.HasIPv4() {
-		if err := m.ip.RouteAddSplitDefaultDev(m.settings.TunName); err != nil {
-			return err
-		}
-	}
-
-	if m.settings.HasIPv6() {
-		if err := m.ip.Route6AddSplitDefaultDev(m.settings.TunName); err != nil {
-			return err
-		}
+	if err := m.addSplitRoutes(serverAddr); err != nil {
+		return err
 	}
 
 	if setMtuErr := m.ip.LinkSetDevMTU(m.settings.TunName, m.settings.MTU); setMtuErr != nil {
@@ -194,6 +187,23 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", m.settings.TunName, err)
 	}
 
+	return nil
+}
+
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
+	if m.settings.HasIPv4() {
+		splits := withoutRoutes(m.splitsv4, m.settings.IPv4Subnet.Masked().String(), serverRoute)
+		if err := m.ip.RouteAddSplitDev(m.settings.TunName, splits); err != nil {
+			return err
+		}
+	}
+	if m.settings.HasIPv6() {
+		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := m.ip.Route6AddSplitDev(m.settings.TunName, splits); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -221,11 +231,10 @@ func (m *Manager) CloseTunnel() error {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
 	}
 	if m.tun != nil {
-		tun := m.tun
-		m.tun = nil
-		if err := tun.Close(); err != nil {
+		if err := m.tun.Close(); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
+		m.tun = nil
 	}
 
 	cleanupErrs = append(cleanupErrs,
@@ -247,16 +256,12 @@ func (m *Manager) removeTunInterface(s settings.Settings) error {
 	if s.TunName == "" {
 		return nil
 	}
-	var cleanupErrs []error
+	var errs []error
 	if err := m.mss.Remove(s.TunName); err != nil {
-		cleanupErrs = append(cleanupErrs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
+		errs = append(errs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
 	}
-	if s.IPv4Subnet.IsValid() {
-		_ = m.ip.RouteDelSplitDefault(s.TunName)
+	if err := m.ip.LinkDelete(s.TunName); err != nil {
+		errs = append(errs, err)
 	}
-	if s.IPv6Subnet.IsValid() {
-		_ = m.ip.Route6DelSplitDefault(s.TunName)
-	}
-	_ = m.ip.LinkDelete(s.TunName)
-	return errors.Join(cleanupErrs...)
+	return errors.Join(errs...)
 }

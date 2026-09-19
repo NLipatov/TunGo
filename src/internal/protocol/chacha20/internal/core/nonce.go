@@ -3,10 +3,18 @@ package core
 import (
 	"encoding/binary"
 	"fmt"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// NonceEpochOffset is the byte offset of the epoch field within the 12-byte nonce.
-const NonceEpochOffset = 10
+// Nonce structure:
+// [Low (8 bytes)][High (2 bytes)][Epoch (2 bytes)]
+// Total 12 bytes
+const (
+	NonceEpochOffset = 10
+	NonceHighOffset  = 8
+	NonceLowOffset   = 0
+)
 
 // Nonce represents an epoch-suffixed counter:
 // | 0..7 counterLow | 8..9 counterHigh | 10..11 epoch |
@@ -50,21 +58,21 @@ func (n *Nonce) PeekEncode(buf []byte) ([]byte, error) {
 	}
 
 	if n.CounterLow == ^uint64(0) {
-		binary.BigEndian.PutUint64(buf[0:8], 0)
-		binary.BigEndian.PutUint16(buf[8:10], n.CounterHigh+1)
+		binary.BigEndian.PutUint64(buf[NonceLowOffset:NonceHighOffset], 0)
+		binary.BigEndian.PutUint16(buf[NonceHighOffset:NonceEpochOffset], n.CounterHigh+1)
 	} else {
-		binary.BigEndian.PutUint64(buf[0:8], n.CounterLow+1)
-		binary.BigEndian.PutUint16(buf[8:10], n.CounterHigh)
+		binary.BigEndian.PutUint64(buf[NonceLowOffset:NonceHighOffset], n.CounterLow+1)
+		binary.BigEndian.PutUint16(buf[NonceHighOffset:NonceEpochOffset], n.CounterHigh)
 	}
-	binary.BigEndian.PutUint16(buf[10:12], uint16(n.epoch))
+	binary.BigEndian.PutUint16(buf[NonceEpochOffset:chacha20poly1305.NonceSize], uint16(n.epoch))
 
 	return buf, nil
 }
 
 func (n *Nonce) Encode(buffer []byte) []byte {
-	binary.BigEndian.PutUint64(buffer[0:8], n.CounterLow)
-	binary.BigEndian.PutUint16(buffer[8:10], n.CounterHigh)
-	binary.BigEndian.PutUint16(buffer[10:12], uint16(n.epoch))
+	binary.BigEndian.PutUint64(buffer[NonceLowOffset:NonceHighOffset], n.CounterLow)
+	binary.BigEndian.PutUint16(buffer[NonceHighOffset:NonceEpochOffset], n.CounterHigh)
+	binary.BigEndian.PutUint16(buffer[NonceEpochOffset:chacha20poly1305.NonceSize], uint16(n.epoch))
 	return buffer
 }
 

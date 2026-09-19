@@ -1,0 +1,21 @@
+---
+id: SplitTunneling
+slug: /SplitTunneling
+---
+
+# Split tunneling
+
+`TunnelRoutesV4` dan `TunnelRoutesV6` adalah kolom tingkat teratas dalam konfigurasi klien yang berisi subnet tujuan dalam notasi CIDR. Lalu lintas ke subnet ini diarahkan melalui VPN; tujuan lainnya menggunakan rute sistem yang tersisa. Kolom ini tidak membatasi alamat sumber paket.
+
+Contoh untuk mengarahkan lalu lintas ke dua subnet tujuan melalui VPN:
+
+```json
+{
+  "TunnelRoutesV4": ["192.0.2.0/24"],
+  "TunnelRoutesV6": ["2001:db8::/64"]
+}
+```
+
+## Perilaku bawaan
+
+Kolom yang tidak disertakan atau bernilai `null` menggunakan rute bawaan tunnel penuh untuk keluarga alamat tersebut. Array kosong tidak menambahkan rute dari daftar itu. Rute ke subnet VPN dan server DNS yang dikonfigurasi tetap berlaku. CIDR yang tidak valid juga diganti dengan rute tunnel penuh, disertai peringatan dalam log klien.

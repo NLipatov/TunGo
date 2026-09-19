@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"slices"
 
 	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
@@ -32,8 +33,7 @@ type interfaceConfigurator interface {
 
 type routeConfigurator interface {
 	Add(destIP string) error
-	AddSplit(ifName string) error
-	DelSplit(ifName string) error
+	AddSplit(ifName string, split []string) error
 	Del(destIP string) error
 }
 
@@ -52,6 +52,8 @@ type Manager struct {
 	route6                    routeConfigurator
 	pinnedServerAddr          netip.Addr
 	defaultRouteWatcherCancel context.CancelFunc
+	splitsv4                  []string
+	splitsv6                  []string
 }
 
 // New creates a tunnel manager from a normalized, validated client configuration.
@@ -68,6 +70,8 @@ func New(configuration *client.Configuration) (*Manager, error) {
 		ifconfig6: ifconfig.NewV6(cmd),
 		route4:    route.NewV4(cmd),
 		route6:    route.NewV6(cmd),
+		splitsv4:  configuration.TunnelRoutesV4,
+		splitsv6:  configuration.TunnelRoutesV6,
 	}, nil
 }
 
@@ -93,7 +97,7 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err := m.assignAddresses(); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
 	}
-	if err := m.addSplitRoutes(); err != nil {
+	if err := m.addSplitRoutes(serverAddr); err != nil {
 		return nil, errors.Join(err, m.CloseTunnel())
 	}
 	if err := m.setDNS(); err != nil {
@@ -171,7 +175,7 @@ func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
 
 func (m *Manager) assignAddresses() error {
 	if m.settings.HasIPv4() {
-		prefix := netip.PrefixFrom(m.settings.IPv4, m.settings.IPv4.BitLen())
+		prefix := netip.PrefixFrom(m.settings.IPv4, m.settings.IPv4Subnet.Bits())
 		if err := m.ifconfig4.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
 			return fmt.Errorf("set IPv4 address %s on %s: %w", prefix, m.tun.Name(), err)
 		}
@@ -185,16 +189,24 @@ func (m *Manager) assignAddresses() error {
 	return nil
 }
 
-func (m *Manager) addSplitRoutes() error {
+func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
 	if m.settings.HasIPv4() {
-		_ = m.route4.DelSplit(m.tun.Name())
-		if err := m.route4.AddSplit(m.tun.Name()); err != nil {
+		// Unlike Linux, macOS does not create an IPv4 subnet route when assigning
+		// an address to utun, so add it explicitly.
+		splits := slices.Clone(m.splitsv4)
+		tunSubnet := m.settings.IPv4Subnet.Masked().String()
+		if !slices.Contains(splits, tunSubnet) {
+			splits = append(splits, tunSubnet)
+		}
+		splits = withoutRoutes(splits, serverRoute)
+		if err := m.route4.AddSplit(m.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv4 split default: %w", err)
 		}
 	}
 	if m.settings.HasIPv6() {
-		_ = m.route6.DelSplit(m.tun.Name())
-		if err := m.route6.AddSplit(m.tun.Name()); err != nil {
+		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := m.route6.AddSplit(m.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv6 split default: %w", err)
 		}
 	}
@@ -210,16 +222,10 @@ func (m *Manager) CloseTunnel() error {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
 	}
 	if m.tun != nil {
-		if m.settings.HasIPv4() {
-			if err := m.route4.DelSplit(m.tun.Name()); err != nil {
-				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 split routes: %w", err))
-			}
+		if err := m.tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
-		if m.settings.HasIPv6() {
-			if err := m.route6.DelSplit(m.tun.Name()); err != nil {
-				cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 split routes: %w", err))
-			}
-		}
+		m.tun = nil
 	}
 	if m.pinnedServerAddr.IsValid() {
 		var err error
@@ -232,13 +238,6 @@ func (m *Manager) CloseTunnel() error {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.pinnedServerAddr, err))
 		} else {
 			m.pinnedServerAddr = netip.Addr{}
-		}
-	}
-	if m.tun != nil {
-		tun := m.tun
-		m.tun = nil
-		if err := tun.Close(); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
 	}
 	return errors.Join(cleanupErrs...)

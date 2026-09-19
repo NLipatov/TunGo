@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
 )
 
@@ -30,14 +32,13 @@ func (m *darwinIfconfigMock) SetMTU(_ string, mtu int) error {
 }
 
 type darwinRouteMock struct {
-	added        []string
-	addedSplit   []string
-	deleted      []string
-	deletedSplit []string
-	addErr       error
-	splitErr     error
-	delErr       error
-	delSplitErr  error
+	added         []string
+	addedSplit    []string
+	addedPrefixes [][]string
+	deleted       []string
+	addErr        error
+	splitErr      error
+	delErr        error
 }
 
 type darwinDNSMock struct {
@@ -62,14 +63,10 @@ func (m *darwinRouteMock) Add(destination string) error {
 	return m.addErr
 }
 
-func (m *darwinRouteMock) AddSplit(ifName string) error {
+func (m *darwinRouteMock) AddSplit(ifName string, prefixes []string) error {
 	m.addedSplit = append(m.addedSplit, ifName)
+	m.addedPrefixes = append(m.addedPrefixes, slices.Clone(prefixes))
 	return m.splitErr
-}
-
-func (m *darwinRouteMock) DelSplit(ifName string) error {
-	m.deletedSplit = append(m.deletedSplit, ifName)
-	return m.delSplitErr
 }
 
 func (m *darwinRouteMock) Del(destination string) error {
@@ -96,12 +93,12 @@ func darwinSettings(v4, v6 bool) settings.Settings {
 	if v4 {
 		active.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
 		active.IPv4 = netip.MustParseAddr("10.0.0.2")
-		active.DNSv4 = append([]string(nil), settings.DefaultClientDNSv4Resolvers...)
+		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
 	}
 	if v6 {
 		active.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 		active.IPv6 = netip.MustParseAddr("fd00::2")
-		active.DNSv6 = append([]string(nil), settings.DefaultClientDNSv6Resolvers...)
+		active.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
 	}
 	return active
 }
@@ -112,14 +109,17 @@ func newDarwinTestManager(t *testing.T, active settings.Settings) (*Manager, *da
 	ifconfig6 := &darwinIfconfigMock{}
 	route4 := &darwinRouteMock{}
 	route6 := &darwinRouteMock{}
-	manager := &Manager{
-		settings:  active,
-		dns:       &darwinDNSMock{},
-		ifconfig4: ifconfig4,
-		ifconfig6: ifconfig6,
-		route4:    route4,
-		route6:    route6,
+	manager, err := New(&clientconfig.Configuration{
+		ClientID:    1,
+		Protocol:    settings.UDP,
+		UDPSettings: active,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
+	manager.dns = &darwinDNSMock{}
+	manager.ifconfig4, manager.ifconfig6 = ifconfig4, ifconfig6
+	manager.route4, manager.route6 = route4, route6
 	return manager, ifconfig4, ifconfig6, route4, route6
 }
 
@@ -130,13 +130,13 @@ func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
 		v6   bool
 		want []string
 	}{
-		{name: "IPv4", v4: true, want: settings.DefaultClientDNSv4Resolvers},
-		{name: "IPv6", v6: true, want: settings.DefaultClientDNSv6Resolvers},
+		{name: "IPv4", v4: true, want: []string{"1.1.1.1", "8.8.8.8"}},
+		{name: "IPv6", v6: true, want: []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}},
 		{
 			name: "dual stack",
 			v4:   true,
 			v6:   true,
-			want: append(append([]string(nil), settings.DefaultClientDNSv4Resolvers...), settings.DefaultClientDNSv6Resolvers...),
+			want: []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -168,8 +168,143 @@ func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "set DNS") {
 		t.Fatalf("setDNS() error = %q, want operation context", err)
 	}
-	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{settings.DefaultClientDNSv4Resolvers}) {
+	if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{{"1.1.1.1", "8.8.8.8"}}) {
 		t.Fatalf("DNS resolvers = %v, want configured IPv4 resolvers", dnsMock.setResolvers)
+	}
+}
+
+func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		v4     []string
+		v6     []string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			name:   "custom prefixes",
+			v4:     []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"},
+			v6:     []string{"2001:db8:1::/64"},
+			wantV4: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "10.0.0.0/24"},
+			wantV6: []string{"2001:db8:1::/64"},
+		},
+		{name: "empty IPv4", v4: []string{}, v6: []string{"2001:db8:1::/64"}, wantV4: []string{"10.0.0.0/24"}, wantV6: []string{"2001:db8:1::/64"}},
+		{name: "empty IPv6", v4: []string{"192.0.2.0/24"}, v6: []string{}, wantV4: []string{"192.0.2.0/24", "10.0.0.0/24"}},
+		{name: "both empty", v4: []string{}, v6: []string{}, wantV4: []string{"10.0.0.0/24"}},
+		{
+			name:   "full tunnel",
+			v4:     []string{"0.0.0.0/1", "128.0.0.0/1"},
+			v6:     []string{"::/1", "8000::/1"},
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1", "10.0.0.0/24"},
+			wantV6: []string{"::/1", "8000::/1"},
+		},
+		{
+			name:   "TUN subnets preserve broader and narrower routes",
+			v4:     []string{"10.0.0.0/16", "10.0.0.0/24", "10.0.0.0/25", "192.0.2.0/24"},
+			v6:     []string{"fd00::/48", "fd00::/64", "fd00::/80", "2001:db8::/64"},
+			wantV4: []string{"10.0.0.0/16", "10.0.0.0/24", "10.0.0.0/25", "192.0.2.0/24"},
+			wantV6: []string{"fd00::/48", "fd00::/80", "2001:db8::/64"},
+		},
+		{name: "only TUN subnets", v4: []string{"10.0.0.0/24"}, v6: []string{"fd00::/64"}, wantV4: []string{"10.0.0.0/24"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			originalV4, originalV6 := slices.Clone(test.v4), slices.Clone(test.v6)
+			active := darwinSettings(true, true)
+			active.IPv4Subnet = netip.MustParsePrefix("10.0.0.17/24")
+			active.IPv6Subnet = netip.MustParsePrefix("fd00::17/64")
+			configuration := &clientconfig.Configuration{
+				ClientID:       1,
+				Protocol:       settings.UDP,
+				UDPSettings:    active,
+				TunnelRoutesV4: test.v4,
+				TunnelRoutesV6: test.v6,
+			}
+			manager, err := New(configuration)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			route4, route6 := &darwinRouteMock{}, &darwinRouteMock{}
+			manager.route4, manager.route6 = route4, route6
+			manager.ifconfig4, manager.ifconfig6 = &darwinIfconfigMock{}, &darwinIfconfigMock{}
+			manager.dns = &darwinDNSMock{}
+			tun := &tunMock{name: "utun42"}
+			manager.tun = tun
+			if err := manager.assignAddresses(); err != nil {
+				t.Fatalf("assignAddresses() error = %v", err)
+			}
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if err := manager.CloseTunnel(); err != nil {
+				t.Fatalf("CloseTunnel() error = %v", err)
+			}
+			if tun.closeCalls != 1 || manager.tun != nil {
+				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+			}
+
+			if !slices.Equal(configuration.TunnelRoutesV4, originalV4) ||
+				!slices.Equal(configuration.TunnelRoutesV6, originalV6) {
+				t.Fatalf("manager changed configured TunnelRoutes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
+			}
+
+			for _, check := range []struct {
+				name  string
+				calls [][]string
+				want  [][]string
+			}{
+				{name: "add IPv4", calls: route4.addedPrefixes, want: [][]string{test.wantV4}},
+				{name: "add IPv6", calls: route6.addedPrefixes, want: [][]string{test.wantV6}},
+			} {
+				if len(check.calls) != len(check.want) {
+					t.Fatalf("%s calls = %v, want %v", check.name, check.calls, check.want)
+				}
+				for i, prefixes := range check.calls {
+					if !slices.Equal(prefixes, check.want[i]) {
+						t.Errorf("%s call %d prefixes = %v, want %v", check.name, i, prefixes, check.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDarwinManagerFiltersRoutesForCurrentServer(t *testing.T) {
+	routesV4 := []string{"128.0.0.0/1", "198.51.100.1/32"}
+	routesV6 := []string{"::/1", "fd00::/64", "2001:db8::1/128"}
+	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
+	manager.splitsv4, manager.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
+	manager.tun = &tunMock{name: "utun42"}
+
+	for _, test := range []struct {
+		server string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			server: "198.51.100.1",
+			wantV4: []string{"128.0.0.0/1", "10.0.0.0/24"},
+			wantV6: []string{"::/1", "2001:db8::1/128"},
+		},
+		{
+			server: "2001:db8::1",
+			wantV4: []string{"128.0.0.0/1", "198.51.100.1/32", "10.0.0.0/24"},
+			wantV6: []string{"::/1"},
+		},
+	} {
+		t.Run(test.server, func(t *testing.T) {
+			route4.addedPrefixes, route6.addedPrefixes = nil, nil
+			if err := manager.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
+				t.Fatalf("addSplitRoutes() error = %v", err)
+			}
+			if !reflect.DeepEqual(route4.addedPrefixes, [][]string{test.wantV4}) ||
+				!reflect.DeepEqual(route6.addedPrefixes, [][]string{test.wantV6}) {
+				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
+					route4.addedPrefixes, route6.addedPrefixes, test.wantV4, test.wantV6)
+			}
+			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
+				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			}
+		})
 	}
 }
 
@@ -193,21 +328,26 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 			if err := manager.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			if err := manager.addSplitRoutes(); err != nil {
+			manager.splitsv4 = []string{"192.0.2.0/24"}
+			manager.splitsv6 = []string{"2001:db8::/64"}
+			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 
 			var wantAddresses4, wantAddresses6 []netip.Prefix
 			var wantSplits4, wantSplits6 []string
+			var wantPrefixes4, wantPrefixes6 [][]string
 			var wantMTUs4, wantMTUs6 []int
 			if test.v4 {
-				wantAddresses4 = []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32")}
+				wantAddresses4 = []netip.Prefix{netip.MustParsePrefix("10.0.0.2/24")}
 				wantSplits4 = []string{"utun42"}
+				wantPrefixes4 = [][]string{{"192.0.2.0/24", "10.0.0.0/24"}}
 				wantMTUs4 = []int{1400}
 			}
 			if test.v6 {
 				wantAddresses6 = []netip.Prefix{netip.MustParsePrefix("fd00::2/64")}
 				wantSplits6 = []string{"utun42"}
+				wantPrefixes6 = [][]string{{"2001:db8::/64"}}
 				if !test.v4 {
 					wantMTUs6 = []int{1400}
 				}
@@ -224,6 +364,12 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 			}
 			if !reflect.DeepEqual(route6.addedSplit, wantSplits6) {
 				t.Fatalf("IPv6 split interfaces = %v, want %v", route6.addedSplit, wantSplits6)
+			}
+			if !reflect.DeepEqual(route4.addedPrefixes, wantPrefixes4) {
+				t.Fatalf("IPv4 split prefixes = %v, want %v", route4.addedPrefixes, wantPrefixes4)
+			}
+			if !reflect.DeepEqual(route6.addedPrefixes, wantPrefixes6) {
+				t.Fatalf("IPv6 split prefixes = %v, want %v", route6.addedPrefixes, wantPrefixes6)
 			}
 			if !reflect.DeepEqual(ifconfig4.mtus, wantMTUs4) {
 				t.Fatalf("IPv4 MTUs = %v, want %v", ifconfig4.mtus, wantMTUs4)
@@ -271,13 +417,17 @@ func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
 			name:   "IPv4 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, v4, _ *darwinRouteMock) { v4.splitErr = failure },
-			run:    (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 		{
 			name:   "IPv6 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, _, v6 *darwinRouteMock) { v6.splitErr = failure },
-			run:    (*Manager).addSplitRoutes,
+			run: func(m *Manager) error {
+				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
+			},
 		},
 	}
 
@@ -335,7 +485,7 @@ func TestDarwinManagerDoesNotCacheFailedServerRoute(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerCloseTunnelCleansEnabledFamilies(t *testing.T) {
+func TestDarwinManagerCloseTunnelUsesInterfaceCleanup(t *testing.T) {
 	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
 	tun := &tunMock{name: "utun42"}
 	manager.tun = tun
@@ -343,9 +493,6 @@ func TestDarwinManagerCloseTunnelCleansEnabledFamilies(t *testing.T) {
 
 	if err := manager.CloseTunnel(); err != nil {
 		t.Fatalf("CloseTunnel() error = %v", err)
-	}
-	if len(route4.deletedSplit) != 1 || len(route6.deletedSplit) != 1 {
-		t.Fatalf("split cleanup: IPv4=%v IPv6=%v", route4.deletedSplit, route6.deletedSplit)
 	}
 	if len(route4.deleted) != 0 || len(route6.deleted) != 1 {
 		t.Fatalf("route cleanup: IPv4=%v IPv6=%v", route4.deleted, route6.deleted)
@@ -356,12 +503,51 @@ func TestDarwinManagerCloseTunnelCleansEnabledFamilies(t *testing.T) {
 	if err := manager.CloseTunnel(); err != nil {
 		t.Fatalf("second CloseTunnel() error = %v", err)
 	}
+	if tun.closeCalls != 1 || len(route6.deleted) != 1 {
+		t.Fatalf("repeated cleanup: close calls=%d deleted routes=%v", tun.closeCalls, route6.deleted)
+	}
+}
+
+func TestDarwinManagerClosesTunAfterIPv6RouteFailure(t *testing.T) {
+	active := darwinSettings(true, true)
+	active.IPv4 = netip.MustParseAddr("10.8.0.2")
+	active.IPv4Subnet = netip.MustParsePrefix("10.8.0.0/20")
+	manager, ifconfig4, _, route4, route6 := newDarwinTestManager(t, active)
+	manager.splitsv6 = []string{"2001:db8::/64"}
+	failure := errors.New("IPv6 route failed")
+	route6.splitErr = failure
+	tun := &tunMock{name: "utun42"}
+	manager.tun = tun
+
+	if err := manager.assignAddresses(); err != nil {
+		t.Fatalf("assignAddresses() error = %v", err)
+	}
+	if len(route4.addedPrefixes) != 0 || len(route6.addedPrefixes) != 0 {
+		t.Fatal("address assignment installed split routes")
+	}
+	if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
+		t.Fatalf("addSplitRoutes() error = %v, want %v", err, failure)
+	}
+	wantAddress := []netip.Prefix{netip.MustParsePrefix("10.8.0.2/20")}
+	if !slices.Equal(ifconfig4.addresses, wantAddress) {
+		t.Fatalf("IPv4 addresses = %v, want %v", ifconfig4.addresses, wantAddress)
+	}
+	if !reflect.DeepEqual(route4.addedPrefixes, [][]string{{"10.8.0.0/20"}}) {
+		t.Fatalf("IPv4 routes = %v, want subnet route before IPv6 failure", route4.addedPrefixes)
+	}
+
+	if err := manager.CloseTunnel(); err != nil {
+		t.Fatalf("CloseTunnel() error = %v", err)
+	}
+	if tun.closeCalls != 1 || manager.tun != nil {
+		t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+	}
 }
 
 func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
-	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
-	route4.delSplitErr = errors.New("split4 failed")
-	route6.delSplitErr = errors.New("split6 failed")
+	manager, _, _, route4, _ := newDarwinTestManager(t, darwinSettings(true, true))
+	dnsMock := &darwinDNSMock{revertErr: errors.New("DNS restore failed")}
+	manager.dns = dnsMock
 	route4.delErr = errors.New("route4 failed")
 	manager.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
 	manager.tun = &tunMock{name: "utun42", closeErr: errors.New("TUN close failed")}
@@ -370,7 +556,7 @@ func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("CloseTunnel() error = nil")
 	}
-	for _, want := range []string{"split4 failed", "split6 failed", "route4 failed", "TUN close failed"} {
+	for _, want := range []string{"DNS restore failed", "route4 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
 		}
@@ -383,6 +569,7 @@ func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
 	}
 
 	route4.delErr = nil
+	dnsMock.revertErr = nil
 	if err := manager.CloseTunnel(); err != nil {
 		t.Fatalf("retry CloseTunnel() error = %v", err)
 	}

@@ -79,18 +79,37 @@ func TestTunTapAddDevTun(t *testing.T) {
 }
 
 func TestLinkDelete(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		err := newConfigurator(true, "", nil).LinkDelete("tun0")
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("error", func(t *testing.T) {
-		err := newConfigurator(false, "error", errors.New("fail")).LinkDelete("tun0")
-		if err == nil || !strings.Contains(err.Error(), "failed to delete interface") {
-			t.Fatal("expected failure")
-		}
-	})
+	commandErr := errors.New("command failed")
+	for _, test := range []struct {
+		name    string
+		output  string
+		err     error
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "already absent", output: "Cannot find device \"tun0\"\n", err: commandErr},
+		{name: "disappeared during deletion", output: "RTNETLINK answers: No such device\n", err: commandErr},
+		{name: "permission denied", output: "RTNETLINK answers: Operation not permitted\n", err: commandErr, wantErr: true},
+		{name: "device busy", output: "RTNETLINK answers: Device or resource busy\n", err: commandErr, wantErr: true},
+		{name: "missing file", output: "RTNETLINK answers: No such file or directory\n", err: commandErr, wantErr: true},
+		{name: "command could not start", err: commandErr, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := newConfigurator(test.err == nil, test.output, test.err).LinkDelete("tun0")
+			if !test.wantErr {
+				if err != nil {
+					t.Fatalf("LinkDelete() error = %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, test.err) {
+				t.Fatalf("LinkDelete() error = %v, want wrapped %v", err, test.err)
+			}
+			if !strings.Contains(err.Error(), "tun0") || !strings.Contains(err.Error(), strings.TrimSpace(test.output)) {
+				t.Fatalf("LinkDelete() error = %v, want interface name and command output", err)
+			}
+		})
+	}
 }
 
 func TestLinkSetDevUp(t *testing.T) {
@@ -147,16 +166,39 @@ func TestRouteDefault(t *testing.T) {
 	})
 }
 
-func TestRouteAddSplitDefaultDev(t *testing.T) {
+func TestSplitRoutesEmpty(t *testing.T) {
+	for name, run := range map[string]func(*Configurator, string, []string) error{
+		"add IPv4":    (*Configurator).RouteAddSplitDev,
+		"delete IPv4": (*Configurator).RouteDelSplitDefault,
+		"add IPv6":    (*Configurator).Route6AddSplitDev,
+		"delete IPv6": (*Configurator).Route6DelSplitDefault,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := &recordingRunner{}
+			configurator := New(rec)
+			for _, prefixes := range [][]string{nil, {}} {
+				if err := run(configurator, "tun0", prefixes); err != nil {
+					t.Fatalf("empty routes: %v", err)
+				}
+				if len(rec.combinedCalls) != 0 {
+					t.Fatalf("empty routes ran commands: %v", rec.combinedCalls)
+				}
+			}
+		})
+	}
+}
+
+func TestRouteAddSplitDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		rec := &recordingRunner{}
 		w := New(rec)
-		if err := w.RouteAddSplitDefaultDev("tun0"); err != nil {
+		if err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		want := [][]string{
-			{"ip", "route", "add", "0.0.0.0/1", "dev", "tun0"},
-			{"ip", "route", "add", "128.0.0.0/1", "dev", "tun0"},
+			{"ip", "route", "add", "192.0.2.0/24", "dev", "tun0"},
+			{"ip", "route", "add", "198.51.100.0/24", "dev", "tun0"},
+			{"ip", "route", "add", "203.0.113.0/24", "dev", "tun0"},
 		}
 		if !reflect.DeepEqual(rec.combinedCalls, want) {
 			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
@@ -166,23 +208,27 @@ func TestRouteAddSplitDefaultDev(t *testing.T) {
 	t.Run("error on second route", func(t *testing.T) {
 		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
-		err := w.RouteAddSplitDefaultDev("tun0")
-		if err == nil || !strings.Contains(err.Error(), "failed to add split route 128.0.0.0/1") {
+		err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"})
+		if err == nil || !strings.Contains(err.Error(), "failed to add split route 198.51.100.0/24") {
 			t.Fatalf("expected split-route error, got %v", err)
+		}
+		if len(rec.combinedCalls) != 2 {
+			t.Fatalf("calls = %v, want to stop at the failed route", rec.combinedCalls)
 		}
 	})
 }
 
-func TestRoute6AddSplitDefaultDev(t *testing.T) {
+func TestRoute6AddSplitDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		rec := &recordingRunner{}
 		w := New(rec)
-		if err := w.Route6AddSplitDefaultDev("tun0"); err != nil {
+		if err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		want := [][]string{
-			{"ip", "-6", "route", "add", "::/1", "dev", "tun0"},
-			{"ip", "-6", "route", "add", "8000::/1", "dev", "tun0"},
+			{"ip", "-6", "route", "add", "2001:db8:1::/64", "dev", "tun0"},
+			{"ip", "-6", "route", "add", "2001:db8:2::/64", "dev", "tun0"},
+			{"ip", "-6", "route", "add", "2001:db8:3::/64", "dev", "tun0"},
 		}
 		if !reflect.DeepEqual(rec.combinedCalls, want) {
 			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
@@ -192,9 +238,12 @@ func TestRoute6AddSplitDefaultDev(t *testing.T) {
 	t.Run("error on second route", func(t *testing.T) {
 		rec := &recordingRunner{failOnCall: 2}
 		w := New(rec)
-		err := w.Route6AddSplitDefaultDev("tun0")
-		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 8000::/1") {
+		err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"})
+		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 2001:db8:2::/64") {
 			t.Fatalf("expected IPv6 split-route error, got %v", err)
+		}
+		if len(rec.combinedCalls) != 2 {
+			t.Fatalf("calls = %v, want to stop at the failed route", rec.combinedCalls)
 		}
 	})
 }
@@ -203,13 +252,14 @@ func TestRouteDelSplitDefault(t *testing.T) {
 	rec := &recordingRunner{failOnCall: 1}
 	w := New(rec)
 
-	if err := w.RouteDelSplitDefault("tun0"); err != nil {
+	if err := w.RouteDelSplitDefault("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	want := [][]string{
-		{"ip", "route", "del", "0.0.0.0/1", "dev", "tun0"},
-		{"ip", "route", "del", "128.0.0.0/1", "dev", "tun0"},
+		{"ip", "route", "del", "192.0.2.0/24", "dev", "tun0"},
+		{"ip", "route", "del", "198.51.100.0/24", "dev", "tun0"},
+		{"ip", "route", "del", "203.0.113.0/24", "dev", "tun0"},
 	}
 	if !reflect.DeepEqual(rec.combinedCalls, want) {
 		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
@@ -220,13 +270,14 @@ func TestRoute6DelSplitDefault(t *testing.T) {
 	rec := &recordingRunner{failOnCall: 1}
 	w := New(rec)
 
-	if err := w.Route6DelSplitDefault("tun0"); err != nil {
+	if err := w.Route6DelSplitDefault("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	want := [][]string{
-		{"ip", "-6", "route", "del", "::/1", "dev", "tun0"},
-		{"ip", "-6", "route", "del", "8000::/1", "dev", "tun0"},
+		{"ip", "-6", "route", "del", "2001:db8:1::/64", "dev", "tun0"},
+		{"ip", "-6", "route", "del", "2001:db8:2::/64", "dev", "tun0"},
+		{"ip", "-6", "route", "del", "2001:db8:3::/64", "dev", "tun0"},
 	}
 	if !reflect.DeepEqual(rec.combinedCalls, want) {
 		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
