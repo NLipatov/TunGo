@@ -99,12 +99,7 @@ func (v *V4) Del(destIP string) error {
 }
 
 func (v *V4) AddSplit(dev string, splits []string) error {
-	for _, cidr := range splits {
-		if out, err := v.runner.CombinedOutput("route", "-q", "-n", "add", "-net", cidr, "-interface", dev); err != nil {
-			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
-		}
-	}
-	return nil
+	return addSplitRoutes(dev, splits)
 }
 
 func (v *V4) addOnLink(ip, iFace string) error {
