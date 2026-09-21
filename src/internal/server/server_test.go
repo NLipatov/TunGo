@@ -349,7 +349,7 @@ type serverLifecycleTunManager struct {
 	device       *serverLifecycleTun
 }
 
-func (m *serverLifecycleTunManager) Open(settings.Settings) (io.ReadWriteCloser, error) {
+func (m *serverLifecycleTunManager) Create(settings.Settings) (io.ReadWriteCloser, error) {
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
@@ -357,7 +357,7 @@ func (m *serverLifecycleTunManager) Open(settings.Settings) (io.ReadWriteCloser,
 	return m.device, nil
 }
 
-func (m *serverLifecycleTunManager) Close(settings.Settings) error {
+func (m *serverLifecycleTunManager) Remove(settings.Settings) error {
 	atomic.AddInt32(&m.disposeCalls, 1)
 	return m.disposeErr
 }
@@ -373,7 +373,7 @@ func TestServerRunOwnsCleanupAndReadiness(t *testing.T) {
 		t.Fatal("server did not become ready")
 	}
 	if calls := atomic.LoadInt32(&manager.disposeCalls); calls != 6 {
-		t.Fatalf("Close() calls = %d, want 6", calls)
+		t.Fatalf("Remove() calls = %d, want 6", calls)
 	}
 }
 
