@@ -2,12 +2,14 @@ package ip
 
 import (
 	"fmt"
+	"io"
 	"net/netip"
 	"strings"
 )
 
 type runner interface {
 	CombinedOutput(name string, args ...string) ([]byte, error)
+	CombinedOutputWithInput(name string, input io.Reader, args ...string) ([]byte, error)
 	Output(name string, args ...string) ([]byte, error)
 }
 
@@ -100,23 +102,24 @@ func (i *Configurator) parseDefaultRoute(name string, args ...string) (string, e
 
 // The kernel removes these routes when their device is deleted.
 func (i *Configurator) RouteAddSplitDev(devName string, split []string) error {
-	for _, prefix := range split {
-		output, err := i.runner.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
-		if err != nil {
-			return fmt.Errorf("failed to add split route %s via %s: %v, output: %s",
-				prefix, devName, err, output)
-		}
-	}
-	return nil
+	return i.addSplitRoutes(devName, split, "-4")
 }
 
 func (i *Configurator) Route6AddSplitDev(devName string, split []string) error {
-	for _, prefix := range split {
-		output, err := i.runner.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
-		if err != nil {
-			return fmt.Errorf("failed to add IPv6 split route %s via %s: %v, output: %s",
-				prefix, devName, err, output)
-		}
+	return i.addSplitRoutes(devName, split, "-6")
+}
+
+func (i *Configurator) addSplitRoutes(devName string, splits []string, family string) error {
+	if len(splits) == 0 {
+		return nil
+	}
+	var input strings.Builder
+	for _, prefix := range splits {
+		fmt.Fprintf(&input, "route add %s dev %s\n", prefix, devName)
+	}
+	output, err := i.runner.CombinedOutputWithInput("ip", strings.NewReader(input.String()), family, "-batch", "-")
+	if err != nil {
+		return fmt.Errorf("failed to add split routes via %s (%s): %w, output: %s", devName, family, err, output)
 	}
 	return nil
 }

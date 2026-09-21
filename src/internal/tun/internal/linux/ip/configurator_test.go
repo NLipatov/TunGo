@@ -2,6 +2,8 @@ package ip
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -9,8 +11,9 @@ import (
 )
 
 type mockRunner struct {
-	OutputFunc         func(name string, args ...string) ([]byte, error)
-	CombinedOutputFunc func(name string, args ...string) ([]byte, error)
+	OutputFunc                  func(name string, args ...string) ([]byte, error)
+	CombinedOutputFunc          func(name string, args ...string) ([]byte, error)
+	CombinedOutputWithInputFunc func(name string, input io.Reader, args ...string) ([]byte, error)
 }
 
 func (m *mockRunner) Run(_ string, _ ...string) error {
@@ -23,6 +26,10 @@ func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
 
 func (m *mockRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	return m.CombinedOutputFunc(name, args...)
+}
+
+func (m *mockRunner) CombinedOutputWithInput(name string, input io.Reader, args ...string) ([]byte, error) {
+	return m.CombinedOutputWithInputFunc(name, input, args...)
 }
 
 func newConfigurator(success bool, output string, err error) Contract {
@@ -44,6 +51,7 @@ func newConfigurator(success bool, output string, err error) Contract {
 
 type recordingRunner struct {
 	combinedCalls [][]string
+	inputs        []string
 	outputCalls   [][]string
 	output        []byte
 	failOnCall    int
@@ -61,6 +69,15 @@ func (m *recordingRunner) CombinedOutput(name string, args ...string) ([]byte, e
 		return []byte("boom"), errors.New("boom")
 	}
 	return nil, nil
+}
+
+func (m *recordingRunner) CombinedOutputWithInput(name string, input io.Reader, args ...string) ([]byte, error) {
+	data, err := io.ReadAll(input)
+	if err != nil {
+		return nil, err
+	}
+	m.inputs = append(m.inputs, string(data))
+	return m.CombinedOutput(name, args...)
 }
 
 func TestTunTapAddDevTun(t *testing.T) {
@@ -189,63 +206,81 @@ func TestSplitRoutesEmpty(t *testing.T) {
 }
 
 func TestRouteAddSplitDev(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		rec := &recordingRunner{}
-		w := New(rec)
-		if err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		want := [][]string{
-			{"ip", "route", "add", "192.0.2.0/24", "dev", "tun0"},
-			{"ip", "route", "add", "198.51.100.0/24", "dev", "tun0"},
-			{"ip", "route", "add", "203.0.113.0/24", "dev", "tun0"},
-		}
-		if !reflect.DeepEqual(rec.combinedCalls, want) {
-			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
-		}
-	})
-
-	t.Run("error on second route", func(t *testing.T) {
-		rec := &recordingRunner{failOnCall: 2}
-		w := New(rec)
-		err := w.RouteAddSplitDev("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"})
-		if err == nil || !strings.Contains(err.Error(), "failed to add split route 198.51.100.0/24") {
-			t.Fatalf("expected split-route error, got %v", err)
-		}
-		if len(rec.combinedCalls) != 2 {
-			t.Fatalf("calls = %v, want to stop at the failed route", rec.combinedCalls)
-		}
-	})
+	for _, tt := range []struct {
+		name   string
+		family string
+		add    func(*Configurator, string, []string) error
+		splits []string
+		input  string
+	}{
+		{
+			name: "IPv4", family: "-4", add: (*Configurator).RouteAddSplitDev,
+			splits: []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"},
+			input:  "route add 192.0.2.0/24 dev tun0\nroute add 198.51.100.0/24 dev tun0\nroute add 203.0.113.0/24 dev tun0\n",
+		},
+		{
+			name: "IPv6", family: "-6", add: (*Configurator).Route6AddSplitDev,
+			splits: []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"},
+			input:  "route add 2001:db8:1::/64 dev tun0\nroute add 2001:db8:2::/64 dev tun0\nroute add 2001:db8:3::/64 dev tun0\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Run("single batch", func(t *testing.T) {
+				rec := &recordingRunner{}
+				if err := tt.add(New(rec), "tun0", tt.splits); err != nil {
+					t.Fatal(err)
+				}
+				want := [][]string{{"ip", tt.family, "-batch", "-"}}
+				if !reflect.DeepEqual(rec.combinedCalls, want) {
+					t.Fatalf("calls = %v, want %v", rec.combinedCalls, want)
+				}
+				if !reflect.DeepEqual(rec.inputs, []string{tt.input}) {
+					t.Fatalf("batch input = %q, want %q", rec.inputs, tt.input)
+				}
+			})
+			t.Run("batch error", func(t *testing.T) {
+				commandErr := errors.New("exit status 1")
+				output := "RTNETLINK answers: File exists\nCommand failed -:2\n"
+				runner := &mockRunner{
+					CombinedOutputWithInputFunc: func(string, io.Reader, ...string) ([]byte, error) {
+						return []byte(output), commandErr
+					},
+				}
+				err := tt.add(New(runner), "tun0", tt.splits)
+				if !errors.Is(err, commandErr) {
+					t.Fatalf("error = %v, want wrapped %v", err, commandErr)
+				}
+				for _, text := range []string{"tun0", tt.family, output} {
+					if !strings.Contains(err.Error(), text) {
+						t.Fatalf("error = %v, want %q", err, text)
+					}
+				}
+			})
+		})
+	}
 }
 
-func TestRoute6AddSplitDev(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		rec := &recordingRunner{}
-		w := New(rec)
-		if err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
-			t.Fatalf("unexpected error: %v", err)
+func TestRouteAddSplitDevLargeBatch(t *testing.T) {
+	splits := make([]string, 35000)
+	for i := range splits {
+		splits[i] = fmt.Sprintf("198.18.%d.%d/32", i/256, i%256)
+	}
+	rec := &recordingRunner{}
+	if err := New(rec).RouteAddSplitDev("tun0", splits); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.combinedCalls) != 1 || len(rec.inputs) != 1 {
+		t.Fatalf("got %d calls and %d inputs, want one batch", len(rec.combinedCalls), len(rec.inputs))
+	}
+	lines := strings.Split(strings.TrimSuffix(rec.inputs[0], "\n"), "\n")
+	if len(lines) != len(splits) {
+		t.Fatalf("batch has %d lines, want %d", len(lines), len(splits))
+	}
+	for i, prefix := range splits {
+		if want := "route add " + prefix + " dev tun0"; lines[i] != want {
+			t.Fatalf("line %d = %q, want %q", i+1, lines[i], want)
 		}
-		want := [][]string{
-			{"ip", "-6", "route", "add", "2001:db8:1::/64", "dev", "tun0"},
-			{"ip", "-6", "route", "add", "2001:db8:2::/64", "dev", "tun0"},
-			{"ip", "-6", "route", "add", "2001:db8:3::/64", "dev", "tun0"},
-		}
-		if !reflect.DeepEqual(rec.combinedCalls, want) {
-			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
-		}
-	})
-
-	t.Run("error on second route", func(t *testing.T) {
-		rec := &recordingRunner{failOnCall: 2}
-		w := New(rec)
-		err := w.Route6AddSplitDev("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"})
-		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 2001:db8:2::/64") {
-			t.Fatalf("expected IPv6 split-route error, got %v", err)
-		}
-		if len(rec.combinedCalls) != 2 {
-			t.Fatalf("calls = %v, want to stop at the failed route", rec.combinedCalls)
-		}
-	})
+	}
 }
 
 func TestRouteDelSplitDefault(t *testing.T) {

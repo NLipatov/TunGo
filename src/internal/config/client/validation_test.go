@@ -130,14 +130,29 @@ func TestValidate_FailsWhenTunNameIsEmpty(t *testing.T) {
 }
 
 func TestValidate_FailsWhenTunNameContainsUnsupportedCharacters(t *testing.T) {
-	for _, name := range []string{"tun 0", "tun\x000", "tun\u200b0"} {
-		cfg := validClientConfiguration(t)
-		cfg.UDPSettings.TunName = name
+	for _, name := range []string{"tun 0", "tun\x000", "tun\u200b0", "tun#0", "tun\"0", "tun'0", "tun\\0"} {
+		t.Run(name, func(t *testing.T) {
+			cfg := validClientConfiguration(t)
+			cfg.UDPSettings.TunName = name
 
-		err := validate(cfg)
-		if err == nil || !strings.Contains(err.Error(), "TunName contains unsupported characters") {
-			t.Fatalf("TunName %q: expected unsupported character error, got %v", name, err)
-		}
+			err := validate(cfg)
+			if err == nil || !strings.Contains(err.Error(), "invalid TunName") {
+				t.Fatalf("TunName %q: expected unsupported character error, got %v", name, err)
+			}
+		})
+	}
+}
+
+func TestValidate_AllowsSupportedTunNames(t *testing.T) {
+	for _, name := range []string{"c_udptun0", "c_tcptun0", "c_wstun0", "tun-test.0"} {
+		t.Run(name, func(t *testing.T) {
+			cfg := validClientConfiguration(t)
+			cfg.UDPSettings.TunName = name
+
+			if err := validate(cfg); err != nil {
+				t.Fatalf("TunName %q: %v", name, err)
+			}
+		})
 	}
 }
 
