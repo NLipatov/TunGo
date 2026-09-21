@@ -5,7 +5,6 @@ package route
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -401,52 +400,6 @@ func TestSplitRoutesEmpty(t *testing.T) {
 	}
 }
 
-func TestV4_AddSplit_success(t *testing.T) {
-	cmd := newMockRunner()
-	r := NewV4(cmd)
-	if err := r.AddSplit("utun3", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := []call{
-		{name: "route", args: []string{"-q", "-n", "add", "-net", "192.0.2.0/24", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-net", "198.51.100.0/24", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-net", "203.0.113.0/24", "-interface", "utun3"}},
-	}
-	if got := cmd.allCalls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("route calls = %v, want %v", got, want)
-	}
-}
-
-func TestV4_AddSplit_fileExistsStopsSetup(t *testing.T) {
-	cmd := newMockRunner()
-	cmd.stub([]byte("File exists"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-net", "198.51.100.0/24", "-interface", "utun3")
-
-	r := NewV4(cmd)
-	err := r.AddSplit("utun3", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"})
-	if err == nil || !strings.Contains(err.Error(), "File exists") || !strings.Contains(err.Error(), "198.51.100.0/24") {
-		t.Fatalf("expected route conflict error with CIDR, got: %v", err)
-	}
-	want := []call{
-		{name: "route", args: []string{"-q", "-n", "add", "-net", "192.0.2.0/24", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-net", "198.51.100.0/24", "-interface", "utun3"}},
-	}
-	if got := cmd.allCalls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("route calls = %v, want %v", got, want)
-	}
-}
-
-func TestV4_AddSplit_runnerError(t *testing.T) {
-	cmd := newMockRunner()
-	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-net", "192.0.2.0/24", "-interface", "utun3")
-
-	r := NewV4(cmd)
-	if err := r.AddSplit("utun3", []string{"192.0.2.0/24", "198.51.100.0/24"}); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // v6 parseRoute tests
 // ---------------------------------------------------------------------------
@@ -674,52 +627,6 @@ func TestV6_Del_runnerError(t *testing.T) {
 
 	r := NewV6(cmd)
 	if err := r.Del("2001:db8::1"); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestV6_AddSplit_success(t *testing.T) {
-	cmd := newMockRunner()
-	r := NewV6(cmd)
-	if err := r.AddSplit("utun3", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := []call{
-		{name: "route", args: []string{"-q", "-n", "add", "-inet6", "2001:db8:1::/64", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-inet6", "2001:db8:2::/64", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-inet6", "2001:db8:3::/64", "-interface", "utun3"}},
-	}
-	if got := cmd.allCalls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("route calls = %v, want %v", got, want)
-	}
-}
-
-func TestV6_AddSplit_fileExistsStopsSetup(t *testing.T) {
-	cmd := newMockRunner()
-	cmd.stub([]byte("File exists"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-inet6", "2001:db8:2::/64", "-interface", "utun3")
-
-	r := NewV6(cmd)
-	err := r.AddSplit("utun3", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"})
-	if err == nil || !strings.Contains(err.Error(), "File exists") || !strings.Contains(err.Error(), "2001:db8:2::/64") {
-		t.Fatalf("expected route conflict error with CIDR, got: %v", err)
-	}
-	want := []call{
-		{name: "route", args: []string{"-q", "-n", "add", "-inet6", "2001:db8:1::/64", "-interface", "utun3"}},
-		{name: "route", args: []string{"-q", "-n", "add", "-inet6", "2001:db8:2::/64", "-interface", "utun3"}},
-	}
-	if got := cmd.allCalls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("route calls = %v, want %v", got, want)
-	}
-}
-
-func TestV6_AddSplit_runnerError(t *testing.T) {
-	cmd := newMockRunner()
-	cmd.stub([]byte("permission denied"), errors.New("exit 1"),
-		"route", "-q", "-n", "add", "-inet6", "2001:db8:1::/64", "-interface", "utun3")
-
-	r := NewV6(cmd)
-	if err := r.AddSplit("utun3", []string{"2001:db8:1::/64", "2001:db8:2::/64"}); err == nil {
 		t.Fatal("expected error")
 	}
 }

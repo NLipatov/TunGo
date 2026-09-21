@@ -101,15 +101,8 @@ func (v *V6) Del(destIP string) error {
 	return nil
 }
 
-func (v *V6) AddSplit(dev string, split []string) error {
-	for _, cidr := range split {
-		if out, err := v.runner.CombinedOutput(
-			"route", "-q", "-n", "add", "-inet6", cidr, "-interface", dev,
-		); err != nil {
-			return fmt.Errorf("route add %s failed: %v (%s)", cidr, err, out)
-		}
-	}
-	return nil
+func (v *V6) AddSplit(dev string, splits []string) error {
+	return addSplitRoutes(dev, splits)
 }
 
 func (v *V6) addOnLink(ip, iface string) error {
