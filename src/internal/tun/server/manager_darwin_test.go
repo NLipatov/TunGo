@@ -13,17 +13,17 @@ func TestTunFactoryDarwin_New(t *testing.T) {
 	}
 }
 
-func TestTunFactoryDarwin_OpenTunnel_ReturnsError(t *testing.T) {
+func TestTunFactoryDarwin_Create_ReturnsError(t *testing.T) {
 	f := Manager{}
-	_, err := f.OpenTunnel(settings.Settings{})
+	_, err := f.Create(settings.Settings{})
 	if err == nil {
 		t.Fatal("expected error on unsupported platform")
 	}
 }
 
-func TestTunFactoryDarwin_CloseTunnel_NoError(t *testing.T) {
+func TestTunFactoryDarwin_Remove_NoError(t *testing.T) {
 	f := Manager{}
-	if err := f.CloseTunnel(settings.Settings{}); err != nil {
-		t.Fatalf("expected nil error from CloseTunnel stub, got %v", err)
+	if err := f.Remove(settings.Settings{}); err != nil {
+		t.Fatalf("expected nil error from Remove stub, got %v", err)
 	}
 }

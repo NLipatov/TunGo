@@ -15,10 +15,10 @@ func NewManager() *Manager {
 	return &Manager{}
 }
 
-func (s Manager) OpenTunnel(_ settings.Settings) (io.ReadWriteCloser, error) {
+func (s Manager) Create(_ settings.Settings) (io.ReadWriteCloser, error) {
 	return nil, errServerNotSupported
 }
 
-func (s Manager) CloseTunnel(_ settings.Settings) error {
+func (s Manager) Remove(_ settings.Settings) error {
 	return nil
 }

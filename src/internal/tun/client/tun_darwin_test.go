@@ -103,13 +103,13 @@ func darwinSettings(v4, v6 bool) settings.Settings {
 	return active
 }
 
-func newDarwinTestManager(t *testing.T, active settings.Settings) (*Manager, *darwinIfconfigMock, *darwinIfconfigMock, *darwinRouteMock, *darwinRouteMock) {
+func newDarwinTestTUN(t *testing.T, active settings.Settings) (*TUN, *darwinIfconfigMock, *darwinIfconfigMock, *darwinRouteMock, *darwinRouteMock) {
 	t.Helper()
 	ifconfig4 := &darwinIfconfigMock{}
 	ifconfig6 := &darwinIfconfigMock{}
 	route4 := &darwinRouteMock{}
 	route6 := &darwinRouteMock{}
-	manager, err := New(&clientconfig.Configuration{
+	tunnel, err := New(&clientconfig.Configuration{
 		ClientID:    1,
 		Protocol:    settings.UDP,
 		UDPSettings: active,
@@ -117,13 +117,13 @@ func newDarwinTestManager(t *testing.T, active settings.Settings) (*Manager, *da
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	manager.dns = &darwinDNSMock{}
-	manager.ifconfig4, manager.ifconfig6 = ifconfig4, ifconfig6
-	manager.route4, manager.route6 = route4, route6
-	return manager, ifconfig4, ifconfig6, route4, route6
+	tunnel.dns = &darwinDNSMock{}
+	tunnel.ifconfig4, tunnel.ifconfig6 = ifconfig4, ifconfig6
+	tunnel.route4, tunnel.route6 = route4, route6
+	return tunnel, ifconfig4, ifconfig6, route4, route6
 }
 
-func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
+func TestDarwinTUNConfiguresDNSForEnabledFamilies(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		v4   bool
@@ -140,12 +140,12 @@ func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(test.v4, test.v6))
+			tunnel, _, _, _, _ := newDarwinTestTUN(t, darwinSettings(test.v4, test.v6))
 			dnsMock := &darwinDNSMock{}
-			manager.dns = dnsMock
-			manager.tun = &tunMock{name: "utun42"}
+			tunnel.dns = dnsMock
+			tunnel.tun = &tunMock{name: "utun42"}
 
-			if err := manager.setDNS(); err != nil {
+			if err := tunnel.setDNS(); err != nil {
 				t.Fatalf("setDNS() error = %v", err)
 			}
 			if !reflect.DeepEqual(dnsMock.setResolvers, [][]string{test.want}) {
@@ -155,13 +155,13 @@ func TestDarwinManagerConfiguresDNSForEnabledFamilies(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
+func TestDarwinTUNReturnsDNSConfigurationError(t *testing.T) {
 	failure := errors.New("DNS configuration failed")
-	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, false))
+	tunnel, _, _, _, _ := newDarwinTestTUN(t, darwinSettings(true, false))
 	dnsMock := &darwinDNSMock{setErr: failure}
-	manager.dns = dnsMock
+	tunnel.dns = dnsMock
 
-	err := manager.setDNS()
+	err := tunnel.setDNS()
 	if !errors.Is(err, failure) {
 		t.Fatalf("setDNS() error = %v, want %v", err, failure)
 	}
@@ -173,7 +173,7 @@ func TestDarwinManagerReturnsDNSConfigurationError(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
+func TestDarwinTUNAppliesTunnelRoutes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		v4     []string
@@ -219,32 +219,32 @@ func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
 				TunnelRoutesV4: test.v4,
 				TunnelRoutesV6: test.v6,
 			}
-			manager, err := New(configuration)
+			tunnel, err := New(configuration)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
 			route4, route6 := &darwinRouteMock{}, &darwinRouteMock{}
-			manager.route4, manager.route6 = route4, route6
-			manager.ifconfig4, manager.ifconfig6 = &darwinIfconfigMock{}, &darwinIfconfigMock{}
-			manager.dns = &darwinDNSMock{}
+			tunnel.route4, tunnel.route6 = route4, route6
+			tunnel.ifconfig4, tunnel.ifconfig6 = &darwinIfconfigMock{}, &darwinIfconfigMock{}
+			tunnel.dns = &darwinDNSMock{}
 			tun := &tunMock{name: "utun42"}
-			manager.tun = tun
-			if err := manager.assignAddresses(); err != nil {
+			tunnel.tun = tun
+			if err := tunnel.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
-			if err := manager.CloseTunnel(); err != nil {
-				t.Fatalf("CloseTunnel() error = %v", err)
+			if err := tunnel.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
 			}
-			if tun.closeCalls != 1 || manager.tun != nil {
-				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+			if tun.closeCalls != 1 || tunnel.tun != nil {
+				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, tunnel.tun)
 			}
 
 			if !slices.Equal(configuration.TunnelRoutesV4, originalV4) ||
 				!slices.Equal(configuration.TunnelRoutesV6, originalV6) {
-				t.Fatalf("manager changed configured TunnelRoutes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
+				t.Fatalf("tunnel changed configured TunnelRoutes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
 			}
 
 			for _, check := range []struct {
@@ -268,12 +268,12 @@ func TestDarwinManagerAppliesTunnelRoutes(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerFiltersRoutesForCurrentServer(t *testing.T) {
+func TestDarwinTUNFiltersRoutesForCurrentServer(t *testing.T) {
 	routesV4 := []string{"128.0.0.0/1", "198.51.100.1/32"}
 	routesV6 := []string{"::/1", "fd00::/64", "2001:db8::1/128"}
-	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
-	manager.splitsv4, manager.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
-	manager.tun = &tunMock{name: "utun42"}
+	tunnel, _, _, route4, route6 := newDarwinTestTUN(t, darwinSettings(true, true))
+	tunnel.splitsv4, tunnel.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
+	tunnel.tun = &tunMock{name: "utun42"}
 
 	for _, test := range []struct {
 		server string
@@ -293,7 +293,7 @@ func TestDarwinManagerFiltersRoutesForCurrentServer(t *testing.T) {
 	} {
 		t.Run(test.server, func(t *testing.T) {
 			route4.addedPrefixes, route6.addedPrefixes = nil, nil
-			if err := manager.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 			if !reflect.DeepEqual(route4.addedPrefixes, [][]string{test.wantV4}) ||
@@ -301,14 +301,14 @@ func TestDarwinManagerFiltersRoutesForCurrentServer(t *testing.T) {
 				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
 					route4.addedPrefixes, route6.addedPrefixes, test.wantV4, test.wantV6)
 			}
-			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
-				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			if !slices.Equal(tunnel.splitsv4, routesV4) || !slices.Equal(tunnel.splitsv6, routesV6) {
+				t.Errorf("tunnel changed stored routes: IPv4=%v IPv6=%v", tunnel.splitsv4, tunnel.splitsv6)
 			}
 		})
 	}
 }
 
-func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
+func TestDarwinTUNConfiguresEveryAddressMode(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		v4   bool
@@ -319,18 +319,18 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 		{name: "dual stack", v4: true, v6: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, ifconfig4, ifconfig6, route4, route6 := newDarwinTestManager(t, darwinSettings(test.v4, test.v6))
-			manager.tun = &tunMock{name: "utun42"}
+			tunnel, ifconfig4, ifconfig6, route4, route6 := newDarwinTestTUN(t, darwinSettings(test.v4, test.v6))
+			tunnel.tun = &tunMock{name: "utun42"}
 
-			if err := manager.setMTU(); err != nil {
+			if err := tunnel.setMTU(); err != nil {
 				t.Fatalf("setMTU() error = %v", err)
 			}
-			if err := manager.assignAddresses(); err != nil {
+			if err := tunnel.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			manager.splitsv4 = []string{"192.0.2.0/24"}
-			manager.splitsv6 = []string{"2001:db8::/64"}
-			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+			tunnel.splitsv4 = []string{"192.0.2.0/24"}
+			tunnel.splitsv6 = []string{"2001:db8::/64"}
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 
@@ -381,43 +381,43 @@ func TestDarwinManagerConfiguresEveryAddressMode(t *testing.T) {
 	}
 }
 
-func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
+func TestDarwinTUNReturnsConfigurationErrors(t *testing.T) {
 	failure := errors.New("configuration failed")
 	tests := []struct {
 		name   string
 		active settings.Settings
 		fail   func(*darwinIfconfigMock, *darwinIfconfigMock, *darwinRouteMock, *darwinRouteMock)
-		run    func(*Manager) error
+		run    func(*TUN) error
 	}{
 		{
 			name:   "IPv4 MTU",
 			active: darwinSettings(true, false),
 			fail:   func(v4, _ *darwinIfconfigMock, _, _ *darwinRouteMock) { v4.mtuErr = failure },
-			run:    (*Manager).setMTU,
+			run:    (*TUN).setMTU,
 		},
 		{
 			name:   "IPv6 MTU",
 			active: darwinSettings(false, true),
 			fail:   func(_, v6 *darwinIfconfigMock, _, _ *darwinRouteMock) { v6.mtuErr = failure },
-			run:    (*Manager).setMTU,
+			run:    (*TUN).setMTU,
 		},
 		{
 			name:   "IPv4 address",
 			active: darwinSettings(true, true),
 			fail:   func(v4, _ *darwinIfconfigMock, _, _ *darwinRouteMock) { v4.addrErr = failure },
-			run:    (*Manager).assignAddresses,
+			run:    (*TUN).assignAddresses,
 		},
 		{
 			name:   "IPv6 address",
 			active: darwinSettings(true, true),
 			fail:   func(_, v6 *darwinIfconfigMock, _, _ *darwinRouteMock) { v6.addrErr = failure },
-			run:    (*Manager).assignAddresses,
+			run:    (*TUN).assignAddresses,
 		},
 		{
 			name:   "IPv4 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, v4, _ *darwinRouteMock) { v4.splitErr = failure },
-			run: func(m *Manager) error {
+			run: func(m *TUN) error {
 				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
 			},
 		},
@@ -425,7 +425,7 @@ func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
 			name:   "IPv6 split routes",
 			active: darwinSettings(true, true),
 			fail:   func(_, _ *darwinIfconfigMock, _, v6 *darwinRouteMock) { v6.splitErr = failure },
-			run: func(m *Manager) error {
+			run: func(m *TUN) error {
 				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
 			},
 		},
@@ -433,99 +433,99 @@ func TestDarwinManagerReturnsConfigurationErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			manager, ifconfig4, ifconfig6, route4, route6 := newDarwinTestManager(t, test.active)
-			manager.tun = &tunMock{name: "utun42"}
+			tunnel, ifconfig4, ifconfig6, route4, route6 := newDarwinTestTUN(t, test.active)
+			tunnel.tun = &tunMock{name: "utun42"}
 			test.fail(ifconfig4, ifconfig6, route4, route6)
 
-			if err := test.run(manager); !errors.Is(err, failure) {
+			if err := test.run(tunnel); !errors.Is(err, failure) {
 				t.Fatalf("configuration error = %v, want %v", err, failure)
 			}
 		})
 	}
 }
 
-func TestDarwinManagerRejectsInvalidServerAddress(t *testing.T) {
-	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, true))
-	if _, err := manager.OpenTunnel(netip.Addr{}); err == nil {
-		t.Fatal("OpenTunnel() error = nil")
+func TestDarwinTUNRejectsInvalidServerAddress(t *testing.T) {
+	tunnel, _, _, _, _ := newDarwinTestTUN(t, darwinSettings(true, true))
+	if _, err := tunnel.Open(netip.Addr{}); err == nil {
+		t.Fatal("Open() error = nil")
 	}
 }
 
-func TestDarwinManagerPinsOnlyCoveredServerFamily(t *testing.T) {
+func TestDarwinTUNPinsOnlyCoveredServerFamily(t *testing.T) {
 	t.Run("IPv4 tunnel skips IPv6 server", func(t *testing.T) {
-		manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, false))
-		if err := manager.pinServerRoute(netip.MustParseAddr("2001:db8::1")); err != nil {
+		tunnel, _, _, route4, route6 := newDarwinTestTUN(t, darwinSettings(true, false))
+		if err := tunnel.pinServerRoute(netip.MustParseAddr("2001:db8::1")); err != nil {
 			t.Fatalf("pinServerRoute() error = %v", err)
 		}
-		if len(route4.added) != 0 || len(route6.added) != 0 || manager.pinnedServerAddr.IsValid() {
+		if len(route4.added) != 0 || len(route6.added) != 0 || tunnel.pinnedServerAddr.IsValid() {
 			t.Fatal("unexpected pinned route")
 		}
 	})
 
 	t.Run("dual stack pins IPv6 server", func(t *testing.T) {
-		manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
+		tunnel, _, _, route4, route6 := newDarwinTestTUN(t, darwinSettings(true, true))
 		serverAddr := netip.MustParseAddr("2001:db8::1")
-		if err := manager.pinServerRoute(serverAddr); err != nil {
+		if err := tunnel.pinServerRoute(serverAddr); err != nil {
 			t.Fatalf("pinServerRoute() error = %v", err)
 		}
-		if len(route4.added) != 0 || len(route6.added) != 1 || manager.pinnedServerAddr != serverAddr {
-			t.Fatalf("routes: IPv4=%v IPv6=%v pinned=%s", route4.added, route6.added, manager.pinnedServerAddr)
+		if len(route4.added) != 0 || len(route6.added) != 1 || tunnel.pinnedServerAddr != serverAddr {
+			t.Fatalf("routes: IPv4=%v IPv6=%v pinned=%s", route4.added, route6.added, tunnel.pinnedServerAddr)
 		}
 	})
 }
 
-func TestDarwinManagerDoesNotCacheFailedServerRoute(t *testing.T) {
-	manager, _, _, route4, _ := newDarwinTestManager(t, darwinSettings(true, false))
+func TestDarwinTUNDoesNotCacheFailedServerRoute(t *testing.T) {
+	tunnel, _, _, route4, _ := newDarwinTestTUN(t, darwinSettings(true, false))
 	route4.addErr = errors.New("route failed")
-	if err := manager.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err == nil {
+	if err := tunnel.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err == nil {
 		t.Fatal("pinServerRoute() error = nil")
 	}
-	if manager.pinnedServerAddr.IsValid() {
-		t.Fatalf("pinnedServerAddr = %s", manager.pinnedServerAddr)
+	if tunnel.pinnedServerAddr.IsValid() {
+		t.Fatalf("pinnedServerAddr = %s", tunnel.pinnedServerAddr)
 	}
 }
 
-func TestDarwinManagerCloseTunnelUsesInterfaceCleanup(t *testing.T) {
-	manager, _, _, route4, route6 := newDarwinTestManager(t, darwinSettings(true, true))
+func TestDarwinTUNCloseUsesInterfaceCleanup(t *testing.T) {
+	tunnel, _, _, route4, route6 := newDarwinTestTUN(t, darwinSettings(true, true))
 	tun := &tunMock{name: "utun42"}
-	manager.tun = tun
-	manager.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	tunnel.tun = tun
+	tunnel.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if len(route4.deleted) != 0 || len(route6.deleted) != 1 {
 		t.Fatalf("route cleanup: IPv4=%v IPv6=%v", route4.deleted, route6.deleted)
 	}
-	if tun.closeCalls != 1 || manager.tun != nil || manager.pinnedServerAddr.IsValid() {
-		t.Fatalf("close state: calls=%d tun=%v pinned=%s", tun.closeCalls, manager.tun, manager.pinnedServerAddr)
+	if tun.closeCalls != 1 || tunnel.tun != nil || tunnel.pinnedServerAddr.IsValid() {
+		t.Fatalf("close state: calls=%d tun=%v pinned=%s", tun.closeCalls, tunnel.tun, tunnel.pinnedServerAddr)
 	}
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("second CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
 	}
 	if tun.closeCalls != 1 || len(route6.deleted) != 1 {
 		t.Fatalf("repeated cleanup: close calls=%d deleted routes=%v", tun.closeCalls, route6.deleted)
 	}
 }
 
-func TestDarwinManagerClosesTunAfterIPv6RouteFailure(t *testing.T) {
+func TestDarwinTUNClosesTunAfterIPv6RouteFailure(t *testing.T) {
 	active := darwinSettings(true, true)
 	active.IPv4 = netip.MustParseAddr("10.8.0.2")
 	active.IPv4Subnet = netip.MustParsePrefix("10.8.0.0/20")
-	manager, ifconfig4, _, route4, route6 := newDarwinTestManager(t, active)
-	manager.splitsv6 = []string{"2001:db8::/64"}
+	tunnel, ifconfig4, _, route4, route6 := newDarwinTestTUN(t, active)
+	tunnel.splitsv6 = []string{"2001:db8::/64"}
 	failure := errors.New("IPv6 route failed")
 	route6.splitErr = failure
 	tun := &tunMock{name: "utun42"}
-	manager.tun = tun
+	tunnel.tun = tun
 
-	if err := manager.assignAddresses(); err != nil {
+	if err := tunnel.assignAddresses(); err != nil {
 		t.Fatalf("assignAddresses() error = %v", err)
 	}
 	if len(route4.addedPrefixes) != 0 || len(route6.addedPrefixes) != 0 {
 		t.Fatal("address assignment installed split routes")
 	}
-	if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
+	if err := tunnel.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
 		t.Fatalf("addSplitRoutes() error = %v, want %v", err, failure)
 	}
 	wantAddress := []netip.Prefix{netip.MustParsePrefix("10.8.0.2/20")}
@@ -536,65 +536,65 @@ func TestDarwinManagerClosesTunAfterIPv6RouteFailure(t *testing.T) {
 		t.Fatalf("IPv4 routes = %v, want subnet route before IPv6 failure", route4.addedPrefixes)
 	}
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
-	if tun.closeCalls != 1 || manager.tun != nil {
-		t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+	if tun.closeCalls != 1 || tunnel.tun != nil {
+		t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, tunnel.tun)
 	}
 }
 
-func TestDarwinManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
-	manager, _, _, route4, _ := newDarwinTestManager(t, darwinSettings(true, true))
+func TestDarwinTUNCloseReturnsAllCleanupErrors(t *testing.T) {
+	tunnel, _, _, route4, _ := newDarwinTestTUN(t, darwinSettings(true, true))
 	dnsMock := &darwinDNSMock{revertErr: errors.New("DNS restore failed")}
-	manager.dns = dnsMock
+	tunnel.dns = dnsMock
 	route4.delErr = errors.New("route4 failed")
-	manager.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
-	manager.tun = &tunMock{name: "utun42", closeErr: errors.New("TUN close failed")}
+	tunnel.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
+	tunnel.tun = &tunMock{name: "utun42", closeErr: errors.New("TUN close failed")}
 
-	err := manager.CloseTunnel()
+	err := tunnel.Close()
 	if err == nil {
-		t.Fatal("CloseTunnel() error = nil")
+		t.Fatal("Close() error = nil")
 	}
 	for _, want := range []string{"DNS restore failed", "route4 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
+			t.Fatalf("Close() error = %v, want %q", err, want)
 		}
 	}
-	if manager.tun != nil {
-		t.Fatal("CloseTunnel() retained a closed TUN")
+	if tunnel.tun != nil {
+		t.Fatal("Close() retained a closed TUN")
 	}
-	if !manager.pinnedServerAddr.IsValid() {
+	if !tunnel.pinnedServerAddr.IsValid() {
 		t.Fatal("failed route cleanup cleared retry state")
 	}
 
 	route4.delErr = nil
 	dnsMock.revertErr = nil
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("retry CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("retry Close() error = %v", err)
 	}
-	if manager.pinnedServerAddr.IsValid() {
+	if tunnel.pinnedServerAddr.IsValid() {
 		t.Fatal("successful route cleanup retained retry state")
 	}
 }
 
-func TestDarwinManagerCloseTunnelRetriesDNSRestore(t *testing.T) {
-	manager, _, _, _, _ := newDarwinTestManager(t, darwinSettings(true, false))
+func TestDarwinTUNCloseRetriesDNSRestore(t *testing.T) {
+	tunnel, _, _, _, _ := newDarwinTestTUN(t, darwinSettings(true, false))
 	dnsMock := &darwinDNSMock{revertErr: errors.New("DNS restore failed")}
-	manager.dns = dnsMock
+	tunnel.dns = dnsMock
 	tun := &tunMock{name: "utun42"}
-	manager.tun = tun
+	tunnel.tun = tun
 
-	if err := manager.CloseTunnel(); err == nil || !strings.Contains(err.Error(), "DNS restore failed") {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err == nil || !strings.Contains(err.Error(), "DNS restore failed") {
+		t.Fatalf("Close() error = %v", err)
 	}
-	if manager.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
-		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", manager.tun, tun.closeCalls, dnsMock.revertCalls)
+	if tunnel.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
+		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", tunnel.tun, tun.closeCalls, dnsMock.revertCalls)
 	}
 
 	dnsMock.revertErr = nil
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("retry CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("retry Close() error = %v", err)
 	}
 	if dnsMock.revertCalls != 2 {
 		t.Fatalf("DNS Revert() calls = %d, want 2", dnsMock.revertCalls)

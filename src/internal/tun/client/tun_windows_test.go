@@ -136,7 +136,7 @@ func windowsSettings(v4, v6 bool) settings.Settings {
 	return active
 }
 
-func newWindowsTestManager(t *testing.T, active settings.Settings) (*Manager, *windowsNetConfigMock, *windowsNetConfigMock) {
+func newWindowsTestTUN(t *testing.T, active settings.Settings) (*TUN, *windowsNetConfigMock, *windowsNetConfigMock) {
 	t.Helper()
 	configuration := &clientconfig.Configuration{
 		Protocol:    settings.UDP,
@@ -144,16 +144,16 @@ func newWindowsTestManager(t *testing.T, active settings.Settings) (*Manager, *w
 	}
 	netConfig4 := &windowsNetConfigMock{}
 	netConfig6 := &windowsNetConfigMock{}
-	manager := &Manager{
+	tunnel := &TUN{
 		configuration: configuration,
 		settings:      active,
 		netConfig4:    netConfig4,
 		netConfig6:    netConfig6,
 	}
-	return manager, netConfig4, netConfig6
+	return tunnel, netConfig4, netConfig6
 }
 
-func TestWindowsManagerAppliesTunnelRoutesAndClosesTun(t *testing.T) {
+func TestWindowsTUNAppliesTunnelRoutesAndClosesTun(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		v4   []string
@@ -165,7 +165,7 @@ func TestWindowsManagerAppliesTunnelRoutesAndClosesTun(t *testing.T) {
 		{name: "both empty", v4: []string{}, v6: []string{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, err := New(&clientconfig.Configuration{
+			tunnel, err := New(&clientconfig.Configuration{
 				ClientID:       1,
 				Protocol:       settings.UDP,
 				UDPSettings:    windowsSettings(true, true),
@@ -176,20 +176,20 @@ func TestWindowsManagerAppliesTunnelRoutesAndClosesTun(t *testing.T) {
 				t.Fatalf("New() error = %v", err)
 			}
 			netConfig4, netConfig6 := &windowsNetConfigMock{}, &windowsNetConfigMock{}
-			manager.netConfig4, manager.netConfig6 = netConfig4, netConfig6
+			tunnel.netConfig4, tunnel.netConfig6 = netConfig4, netConfig6
 			tun := &windowsTunMock{}
-			manager.tun = tun
-			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+			tunnel.tun = tun
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
-			if err := manager.CloseTunnel(); err != nil {
-				t.Fatalf("CloseTunnel() error = %v", err)
+			if err := tunnel.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
 			}
-			if err := manager.CloseTunnel(); err != nil {
-				t.Fatalf("repeated CloseTunnel() error = %v", err)
+			if err := tunnel.Close(); err != nil {
+				t.Fatalf("repeated Close() error = %v", err)
 			}
-			if tun.closeCalls != 1 || manager.tun != nil {
-				t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, manager.tun != nil)
+			if tun.closeCalls != 1 || tunnel.tun != nil {
+				t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, tunnel.tun != nil)
 			}
 
 			for _, check := range []struct {
@@ -213,11 +213,11 @@ func TestWindowsManagerAppliesTunnelRoutesAndClosesTun(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerFiltersTunSubnetAndCurrentServerRoutes(t *testing.T) {
+func TestWindowsTUNFiltersTunSubnetAndCurrentServerRoutes(t *testing.T) {
 	routesV4 := []string{"128.0.0.0/1", "198.51.100.1/32", "10.0.0.0/24", "10.0.0.0/16"}
 	routesV6 := []string{"::/1", "2001:db8::1/128", "fd00::/64", "fd00::/48"}
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
-	manager.splitsv4, manager.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
+	tunnel.splitsv4, tunnel.splitsv6 = slices.Clone(routesV4), slices.Clone(routesV6)
 
 	for _, test := range []struct {
 		server string
@@ -237,8 +237,8 @@ func TestWindowsManagerFiltersTunSubnetAndCurrentServerRoutes(t *testing.T) {
 	} {
 		t.Run(test.server, func(t *testing.T) {
 			netConfig4.addedPrefixes, netConfig6.addedPrefixes = nil, nil
-			manager.tun = &windowsTunMock{}
-			if err := manager.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
+			tunnel.tun = &windowsTunMock{}
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr(test.server)); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
 			if !reflect.DeepEqual(netConfig4.addedPrefixes, [][]string{test.wantV4}) ||
@@ -246,17 +246,17 @@ func TestWindowsManagerFiltersTunSubnetAndCurrentServerRoutes(t *testing.T) {
 				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
 					netConfig4.addedPrefixes, netConfig6.addedPrefixes, test.wantV4, test.wantV6)
 			}
-			if err := manager.CloseTunnel(); err != nil {
-				t.Fatalf("CloseTunnel() error = %v", err)
+			if err := tunnel.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
 			}
-			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
-				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			if !slices.Equal(tunnel.splitsv4, routesV4) || !slices.Equal(tunnel.splitsv6, routesV6) {
+				t.Errorf("tunnel changed stored routes: IPv4=%v IPv6=%v", tunnel.splitsv4, tunnel.splitsv6)
 			}
 		})
 	}
 }
 
-func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
+func TestWindowsTUNConfiguresEveryAddressMode(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		v4   bool
@@ -267,19 +267,19 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 		{name: "dual stack", v4: true, v6: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(test.v4, test.v6))
-			if err := manager.assignAddresses(); err != nil {
+			tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(test.v4, test.v6))
+			if err := tunnel.assignAddresses(); err != nil {
 				t.Fatalf("assignAddresses() error = %v", err)
 			}
-			manager.splitsv4 = []string{"192.0.2.0/24"}
-			manager.splitsv6 = []string{"2001:db8::/64"}
-			if err := manager.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
+			tunnel.splitsv4 = []string{"192.0.2.0/24"}
+			tunnel.splitsv6 = []string{"2001:db8::/64"}
+			if err := tunnel.addSplitRoutes(netip.MustParseAddr("198.51.100.1")); err != nil {
 				t.Fatalf("addSplitRoutes() error = %v", err)
 			}
-			if err := manager.setMTU(); err != nil {
+			if err := tunnel.setMTU(); err != nil {
 				t.Fatalf("setMTU() error = %v", err)
 			}
-			if err := manager.setDNS(); err != nil {
+			if err := tunnel.setDNS(); err != nil {
 				t.Fatalf("setDNS() error = %v", err)
 			}
 
@@ -346,77 +346,77 @@ func TestWindowsManagerConfiguresEveryAddressMode(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerReturnsConfigurationErrors(t *testing.T) {
+func TestWindowsTUNReturnsConfigurationErrors(t *testing.T) {
 	failure := errors.New("configuration failed")
 	tests := []struct {
 		name string
 		fail func(*windowsNetConfigMock, *windowsNetConfigMock)
-		run  func(*Manager) error
+		run  func(*TUN) error
 	}{
 		{
 			name: "IPv4 address",
 			fail: func(v4, _ *windowsNetConfigMock) { v4.setAddressErr = failure },
-			run:  (*Manager).assignAddresses,
+			run:  (*TUN).assignAddresses,
 		},
 		{
 			name: "IPv6 address",
 			fail: func(_, v6 *windowsNetConfigMock) { v6.setAddressErr = failure },
-			run:  (*Manager).assignAddresses,
+			run:  (*TUN).assignAddresses,
 		},
 		{
 			name: "IPv4 split routes",
 			fail: func(v4, _ *windowsNetConfigMock) { v4.addSplitErr = failure },
-			run: func(m *Manager) error {
+			run: func(m *TUN) error {
 				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
 			},
 		},
 		{
 			name: "IPv6 split routes",
 			fail: func(_, v6 *windowsNetConfigMock) { v6.addSplitErr = failure },
-			run: func(m *Manager) error {
+			run: func(m *TUN) error {
 				return m.addSplitRoutes(netip.MustParseAddr("198.51.100.1"))
 			},
 		},
 		{
 			name: "IPv4 MTU",
 			fail: func(v4, _ *windowsNetConfigMock) { v4.setMTUErr = failure },
-			run:  (*Manager).setMTU,
+			run:  (*TUN).setMTU,
 		},
 		{
 			name: "IPv6 MTU",
 			fail: func(_, v6 *windowsNetConfigMock) { v6.setMTUErr = failure },
-			run:  (*Manager).setMTU,
+			run:  (*TUN).setMTU,
 		},
 		{
 			name: "IPv4 DNS",
 			fail: func(v4, _ *windowsNetConfigMock) { v4.setDNSErr = failure },
-			run:  (*Manager).setDNS,
+			run:  (*TUN).setDNS,
 		},
 		{
 			name: "IPv6 DNS",
 			fail: func(_, v6 *windowsNetConfigMock) { v6.setDNSErr = failure },
-			run:  (*Manager).setDNS,
+			run:  (*TUN).setDNS,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+			tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 			test.fail(netConfig4, netConfig6)
 
-			if err := test.run(manager); !errors.Is(err, failure) {
+			if err := test.run(tunnel); !errors.Is(err, failure) {
 				t.Fatalf("configuration error = %v, want %v", err, failure)
 			}
 		})
 	}
 }
 
-func TestWindowsManagerDNSFlushIsBestEffortDuringSetup(t *testing.T) {
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+func TestWindowsTUNDNSFlushIsBestEffortDuringSetup(t *testing.T) {
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 	netConfig4.flushDNSErr = errors.New("flush IPv4 failed")
 	netConfig6.flushDNSErr = errors.New("flush IPv6 failed")
 
-	if err := manager.setDNS(); err != nil {
+	if err := tunnel.setDNS(); err != nil {
 		t.Fatalf("setDNS() error = %v", err)
 	}
 	if netConfig4.flushDNSCalls != 1 || netConfig6.flushDNSCalls != 1 {
@@ -424,12 +424,12 @@ func TestWindowsManagerDNSFlushIsBestEffortDuringSetup(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerStopsDNSSetupAfterIPv4Failure(t *testing.T) {
+func TestWindowsTUNStopsDNSSetupAfterIPv4Failure(t *testing.T) {
 	failure := errors.New("IPv4 DNS failed")
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 	netConfig4.setDNSErr = failure
 
-	err := manager.setDNS()
+	err := tunnel.setDNS()
 	if !errors.Is(err, failure) {
 		t.Fatalf("setDNS() error = %v, want %v", err, failure)
 	}
@@ -447,7 +447,7 @@ func TestWindowsManagerStopsDNSSetupAfterIPv4Failure(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerRollsBackPartialDNSSetup(t *testing.T) {
+func TestWindowsTUNRollsBackPartialDNSSetup(t *testing.T) {
 	setupErr := errors.New("IPv6 DNS failed")
 	cleanupErr := errors.New("IPv4 DNS cleanup failed")
 	for _, test := range []struct {
@@ -458,12 +458,12 @@ func TestWindowsManagerRollsBackPartialDNSSetup(t *testing.T) {
 		{name: "rollback fails", cleanupErr: cleanupErr},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+			tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 			netConfig4.setDNSErr = test.cleanupErr
 			netConfig4.setDNSErrAt = 2
 			netConfig6.setDNSErr = setupErr
 
-			err := manager.setDNS()
+			err := tunnel.setDNS()
 			if !errors.Is(err, setupErr) {
 				t.Fatalf("setDNS() error = %v, want setup cause", err)
 			}
@@ -477,19 +477,19 @@ func TestWindowsManagerRollsBackPartialDNSSetup(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerRejectsInvalidServerAddress(t *testing.T) {
-	manager, _, _ := newWindowsTestManager(t, windowsSettings(true, true))
-	if _, err := manager.OpenTunnel(netip.Addr{}); err == nil {
-		t.Fatal("OpenTunnel() error = nil")
+func TestWindowsTUNRejectsInvalidServerAddress(t *testing.T) {
+	tunnel, _, _ := newWindowsTestTUN(t, windowsSettings(true, true))
+	if _, err := tunnel.Open(netip.Addr{}); err == nil {
+		t.Fatal("Open() error = nil")
 	}
 }
 
-func TestWindowsManagerPinsServerRouteWithMatchingConfigurator(t *testing.T) {
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+func TestWindowsTUNPinsServerRouteWithMatchingConfigurator(t *testing.T) {
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 	netConfig6.bestRouteIf = "Ethernet6"
 	serverAddr := netip.MustParseAddr("2001:db8::1")
 
-	if err := manager.pinServerRoute(serverAddr); err != nil {
+	if err := tunnel.pinServerRoute(serverAddr); err != nil {
 		t.Fatalf("pinServerRoute() error = %v", err)
 	}
 	if len(netConfig4.addedRoutes) != 0 {
@@ -498,18 +498,18 @@ func TestWindowsManagerPinsServerRouteWithMatchingConfigurator(t *testing.T) {
 	if want := []string{"2001:db8::1 dev Ethernet6"}; !reflect.DeepEqual(netConfig6.addedRoutes, want) {
 		t.Fatalf("IPv6 routes = %v, want %v", netConfig6.addedRoutes, want)
 	}
-	if manager.pinnedServerAddr != serverAddr || manager.pinnedServerIf != "Ethernet6" {
-		t.Fatalf("pinned route = %s@%s", manager.pinnedServerAddr, manager.pinnedServerIf)
+	if tunnel.pinnedServerAddr != serverAddr || tunnel.pinnedServerIf != "Ethernet6" {
+		t.Fatalf("pinned route = %s@%s", tunnel.pinnedServerAddr, tunnel.pinnedServerIf)
 	}
 }
 
-func TestWindowsManagerPinsServerRouteViaGateway(t *testing.T) {
-	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+func TestWindowsTUNPinsServerRouteViaGateway(t *testing.T) {
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, windowsSettings(true, false))
 	netConfig4.bestRouteGateway = netip.MustParseAddr("192.0.2.1")
 	netConfig4.bestRouteIf = "Ethernet0"
 	serverAddr := netip.MustParseAddr("198.51.100.1")
 
-	if err := manager.pinServerRoute(serverAddr); err != nil {
+	if err := tunnel.pinServerRoute(serverAddr); err != nil {
 		t.Fatalf("pinServerRoute() error = %v", err)
 	}
 	want := []string{"198.51.100.1 via 192.0.2.1 dev Ethernet0"}
@@ -518,165 +518,165 @@ func TestWindowsManagerPinsServerRouteViaGateway(t *testing.T) {
 	}
 }
 
-func TestWindowsManagerReturnsBestRouteError(t *testing.T) {
+func TestWindowsTUNReturnsBestRouteError(t *testing.T) {
 	failure := errors.New("route lookup failed")
-	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, windowsSettings(true, false))
 	netConfig4.bestRouteErr = failure
 
-	if err := manager.pinServerRoute(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
+	if err := tunnel.pinServerRoute(netip.MustParseAddr("198.51.100.1")); !errors.Is(err, failure) {
 		t.Fatalf("pinServerRoute() error = %v, want %v", err, failure)
 	}
-	if len(netConfig4.addedRoutes) != 0 || manager.pinnedServerAddr.IsValid() || manager.pinnedServerIf != "" {
+	if len(netConfig4.addedRoutes) != 0 || tunnel.pinnedServerAddr.IsValid() || tunnel.pinnedServerIf != "" {
 		t.Fatal("failed route lookup changed pinned route state")
 	}
 }
 
-func TestWindowsManagerSkipsUncoveredServerFamily(t *testing.T) {
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, false))
-	if err := manager.pinServerRoute(netip.MustParseAddr("2001:db8::1")); err != nil {
+func TestWindowsTUNSkipsUncoveredServerFamily(t *testing.T) {
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, false))
+	if err := tunnel.pinServerRoute(netip.MustParseAddr("2001:db8::1")); err != nil {
 		t.Fatalf("pinServerRoute() error = %v", err)
 	}
-	if len(netConfig4.addedRoutes) != 0 || len(netConfig6.addedRoutes) != 0 || manager.pinnedServerAddr.IsValid() {
+	if len(netConfig4.addedRoutes) != 0 || len(netConfig6.addedRoutes) != 0 || tunnel.pinnedServerAddr.IsValid() {
 		t.Fatal("unexpected pinned route")
 	}
 }
 
-func TestWindowsManagerDoesNotCacheFailedServerRoute(t *testing.T) {
-	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+func TestWindowsTUNDoesNotCacheFailedServerRoute(t *testing.T) {
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, windowsSettings(true, false))
 	netConfig4.addRouteErr = errors.New("route failed")
-	if err := manager.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err == nil {
+	if err := tunnel.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err == nil {
 		t.Fatal("pinServerRoute() error = nil")
 	}
-	if manager.pinnedServerAddr.IsValid() || manager.pinnedServerIf != "" {
-		t.Fatalf("cached route = %s@%s", manager.pinnedServerAddr, manager.pinnedServerIf)
+	if tunnel.pinnedServerAddr.IsValid() || tunnel.pinnedServerIf != "" {
+		t.Fatalf("cached route = %s@%s", tunnel.pinnedServerAddr, tunnel.pinnedServerIf)
 	}
 }
 
-func TestWindowsManagerUsesInterfaceIndexWhenAliasIsEmpty(t *testing.T) {
-	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
+func TestWindowsTUNUsesInterfaceIndexWhenAliasIsEmpty(t *testing.T) {
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, windowsSettings(true, false))
 	netConfig4.bestRouteIndex = 12
-	if err := manager.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err != nil {
+	if err := tunnel.pinServerRoute(netip.MustParseAddr("198.51.100.1")); err != nil {
 		t.Fatalf("pinServerRoute() error = %v", err)
 	}
-	if manager.pinnedServerIf != "12" {
-		t.Fatalf("pinnedServerIf = %q", manager.pinnedServerIf)
+	if tunnel.pinnedServerIf != "12" {
+		t.Fatalf("pinnedServerIf = %q", tunnel.pinnedServerIf)
 	}
 }
 
-func TestWindowsManagerCloseTunnelRetriesServerRouteCleanup(t *testing.T) {
+func TestWindowsTUNCloseRetriesServerRouteCleanup(t *testing.T) {
 	deleteErr := errors.New("route cleanup failed")
-	manager, netConfig4, _ := newWindowsTestManager(t, windowsSettings(true, false))
-	manager.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
-	manager.pinnedServerIf = "Ethernet0"
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, windowsSettings(true, false))
+	tunnel.pinnedServerAddr = netip.MustParseAddr("198.51.100.1")
+	tunnel.pinnedServerIf = "Ethernet0"
 	netConfig4.deleteRouteErr = deleteErr
 
-	if err := manager.CloseTunnel(); !errors.Is(err, deleteErr) {
-		t.Fatalf("CloseTunnel() error = %v, want %v", err, deleteErr)
+	if err := tunnel.Close(); !errors.Is(err, deleteErr) {
+		t.Fatalf("Close() error = %v, want %v", err, deleteErr)
 	}
-	if !manager.pinnedServerAddr.IsValid() || manager.pinnedServerIf == "" {
+	if !tunnel.pinnedServerAddr.IsValid() || tunnel.pinnedServerIf == "" {
 		t.Fatal("failed route cleanup cleared retry state")
 	}
 
 	netConfig4.deleteRouteErr = nil
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("retry CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("retry Close() error = %v", err)
 	}
-	if manager.pinnedServerAddr.IsValid() || manager.pinnedServerIf != "" {
+	if tunnel.pinnedServerAddr.IsValid() || tunnel.pinnedServerIf != "" {
 		t.Fatal("successful route cleanup retained state")
 	}
 }
 
-func TestWindowsManagerCloseTunnelReturnsAllCleanupErrors(t *testing.T) {
-	manager, netConfig4, netConfig6 := newWindowsTestManager(t, windowsSettings(true, true))
+func TestWindowsTUNCloseReturnsAllCleanupErrors(t *testing.T) {
+	tunnel, netConfig4, netConfig6 := newWindowsTestTUN(t, windowsSettings(true, true))
 	netConfig4.setDNSErr = errors.New("dns4 failed")
 	netConfig4.flushDNSErr = errors.New("flush4 failed")
 	netConfig6.setDNSErr = errors.New("dns6 failed")
 	netConfig6.flushDNSErr = errors.New("flush6 failed")
-	manager.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
-	manager.pinnedServerIf = "Ethernet6"
+	tunnel.pinnedServerAddr = netip.MustParseAddr("2001:db8::1")
+	tunnel.pinnedServerIf = "Ethernet6"
 	netConfig6.deleteRouteErr = errors.New("route6 failed")
 	tun := &windowsTunMock{closeErr: errors.New("TUN close failed")}
-	manager.tun = tun
+	tunnel.tun = tun
 
-	err := manager.CloseTunnel()
+	err := tunnel.Close()
 	if err == nil {
-		t.Fatal("CloseTunnel() error = nil")
+		t.Fatal("Close() error = nil")
 	}
 	for _, want := range []string{"dns4 failed", "dns6 failed", "route6 failed", "TUN close failed"} {
 		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("CloseTunnel() error = %v, want %q", err, want)
+			t.Fatalf("Close() error = %v, want %q", err, want)
 		}
 	}
 	for _, ignored := range []string{"flush4 failed", "flush6 failed"} {
 		if strings.Contains(err.Error(), ignored) {
-			t.Fatalf("CloseTunnel() error = %v, want cache flush failure ignored", err)
+			t.Fatalf("Close() error = %v, want cache flush failure ignored", err)
 		}
 	}
 	if netConfig4.flushDNSCalls != 1 || netConfig6.flushDNSCalls != 1 {
 		t.Fatalf("FlushDNS() calls = IPv4:%d IPv6:%d, want 1 each", netConfig4.flushDNSCalls, netConfig6.flushDNSCalls)
 	}
-	if tun.closeCalls != 1 || manager.tun != nil {
-		t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, manager.tun != nil)
+	if tun.closeCalls != 1 || tunnel.tun != nil {
+		t.Fatalf("TUN cleanup: close calls = %d, retained = %v", tun.closeCalls, tunnel.tun != nil)
 	}
 }
 
-func TestWindowsManagerCloseTunnelReturnsStaleCleanupError(t *testing.T) {
+func TestWindowsTUNCloseReturnsStaleCleanupError(t *testing.T) {
 	active := windowsSettings(true, false)
-	manager, _, netConfig6 := newWindowsTestManager(t, active)
+	tunnel, _, netConfig6 := newWindowsTestTUN(t, active)
 	stale := windowsSettings(false, true)
 	stale.TunName = "stale6"
-	manager.configuration.TCPSettings = stale
+	tunnel.configuration.TCPSettings = stale
 	staleErr := errors.New("stale cleanup failed")
 	netConfig6.setDNSErr = staleErr
 
-	if err := manager.CloseTunnel(); !errors.Is(err, staleErr) {
-		t.Fatalf("CloseTunnel() error = %v, want %v", err, staleErr)
+	if err := tunnel.Close(); !errors.Is(err, staleErr) {
+		t.Fatalf("Close() error = %v, want %v", err, staleErr)
 	}
 }
 
-func TestWindowsManagerCloseTunnelIgnoresMissingStaleInterface(t *testing.T) {
+func TestWindowsTUNCloseIgnoresMissingStaleInterface(t *testing.T) {
 	active := windowsSettings(true, false)
-	manager, _, netConfig6 := newWindowsTestManager(t, active)
+	tunnel, _, netConfig6 := newWindowsTestTUN(t, active)
 	stale := windowsSettings(false, true)
 	stale.TunName = "stale6"
-	manager.configuration.TCPSettings = stale
+	tunnel.configuration.TCPSettings = stale
 	missing := fmt.Errorf("%w: %q", ipcfg.ErrInterfaceNotFound, stale.TunName)
 	netConfig6.setDNSErr = missing
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 }
 
-func TestWindowsManagerCloseTunnelIgnoresMissingActiveInterface(t *testing.T) {
+func TestWindowsTUNCloseIgnoresMissingActiveInterface(t *testing.T) {
 	active := windowsSettings(true, false)
-	manager, netConfig4, _ := newWindowsTestManager(t, active)
+	tunnel, netConfig4, _ := newWindowsTestTUN(t, active)
 	missing := fmt.Errorf("%w: %q", ipcfg.ErrInterfaceNotFound, active.TunName)
 	netConfig4.setDNSErr = missing
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 }
 
-func TestWindowsManagerCloseTunnelIgnoresIncompleteStaleSettings(t *testing.T) {
-	manager, _, _ := newWindowsTestManager(t, windowsSettings(true, false))
-	manager.configuration.TCPSettings.TunName = "stale"
+func TestWindowsTUNCloseIgnoresIncompleteStaleSettings(t *testing.T) {
+	tunnel, _, _ := newWindowsTestTUN(t, windowsSettings(true, false))
+	tunnel.configuration.TCPSettings.TunName = "stale"
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 }
 
-func TestWindowsManagerCloseTunnelCleansStaleSettings(t *testing.T) {
+func TestWindowsTUNCloseCleansStaleSettings(t *testing.T) {
 	active := windowsSettings(true, false)
-	manager, _, netConfig6 := newWindowsTestManager(t, active)
+	tunnel, _, netConfig6 := newWindowsTestTUN(t, active)
 	stale := windowsSettings(false, true)
 	stale.TunName = "stale6"
-	manager.configuration.TCPSettings = stale
+	tunnel.configuration.TCPSettings = stale
 
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if !reflect.DeepEqual(netConfig6.dnsNames, []string{"stale6"}) {
 		t.Fatalf("stale DNS cleanup = %v", netConfig6.dnsNames)
