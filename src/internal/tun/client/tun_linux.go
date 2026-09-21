@@ -25,7 +25,7 @@ type dnsConfigurator interface {
 	Revert() error
 }
 
-type Manager struct {
+type TUN struct {
 	configuration             *client.Configuration
 	settings                  settings.Settings
 	dns                       dnsConfigurator
@@ -39,14 +39,14 @@ type Manager struct {
 	splitsv6                  []string
 }
 
-// New creates a tunnel manager from a normalized, validated client configuration.
-func New(conf *client.Configuration) (*Manager, error) {
+// New creates a TUN from a normalized, validated client configuration.
+func New(conf *client.Configuration) (*TUN, error) {
 	active, err := conf.ActiveSettings()
 	if err != nil {
 		return nil, err
 	}
 	cmd := command.New()
-	return &Manager{
+	return &TUN{
 		configuration: conf,
 		settings:      active,
 		dns:           dns.New(cmd),
@@ -58,36 +58,36 @@ func New(conf *client.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
+func (t *TUN) Open(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
 	serverAddr = serverAddr.Unmap()
-	tunFile, openTunErr := m.ioctl.CreateTunInterface(m.settings.TunName)
+	tunFile, openTunErr := t.ioctl.CreateTunInterface(t.settings.TunName)
 	if openTunErr != nil {
 		openErr := fmt.Errorf("failed to open TUN interface: %w", openTunErr)
-		return nil, errors.Join(openErr, m.CloseTunnel())
+		return nil, errors.Join(openErr, t.Close())
 	}
 	tun, err := epoll.New(tunFile)
 	if err != nil {
 		openErr := fmt.Errorf("failed to initialize TUN I/O: %w", err)
-		return nil, errors.Join(openErr, tunFile.Close(), m.CloseTunnel())
+		return nil, errors.Join(openErr, tunFile.Close(), t.Close())
 	}
-	if err := m.watchDefaultRoute(tun); err != nil {
+	if err := t.watchDefaultRoute(tun); err != nil {
 		slog.Warn("failed to configure default route watcher", "err", err)
 	}
-	m.tun = tun
-	if err := m.configureTunnel(serverAddr); err != nil {
+	t.tun = tun
+	if err := t.configureTunnel(serverAddr); err != nil {
 		openErr := fmt.Errorf("failed to configure client: %w", err)
-		return nil, errors.Join(openErr, m.CloseTunnel())
+		return nil, errors.Join(openErr, t.Close())
 	}
-	if err := m.setDNS(); err != nil {
-		slog.Warn("failed to configure DNS", "interface", m.settings.TunName, "err", err)
+	if err := t.setDNS(); err != nil {
+		slog.Warn("failed to configure DNS", "interface", t.settings.TunName, "err", err)
 	}
-	return m.tun, nil
+	return t.tun, nil
 }
 
-func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+func (t *TUN) watchDefaultRoute(tun io.Closer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh, err := defaultroute.Watch(ctx)
 	if err != nil {
@@ -107,37 +107,37 @@ func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 			_ = tun.Close()
 		}
 	}()
-	m.defaultRouteWatcherCancel = cancel
+	t.defaultRouteWatcherCancel = cancel
 	return nil
 }
 
-func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
-	err := m.ip.LinkSetDevUp(m.settings.TunName)
+func (t *TUN) configureTunnel(serverAddr netip.Addr) error {
+	err := t.ip.LinkSetDevUp(t.settings.TunName)
 	if err != nil {
 		return err
 	}
-	if m.settings.HasIPv4() {
-		cidr4, cidr4Err := m.settings.IPv4CIDR()
+	if t.settings.HasIPv4() {
+		cidr4, cidr4Err := t.settings.IPv4CIDR()
 		if cidr4Err != nil {
 			return cidr4Err
 		}
-		if err := m.ip.AddrAddDev(m.settings.TunName, cidr4); err != nil {
+		if err := t.ip.AddrAddDev(t.settings.TunName, cidr4); err != nil {
 			return err
 		}
 	}
 
-	if m.settings.HasIPv6() {
-		cidr6, cidr6Err := m.settings.IPv6CIDR()
+	if t.settings.HasIPv6() {
+		cidr6, cidr6Err := t.settings.IPv6CIDR()
 		if cidr6Err != nil {
 			return cidr6Err
 		}
-		if err := m.ip.AddrAddDev(m.settings.TunName, cidr6); err != nil {
+		if err := t.ip.AddrAddDev(t.settings.TunName, cidr6); err != nil {
 			return err
 		}
 	}
 
-	if serverAddr.Is4() && m.settings.HasIPv4() || serverAddr.Is6() && m.settings.HasIPv6() {
-		routeInfo, err := m.ip.RouteGet(serverAddr)
+	if serverAddr.Is4() && t.settings.HasIPv4() || serverAddr.Is6() && t.settings.HasIPv6() {
+		routeInfo, err := t.ip.RouteGet(serverAddr)
 		if err != nil {
 			return err
 		}
@@ -155,112 +155,112 @@ func (m *Manager) configureTunnel(serverAddr netip.Addr) error {
 			return fmt.Errorf("failed to parse route to server IP")
 		}
 		if viaGateway == "" {
-			err = m.ip.RouteReplaceDev(serverAddr, devInterface)
+			err = t.ip.RouteReplaceDev(serverAddr, devInterface)
 		} else {
 			gateway, parseErr := netip.ParseAddr(viaGateway)
 			if parseErr != nil {
 				return fmt.Errorf("failed to parse route gateway %q: %w", viaGateway, parseErr)
 			}
-			err = m.ip.RouteReplaceViaDev(serverAddr, devInterface, gateway)
+			err = t.ip.RouteReplaceViaDev(serverAddr, devInterface, gateway)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to replace route to server IP: %v", err)
 		}
-		m.pinnedServerAddr = serverAddr
+		t.pinnedServerAddr = serverAddr
 	}
 
-	if err := m.addSplitRoutes(serverAddr); err != nil {
+	if err := t.addSplitRoutes(serverAddr); err != nil {
 		return err
 	}
 
-	if setMtuErr := m.ip.LinkSetDevMTU(m.settings.TunName, m.settings.MTU); setMtuErr != nil {
+	if setMtuErr := t.ip.LinkSetDevMTU(t.settings.TunName, t.settings.MTU); setMtuErr != nil {
 		return fmt.Errorf(
-			"failed to set %d MTU for %s: %s", m.settings.MTU, m.settings.TunName, setMtuErr,
+			"failed to set %d MTU for %s: %s", t.settings.MTU, t.settings.TunName, setMtuErr,
 		)
 	}
 
 	families := mssclamp.Families{
-		IPv4: m.settings.HasIPv4(),
-		IPv6: m.settings.HasIPv6(),
+		IPv4: t.settings.HasIPv4(),
+		IPv6: t.settings.HasIPv6(),
 	}
-	if err := m.mss.Install(m.settings.TunName, families); err != nil {
-		return fmt.Errorf("failed to install MSS clamping for %s: %v", m.settings.TunName, err)
+	if err := t.mss.Install(t.settings.TunName, families); err != nil {
+		return fmt.Errorf("failed to install MSS clamping for %s: %v", t.settings.TunName, err)
 	}
 
 	return nil
 }
 
-func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+func (t *TUN) addSplitRoutes(serverAddr netip.Addr) error {
 	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
-	if m.settings.HasIPv4() {
-		splits := withoutRoutes(m.splitsv4, m.settings.IPv4Subnet.Masked().String(), serverRoute)
-		if err := m.ip.RouteAddSplitDev(m.settings.TunName, splits); err != nil {
+	if t.settings.HasIPv4() {
+		splits := withoutRoutes(t.splitsv4, t.settings.IPv4Subnet.Masked().String(), serverRoute)
+		if err := t.ip.RouteAddSplitDev(t.settings.TunName, splits); err != nil {
 			return err
 		}
 	}
-	if m.settings.HasIPv6() {
-		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
-		if err := m.ip.Route6AddSplitDev(m.settings.TunName, splits); err != nil {
+	if t.settings.HasIPv6() {
+		splits := withoutRoutes(t.splitsv6, t.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := t.ip.Route6AddSplitDev(t.settings.TunName, splits); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Manager) setDNS() error {
+func (t *TUN) setDNS() error {
 	var ipv4Resolvers, ipv6Resolvers []string
-	if m.settings.HasIPv4() {
-		ipv4Resolvers = m.settings.DNSv4
+	if t.settings.HasIPv4() {
+		ipv4Resolvers = t.settings.DNSv4
 	}
-	if m.settings.HasIPv6() {
-		ipv6Resolvers = m.settings.DNSv6
+	if t.settings.HasIPv6() {
+		ipv6Resolvers = t.settings.DNSv6
 	}
 
-	if err := m.dns.Set(m.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
-		return fmt.Errorf("set DNS on %s: %w", m.settings.TunName, err)
+	if err := t.dns.Set(t.settings.TunName, ipv4Resolvers, ipv6Resolvers); err != nil {
+		return fmt.Errorf("set DNS on %s: %w", t.settings.TunName, err)
 	}
 	return nil
 }
 
-func (m *Manager) CloseTunnel() error {
-	if m.defaultRouteWatcherCancel != nil {
-		m.defaultRouteWatcherCancel()
+func (t *TUN) Close() error {
+	if t.defaultRouteWatcherCancel != nil {
+		t.defaultRouteWatcherCancel()
 	}
 	var cleanupErrs []error
-	if err := m.dns.Revert(); err != nil {
+	if err := t.dns.Revert(); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
 	}
-	if m.tun != nil {
-		if err := m.tun.Close(); err != nil {
+	if t.tun != nil {
+		if err := t.tun.Close(); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
-		m.tun = nil
+		t.tun = nil
 	}
 
 	cleanupErrs = append(cleanupErrs,
-		m.removeTunInterface(m.configuration.TCPSettings),
-		m.removeTunInterface(m.configuration.UDPSettings),
-		m.removeTunInterface(m.configuration.WSSettings),
+		t.removeTunInterface(t.configuration.TCPSettings),
+		t.removeTunInterface(t.configuration.UDPSettings),
+		t.removeTunInterface(t.configuration.WSSettings),
 	)
-	if m.pinnedServerAddr.IsValid() {
-		if err := m.ip.RouteDel(m.pinnedServerAddr); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.pinnedServerAddr, err))
+	if t.pinnedServerAddr.IsValid() {
+		if err := t.ip.RouteDel(t.pinnedServerAddr); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", t.pinnedServerAddr, err))
 		} else {
-			m.pinnedServerAddr = netip.Addr{}
+			t.pinnedServerAddr = netip.Addr{}
 		}
 	}
 	return errors.Join(cleanupErrs...)
 }
 
-func (m *Manager) removeTunInterface(s settings.Settings) error {
+func (t *TUN) removeTunInterface(s settings.Settings) error {
 	if s.TunName == "" {
 		return nil
 	}
 	var errs []error
-	if err := m.mss.Remove(s.TunName); err != nil {
+	if err := t.mss.Remove(s.TunName); err != nil {
 		errs = append(errs, fmt.Errorf("remove MSS clamping for %s: %w", s.TunName, err))
 	}
-	if err := m.ip.LinkDelete(s.TunName); err != nil {
+	if err := t.ip.LinkDelete(s.TunName); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)

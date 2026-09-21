@@ -12,8 +12,8 @@ import (
 )
 
 type tunManager interface {
-	OpenTunnel(settings.Settings) (io.ReadWriteCloser, error)
-	CloseTunnel(settings.Settings) error
+	Open(settings.Settings) (io.ReadWriteCloser, error)
+	Close(settings.Settings) error
 }
 
 // Server owns the shared state of all server tunnels.

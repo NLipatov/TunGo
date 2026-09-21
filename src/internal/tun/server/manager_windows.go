@@ -11,14 +11,14 @@ var errServerNotSupported = errors.New("server mode is not supported on this pla
 type Manager struct {
 }
 
-func NewManager() *Manager {
+func New() *Manager {
 	return &Manager{}
 }
 
-func (s Manager) OpenTunnel(_ settings.Settings) (io.ReadWriteCloser, error) {
+func (s Manager) Open(_ settings.Settings) (io.ReadWriteCloser, error) {
 	return nil, errServerNotSupported
 }
 
-func (s Manager) CloseTunnel(_ settings.Settings) error {
+func (s Manager) Close(_ settings.Settings) error {
 	return nil
 }

@@ -27,9 +27,9 @@ const (
 	reconnectInterval = 500 * time.Millisecond
 )
 
-type tunManager interface {
-	OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error)
-	CloseTunnel() error
+type tun interface {
+	Open(serverAddr netip.Addr) (io.ReadWriter, error)
+	Close() error
 }
 
 type crypto interface {
@@ -48,24 +48,24 @@ type clientRekey interface {
 // packet forwarding, and cleanup.
 type Client struct {
 	configuration *clientconfig.Configuration
-	tunManager    tunManager
+	tun           tun
 	ready         atomic.Bool
 }
 
-// New creates a client using the provided configuration and initializes its TUN manager.
-// It returns an error if the configuration is nil or the TUN manager cannot be initialized.
+// New creates a client using the provided configuration and initializes its TUN.
+// It returns an error if the configuration is nil or the TUN cannot be initialized.
 func New(configuration *clientconfig.Configuration) (*Client, error) {
 	slog.Info("starting client")
 	if configuration == nil {
 		return nil, fmt.Errorf("client configuration is nil")
 	}
-	tunManager, err := clienttun.New(configuration)
+	tun, err := clienttun.New(configuration)
 	if err != nil {
 		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
 	}
 	return &Client{
 		configuration: configuration,
-		tunManager:    tunManager,
+		tun:           tun,
 	}, nil
 }
 
@@ -117,7 +117,7 @@ func (c *Client) runSession(parentCtx context.Context) error {
 func (c *Client) runTunnel(
 	ctx context.Context,
 ) error {
-	if err := c.tunManager.CloseTunnel(); err != nil {
+	if err := c.tun.Close(); err != nil {
 		slog.Warn("failed to clean stale tunnel state", "err", err)
 	}
 	transport, crypto, rekey, err := c.connect(ctx)
@@ -129,7 +129,7 @@ func (c *Client) runTunnel(
 	if err != nil {
 		return err
 	}
-	tun, err := c.tunManager.OpenTunnel(serverAddr)
+	tun, err := c.tun.Open(serverAddr)
 	if err != nil {
 		slog.Error("failed to open tunnel", "err", err)
 		return err
@@ -184,7 +184,7 @@ func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
 }
 
 func (c *Client) closeTun() {
-	if err := c.tunManager.CloseTunnel(); err != nil {
+	if err := c.tun.Close(); err != nil {
 		slog.Warn("failed to close tunnel", "err", err)
 	}
 }

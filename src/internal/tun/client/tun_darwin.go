@@ -42,7 +42,7 @@ type dnsConfigurator interface {
 	Revert() error
 }
 
-type Manager struct {
+type TUN struct {
 	settings                  settings.Settings
 	tun                       tun
 	dns                       dnsConfigurator
@@ -56,14 +56,14 @@ type Manager struct {
 	splitsv6                  []string
 }
 
-// New creates a tunnel manager from a normalized, validated client configuration.
-func New(configuration *client.Configuration) (*Manager, error) {
+// New creates a TUN from a normalized, validated client configuration.
+func New(configuration *client.Configuration) (*TUN, error) {
 	active, err := configuration.ActiveSettings()
 	if err != nil {
 		return nil, err
 	}
 	cmd := command.New()
-	return &Manager{
+	return &TUN{
 		settings:  active,
 		dns:       dns.New(cmd),
 		ifconfig4: ifconfig.NewV4(cmd),
@@ -75,7 +75,7 @@ func New(configuration *client.Configuration) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
+func (t *TUN) Open(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if !serverAddr.IsValid() {
 		return nil, fmt.Errorf("invalid server address %q", serverAddr)
 	}
@@ -84,29 +84,29 @@ func (m *Manager) OpenTunnel(serverAddr netip.Addr) (io.ReadWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
-	if err := m.watchDefaultRoute(tun); err != nil {
+	if err := t.watchDefaultRoute(tun); err != nil {
 		slog.Warn("failed to configure default route watcher", "err", err)
 	}
-	m.tun = tun
-	if err := m.setMTU(); err != nil {
-		return nil, errors.Join(err, m.CloseTunnel())
+	t.tun = tun
+	if err := t.setMTU(); err != nil {
+		return nil, errors.Join(err, t.Close())
 	}
-	if err := m.pinServerRoute(serverAddr); err != nil {
-		return nil, errors.Join(err, m.CloseTunnel())
+	if err := t.pinServerRoute(serverAddr); err != nil {
+		return nil, errors.Join(err, t.Close())
 	}
-	if err := m.assignAddresses(); err != nil {
-		return nil, errors.Join(err, m.CloseTunnel())
+	if err := t.assignAddresses(); err != nil {
+		return nil, errors.Join(err, t.Close())
 	}
-	if err := m.addSplitRoutes(serverAddr); err != nil {
-		return nil, errors.Join(err, m.CloseTunnel())
+	if err := t.addSplitRoutes(serverAddr); err != nil {
+		return nil, errors.Join(err, t.Close())
 	}
-	if err := m.setDNS(); err != nil {
-		slog.Warn("failed to configure DNS", "interface", m.tun.Name(), "err", err)
+	if err := t.setDNS(); err != nil {
+		slog.Warn("failed to configure DNS", "interface", t.tun.Name(), "err", err)
 	}
-	return m.tun, nil
+	return t.tun, nil
 }
 
-func (m *Manager) watchDefaultRoute(tun io.Closer) error {
+func (t *TUN) watchDefaultRoute(tun io.Closer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh, err := defaultroute.Watch(ctx)
 	if err != nil {
@@ -126,118 +126,118 @@ func (m *Manager) watchDefaultRoute(tun io.Closer) error {
 			_ = tun.Close()
 		}
 	}()
-	m.defaultRouteWatcherCancel = cancel
+	t.defaultRouteWatcherCancel = cancel
 	return nil
 }
 
-func (m *Manager) setDNS() error {
+func (t *TUN) setDNS() error {
 	resolvers := make([]string, 0, 4)
-	if m.settings.HasIPv4() {
-		resolvers = append(resolvers, m.settings.DNSv4...)
+	if t.settings.HasIPv4() {
+		resolvers = append(resolvers, t.settings.DNSv4...)
 	}
-	if m.settings.HasIPv6() {
-		resolvers = append(resolvers, m.settings.DNSv6...)
+	if t.settings.HasIPv6() {
+		resolvers = append(resolvers, t.settings.DNSv6...)
 	}
 
-	if err := m.dns.Set(resolvers); err != nil {
+	if err := t.dns.Set(resolvers); err != nil {
 		return fmt.Errorf("set DNS: %w", err)
 	}
 	return nil
 }
 
-func (m *Manager) setMTU() error {
-	configurator := m.ifconfig4
-	if !m.settings.HasIPv4() {
-		configurator = m.ifconfig6
+func (t *TUN) setMTU() error {
+	configurator := t.ifconfig4
+	if !t.settings.HasIPv4() {
+		configurator = t.ifconfig6
 	}
-	if err := configurator.SetMTU(m.tun.Name(), m.settings.MTU); err != nil {
-		return fmt.Errorf("set MTU %d on %s: %w", m.settings.MTU, m.tun.Name(), err)
+	if err := configurator.SetMTU(t.tun.Name(), t.settings.MTU); err != nil {
+		return fmt.Errorf("set MTU %d on %s: %w", t.settings.MTU, t.tun.Name(), err)
 	}
 	return nil
 }
 
-func (m *Manager) pinServerRoute(serverAddr netip.Addr) error {
+func (t *TUN) pinServerRoute(serverAddr netip.Addr) error {
 	var route routeConfigurator
 	switch {
-	case serverAddr.Is4() && m.settings.HasIPv4():
-		route = m.route4
-	case serverAddr.Is6() && m.settings.HasIPv6():
-		route = m.route6
+	case serverAddr.Is4() && t.settings.HasIPv4():
+		route = t.route4
+	case serverAddr.Is6() && t.settings.HasIPv6():
+		route = t.route6
 	default:
 		return nil
 	}
 	if err := route.Add(serverAddr.String()); err != nil {
 		return fmt.Errorf("route to server %s: %w", serverAddr, err)
 	}
-	m.pinnedServerAddr = serverAddr
+	t.pinnedServerAddr = serverAddr
 	return nil
 }
 
-func (m *Manager) assignAddresses() error {
-	if m.settings.HasIPv4() {
-		prefix := netip.PrefixFrom(m.settings.IPv4, m.settings.IPv4Subnet.Bits())
-		if err := m.ifconfig4.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
-			return fmt.Errorf("set IPv4 address %s on %s: %w", prefix, m.tun.Name(), err)
+func (t *TUN) assignAddresses() error {
+	if t.settings.HasIPv4() {
+		prefix := netip.PrefixFrom(t.settings.IPv4, t.settings.IPv4Subnet.Bits())
+		if err := t.ifconfig4.LinkAddrAdd(t.tun.Name(), prefix); err != nil {
+			return fmt.Errorf("set IPv4 address %s on %s: %w", prefix, t.tun.Name(), err)
 		}
 	}
-	if m.settings.HasIPv6() {
-		prefix := netip.PrefixFrom(m.settings.IPv6, m.settings.IPv6Subnet.Bits())
-		if err := m.ifconfig6.LinkAddrAdd(m.tun.Name(), prefix); err != nil {
-			return fmt.Errorf("set IPv6 address %s on %s: %w", prefix, m.tun.Name(), err)
+	if t.settings.HasIPv6() {
+		prefix := netip.PrefixFrom(t.settings.IPv6, t.settings.IPv6Subnet.Bits())
+		if err := t.ifconfig6.LinkAddrAdd(t.tun.Name(), prefix); err != nil {
+			return fmt.Errorf("set IPv6 address %s on %s: %w", prefix, t.tun.Name(), err)
 		}
 	}
 	return nil
 }
 
-func (m *Manager) addSplitRoutes(serverAddr netip.Addr) error {
+func (t *TUN) addSplitRoutes(serverAddr netip.Addr) error {
 	serverRoute := netip.PrefixFrom(serverAddr, serverAddr.BitLen()).String()
-	if m.settings.HasIPv4() {
+	if t.settings.HasIPv4() {
 		// Unlike Linux, macOS does not create an IPv4 subnet route when assigning
 		// an address to utun, so add it explicitly.
-		splits := slices.Clone(m.splitsv4)
-		tunSubnet := m.settings.IPv4Subnet.Masked().String()
+		splits := slices.Clone(t.splitsv4)
+		tunSubnet := t.settings.IPv4Subnet.Masked().String()
 		if !slices.Contains(splits, tunSubnet) {
 			splits = append(splits, tunSubnet)
 		}
 		splits = withoutRoutes(splits, serverRoute)
-		if err := m.route4.AddSplit(m.tun.Name(), splits); err != nil {
+		if err := t.route4.AddSplit(t.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv4 split default: %w", err)
 		}
 	}
-	if m.settings.HasIPv6() {
-		splits := withoutRoutes(m.splitsv6, m.settings.IPv6Subnet.Masked().String(), serverRoute)
-		if err := m.route6.AddSplit(m.tun.Name(), splits); err != nil {
+	if t.settings.HasIPv6() {
+		splits := withoutRoutes(t.splitsv6, t.settings.IPv6Subnet.Masked().String(), serverRoute)
+		if err := t.route6.AddSplit(t.tun.Name(), splits); err != nil {
 			return fmt.Errorf("add IPv6 split default: %w", err)
 		}
 	}
 	return nil
 }
 
-func (m *Manager) CloseTunnel() error {
-	if m.defaultRouteWatcherCancel != nil {
-		m.defaultRouteWatcherCancel()
+func (t *TUN) Close() error {
+	if t.defaultRouteWatcherCancel != nil {
+		t.defaultRouteWatcherCancel()
 	}
 	var cleanupErrs []error
-	if err := m.dns.Revert(); err != nil {
+	if err := t.dns.Revert(); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("restore DNS: %w", err))
 	}
-	if m.tun != nil {
-		if err := m.tun.Close(); err != nil {
+	if t.tun != nil {
+		if err := t.tun.Close(); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("close TUN: %w", err))
 		}
-		m.tun = nil
+		t.tun = nil
 	}
-	if m.pinnedServerAddr.IsValid() {
+	if t.pinnedServerAddr.IsValid() {
 		var err error
-		if m.pinnedServerAddr.Is4() {
-			err = m.route4.Del(m.pinnedServerAddr.String())
+		if t.pinnedServerAddr.Is4() {
+			err = t.route4.Del(t.pinnedServerAddr.String())
 		} else {
-			err = m.route6.Del(m.pinnedServerAddr.String())
+			err = t.route6.Del(t.pinnedServerAddr.String())
 		}
 		if err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", m.pinnedServerAddr, err))
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route to server %s: %w", t.pinnedServerAddr, err))
 		} else {
-			m.pinnedServerAddr = netip.Addr{}
+			t.pinnedServerAddr = netip.Addr{}
 		}
 	}
 	return errors.Join(cleanupErrs...)

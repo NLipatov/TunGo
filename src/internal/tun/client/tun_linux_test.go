@@ -20,9 +20,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// clienttunManagerIPMock simulates `ip` contract and records call sequence.
+// clientTUNIPMock simulates `ip` contract and records call sequence.
 // `failStep` makes the corresponding step return an error.
-type clienttunManagerIPMock struct {
+type clientTUNIPMock struct {
 	log                 bytes.Buffer
 	routeReply          string
 	failStep            string
@@ -37,7 +37,7 @@ type clienttunManagerIPMock struct {
 	linkDeleteErr       error
 }
 
-func (m *clienttunManagerIPMock) mark(s string) error {
+func (m *clientTUNIPMock) mark(s string) error {
 	m.log.WriteString(s + ";")
 	if m.failStep == s {
 		return errors.New("boom")
@@ -45,74 +45,74 @@ func (m *clienttunManagerIPMock) mark(s string) error {
 	return nil
 }
 
-func (m *clienttunManagerIPMock) TunTapAddDevTun(string) error { return m.mark("add") }
-func (m *clienttunManagerIPMock) LinkDelete(devName string) error {
+func (m *clientTUNIPMock) TunTapAddDevTun(string) error { return m.mark("add") }
+func (m *clientTUNIPMock) LinkDelete(devName string) error {
 	m.deletedInterfaces = append(m.deletedInterfaces, devName)
 	m.log.WriteString("ldel;")
 	return m.linkDeleteErr
 }
-func (m *clienttunManagerIPMock) LinkSetDevUp(string) error       { return m.mark("up") }
-func (m *clienttunManagerIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
-func (m *clienttunManagerIPMock) AddrAddDev(string, string) error { return m.mark("addr") }
-func (m *clienttunManagerIPMock) RouteDefault() (string, error)   { return "eth0", nil }
-func (m *clienttunManagerIPMock) RouteGet(target netip.Addr) (string, error) {
+func (m *clientTUNIPMock) LinkSetDevUp(string) error       { return m.mark("up") }
+func (m *clientTUNIPMock) LinkSetDevMTU(string, int) error { return m.mark("mtu") }
+func (m *clientTUNIPMock) AddrAddDev(string, string) error { return m.mark("addr") }
+func (m *clientTUNIPMock) RouteDefault() (string, error)   { return "eth0", nil }
+func (m *clientTUNIPMock) RouteGet(target netip.Addr) (string, error) {
 	m.routeGetTargets = append(m.routeGetTargets, target)
 	return m.routeReply, nil
 }
-func (m *clienttunManagerIPMock) RouteReplaceDev(target netip.Addr, _ string) error {
+func (m *clientTUNIPMock) RouteReplaceDev(target netip.Addr, _ string) error {
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplace")
 }
-func (m *clienttunManagerIPMock) RouteReplaceViaDev(target netip.Addr, _ string, _ netip.Addr) error {
+func (m *clientTUNIPMock) RouteReplaceViaDev(target netip.Addr, _ string, _ netip.Addr) error {
 	m.routeReplaceTargets = append(m.routeReplaceTargets, target)
 	return m.mark("rreplacevia")
 }
-func (m *clienttunManagerIPMock) RouteAddSplitDev(_ string, prefixes []string) error {
+func (m *clientTUNIPMock) RouteAddSplitDev(_ string, prefixes []string) error {
 	m.addedSplits4 = append(m.addedSplits4, slices.Clone(prefixes))
 	return m.mark("split")
 }
-func (m *clienttunManagerIPMock) Route6AddSplitDev(_ string, prefixes []string) error {
+func (m *clientTUNIPMock) Route6AddSplitDev(_ string, prefixes []string) error {
 	m.addedSplits6 = append(m.addedSplits6, slices.Clone(prefixes))
 	return m.mark("split6")
 }
-func (m *clienttunManagerIPMock) RouteDelSplitDefault(_ string, prefixes []string) error {
+func (m *clientTUNIPMock) RouteDelSplitDefault(_ string, prefixes []string) error {
 	m.deletedSplits4 = append(m.deletedSplits4, slices.Clone(prefixes))
 	m.log.WriteString("splitdel;")
 	return nil
 }
-func (m *clienttunManagerIPMock) Route6DelSplitDefault(_ string, prefixes []string) error {
+func (m *clientTUNIPMock) Route6DelSplitDefault(_ string, prefixes []string) error {
 	m.deletedSplits6 = append(m.deletedSplits6, slices.Clone(prefixes))
 	m.log.WriteString("splitdel6;")
 	return nil
 }
-func (m *clienttunManagerIPMock) RouteDel(target netip.Addr) error {
+func (m *clientTUNIPMock) RouteDel(target netip.Addr) error {
 	m.routeDelTargets = append(m.routeDelTargets, target)
 	return m.mark("rdel")
 }
 
-// clienttunManagerIPGetErr forces RouteGet to return an error.
-type clienttunManagerIPGetErr struct{ clienttunManagerIPMock }
+// clientTUNIPGetErr forces RouteGet to return an error.
+type clientTUNIPGetErr struct{ clientTUNIPMock }
 
-func (m *clienttunManagerIPGetErr) RouteGet(netip.Addr) (string, error) {
+func (m *clientTUNIPGetErr) RouteGet(netip.Addr) (string, error) {
 	return "", fmt.Errorf("failed to get route to server IP: %w", errors.New("geterr"))
 }
 
-// clienttunManagerIOCTLMock returns a pollable file or an injected error.
-type clienttunManagerIOCTLMock struct {
+// clientTUNIOCTLMock returns a pollable file or an injected error.
+type clientTUNIOCTLMock struct {
 	openErr     error
 	file        *os.File
 	createCalls *int
 }
 
-// clienttunManagerMSSMock simulates mssclamp.Contract.
-type clienttunManagerMSSMock struct {
+// clientTUNMSSMock simulates mssclamp.Contract.
+type clientTUNMSSMock struct {
 	installErr        error
 	removeErr         error
 	installedFamilies *[]mssclamp.Families
 	removedTunNames   *[]string
 }
 
-type clienttunManagerDNSMock struct {
+type clientTUNDNSMock struct {
 	setInterfaces []string
 	setResolvers4 [][]string
 	setResolvers6 [][]string
@@ -121,14 +121,14 @@ type clienttunManagerDNSMock struct {
 	revertErr     error
 }
 
-func (m *clienttunManagerDNSMock) Set(ifName string, ipv4Resolvers, ipv6Resolvers []string) error {
+func (m *clientTUNDNSMock) Set(ifName string, ipv4Resolvers, ipv6Resolvers []string) error {
 	m.setInterfaces = append(m.setInterfaces, ifName)
 	m.setResolvers4 = append(m.setResolvers4, append([]string(nil), ipv4Resolvers...))
 	m.setResolvers6 = append(m.setResolvers6, append([]string(nil), ipv6Resolvers...))
 	return m.setErr
 }
 
-func (m *clienttunManagerDNSMock) Revert() error {
+func (m *clientTUNDNSMock) Revert() error {
 	m.revertCalls++
 	return m.revertErr
 }
@@ -169,21 +169,21 @@ var (
 	testServerAddrV6 = mustAddr("2001:db8::1")
 )
 
-func (m clienttunManagerMSSMock) Install(_ string, families mssclamp.Families) error {
+func (m clientTUNMSSMock) Install(_ string, families mssclamp.Families) error {
 	if m.installedFamilies != nil {
 		*m.installedFamilies = append(*m.installedFamilies, families)
 	}
 	return m.installErr
 }
-func (m clienttunManagerMSSMock) Remove(tunName string) error {
+func (m clientTUNMSSMock) Remove(tunName string) error {
 	if m.removedTunNames != nil {
 		*m.removedTunNames = append(*m.removedTunNames, tunName)
 	}
 	return m.removeErr
 }
 
-func (clienttunManagerIOCTLMock) DetectTunNameFromFd(*os.File) (string, error) { return "tun0", nil }
-func (m clienttunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) {
+func (clientTUNIOCTLMock) DetectTunNameFromFd(*os.File) (string, error) { return "tun0", nil }
+func (m clientTUNIOCTLMock) CreateTunInterface(string) (*os.File, error) {
 	if m.createCalls != nil {
 		(*m.createCalls)++
 	}
@@ -201,7 +201,7 @@ func (m clienttunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) 
 	return os.NewFile(uintptr(fds[0]), "test-tun"), nil
 }
 
-func newMgr(
+func newTestTUN(
 	proto settings.Protocol,
 	ipMock interface { // minimal duck typing to avoid importing ip package
 		TunTapAddDevTun(string) error
@@ -227,7 +227,7 @@ func newMgr(
 		Install(string, mssclamp.Families) error
 		Remove(string) error
 	},
-) *Manager {
+) *TUN {
 	profiles := map[settings.Protocol]settings.Settings{
 		settings.UDP: {
 			Network: settings.Network{
@@ -269,26 +269,26 @@ func newMgr(
 		UDPSettings: profiles[settings.UDP],
 		WSSettings:  profiles[settings.WS],
 	}
-	return &Manager{
+	return &TUN{
 		configuration: conf,
 		settings:      profiles[proto],
-		dns:           &clienttunManagerDNSMock{},
+		dns:           &clientTUNDNSMock{},
 		ip:            ipMock,
 		ioctl:         ioctlMock,
 		mss:           mssMock,
 	}
 }
 
-func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManagerIPMock) {
+func assertOpenRolledBack(t *testing.T, m *TUN, ipMock *clientTUNIPMock) {
 	t.Helper()
 	if m.pinnedServerAddr.IsValid() {
-		t.Fatalf("pinnedServerAddr = %s, want cleared after failed OpenTunnel", m.pinnedServerAddr)
+		t.Fatalf("pinnedServerAddr = %s, want cleared after failed Open", m.pinnedServerAddr)
 	}
 	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4 {
 		t.Fatalf("RouteDel() targets = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 	if m.tun != nil {
-		t.Fatal("failed OpenTunnel retained TUN")
+		t.Fatal("failed Open retained TUN")
 	}
 	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
 		t.Fatalf("rollback explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
@@ -300,7 +300,7 @@ func assertOpenTunnelRolledBack(t *testing.T, m *Manager, ipMock *clienttunManag
 	}
 }
 
-func setLinuxActiveSettings(m *Manager, active settings.Settings) {
+func setLinuxActiveSettings(m *TUN, active settings.Settings) {
 	if active.IPv4Subnet.IsValid() && len(active.DNSv4) == 0 {
 		active.DNSv4 = []string{"1.1.1.1", "8.8.8.8"}
 	}
@@ -322,7 +322,7 @@ func setLinuxActiveSettings(m *Manager, active settings.Settings) {
 // ============================ Tests ===========================
 //
 
-func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
+func TestLinuxTUNAppliesTunnelRoutes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		v4     []string
@@ -364,7 +364,7 @@ func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			originalV4, originalV6 := slices.Clone(test.v4), slices.Clone(test.v6)
-			manager, err := New(&client.Configuration{
+			tunnel, err := New(&client.Configuration{
 				ClientID: 1,
 				Protocol: settings.UDP,
 				UDPSettings: settings.Settings{
@@ -381,25 +381,25 @@ func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
-			ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
-			manager.ip = ipMock
-			manager.dns = &clienttunManagerDNSMock{}
-			manager.mss = clienttunManagerMSSMock{}
+			ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+			tunnel.ip = ipMock
+			tunnel.dns = &clientTUNDNSMock{}
+			tunnel.mss = clientTUNMSSMock{}
 			tun := &clientTunMock{}
-			manager.tun = tun
-			if err := manager.configureTunnel(testServerAddrV4); err != nil {
+			tunnel.tun = tun
+			if err := tunnel.configureTunnel(testServerAddrV4); err != nil {
 				t.Fatalf("configureTunnel() error = %v", err)
 			}
-			if err := manager.CloseTunnel(); err != nil {
-				t.Fatalf("CloseTunnel() error = %v", err)
+			if err := tunnel.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
 			}
-			if tun.closeCalls != 1 || manager.tun != nil {
-				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, manager.tun)
+			if tun.closeCalls != 1 || tunnel.tun != nil {
+				t.Fatalf("close state: calls=%d tun=%v", tun.closeCalls, tunnel.tun)
 			}
 
-			if !slices.Equal(manager.configuration.TunnelRoutesV4, originalV4) ||
-				!slices.Equal(manager.configuration.TunnelRoutesV6, originalV6) {
-				t.Fatalf("manager changed configured TunnelRoutes: IPv4=%v IPv6=%v", manager.configuration.TunnelRoutesV4, manager.configuration.TunnelRoutesV6)
+			if !slices.Equal(tunnel.configuration.TunnelRoutesV4, originalV4) ||
+				!slices.Equal(tunnel.configuration.TunnelRoutesV6, originalV6) {
+				t.Fatalf("tunnel changed configured TunnelRoutes: IPv4=%v IPv6=%v", tunnel.configuration.TunnelRoutesV4, tunnel.configuration.TunnelRoutesV6)
 			}
 
 			for _, check := range []struct {
@@ -426,8 +426,8 @@ func TestLinuxManagerAppliesTunnelRoutes(t *testing.T) {
 	}
 }
 
-func TestLinuxManagerDeletesInterfacesWithDifferentSubnets(t *testing.T) {
-	manager, err := New(&client.Configuration{
+func TestLinuxTUNDeletesInterfacesWithDifferentSubnets(t *testing.T) {
+	tunnel, err := New(&client.Configuration{
 		ClientID: 1,
 		Protocol: settings.UDP,
 		TCPSettings: settings.Settings{
@@ -451,19 +451,19 @@ func TestLinuxManagerDeletesInterfacesWithDifferentSubnets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	ipMock := &clienttunManagerIPMock{}
-	manager.ip = ipMock
-	manager.dns = &clienttunManagerDNSMock{}
-	manager.mss = clienttunManagerMSSMock{}
-	if err := manager.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	ipMock := &clientTUNIPMock{}
+	tunnel.ip = ipMock
+	tunnel.dns = &clientTUNDNSMock{}
+	tunnel.mss = clientTUNMSSMock{}
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 
 	if want := []string{"tun1", "tun0"}; !slices.Equal(ipMock.deletedInterfaces, want) {
 		t.Errorf("deleted interfaces = %v, want %v", ipMock.deletedInterfaces, want)
 	}
 	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
-		t.Fatalf("CloseTunnel() explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
+		t.Fatalf("Close() explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
 	}
 }
 
@@ -480,36 +480,36 @@ func TestNewLinuxManager(t *testing.T) {
 		},
 	}
 
-	manager, err := New(configuration)
+	tunnel, err := New(configuration)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if manager.configuration != configuration || manager.settings.Protocol != settings.UDP ||
-		manager.dns == nil || manager.ip == nil || manager.ioctl == nil || manager.mss == nil {
-		t.Fatalf("New() returned incomplete manager: %+v", manager)
+	if tunnel.configuration != configuration || tunnel.settings.Protocol != settings.UDP ||
+		tunnel.dns == nil || tunnel.ip == nil || tunnel.ioctl == nil || tunnel.mss == nil {
+		t.Fatalf("New() returned incomplete tunnel: %+v", tunnel)
 	}
 
 	configuration.Protocol = settings.UNKNOWN
-	if manager, err := New(configuration); err == nil || manager != nil {
-		t.Fatalf("New(invalid configuration) = %v, %v; want nil and error", manager, err)
+	if tunnel, err := New(configuration); err == nil || tunnel != nil {
+		t.Fatalf("New(invalid configuration) = %v, %v; want nil and error", tunnel, err)
 	}
 }
 
-func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+func TestOpen_UDP_WithGateway(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
 	var installedFamilies []mssclamp.Families
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{
 		installedFamilies: &installedFamilies,
 	})
 
-	dev, err := m.OpenTunnel(testServerAddrV4)
+	dev, err := m.Open(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	defer func() { _ = m.CloseTunnel() }()
+	defer func() { _ = m.Close() }()
 
 	want := "up;addr;rreplacevia;split;mtu;"
 	if got := ipMock.log.String(); got != want {
@@ -520,7 +520,7 @@ func TestOpenTunnel_UDP_WithGateway(t *testing.T) {
 	}
 }
 
-func TestOpenTunnelExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
+func TestOpenExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
 	routesV4 := []string{"128.0.0.0/1", "198.51.100.0/24", "198.51.100.1/32", "198.51.100.2/32"}
 	routesV6 := []string{"::/1", "2001:db8::/64", "2001:db8::1/128", "2001:db8::2/128"}
 	configuration := &client.Configuration{
@@ -537,15 +537,15 @@ func TestOpenTunnelExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
 		TunnelRoutesV4: slices.Clone(routesV4),
 		TunnelRoutesV6: slices.Clone(routesV6),
 	}
-	manager, err := New(configuration)
+	tunnel, err := New(configuration)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	ipMock := &clienttunManagerIPMock{}
-	manager.ip = ipMock
-	manager.ioctl = clienttunManagerIOCTLMock{}
-	manager.dns = &clienttunManagerDNSMock{}
-	manager.mss = clienttunManagerMSSMock{}
+	ipMock := &clientTUNIPMock{}
+	tunnel.ip = ipMock
+	tunnel.ioctl = clientTUNIOCTLMock{}
+	tunnel.dns = &clientTUNDNSMock{}
+	tunnel.mss = clientTUNMSSMock{}
 
 	for _, test := range []struct {
 		server string
@@ -587,12 +587,12 @@ func TestOpenTunnelExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
 			serverAddr := mustAddr(test.server)
 			ipMock.routeReply = serverAddr.Unmap().String() + " dev eth0"
 			ipMock.addedSplits4, ipMock.addedSplits6 = nil, nil
-			if _, err := manager.OpenTunnel(serverAddr); err != nil {
-				t.Fatalf("OpenTunnel() error = %v", err)
+			if _, err := tunnel.Open(serverAddr); err != nil {
+				t.Fatalf("Open() error = %v", err)
 			}
 			t.Cleanup(func() {
-				if err := manager.CloseTunnel(); err != nil {
-					t.Errorf("CloseTunnel() error = %v", err)
+				if err := tunnel.Close(); err != nil {
+					t.Errorf("Close() error = %v", err)
 				}
 			})
 			if !reflect.DeepEqual(ipMock.addedSplits4, [][]string{test.wantV4}) ||
@@ -600,27 +600,27 @@ func TestOpenTunnelExcludesOnlyCurrentServerRouteOnReconnect(t *testing.T) {
 				t.Errorf("installed routes: IPv4=%v IPv6=%v, want IPv4=%v IPv6=%v",
 					ipMock.addedSplits4, ipMock.addedSplits6, test.wantV4, test.wantV6)
 			}
-			if manager.pinnedServerAddr != serverAddr.Unmap() {
-				t.Errorf("pinned server = %s, want %s", manager.pinnedServerAddr, serverAddr.Unmap())
+			if tunnel.pinnedServerAddr != serverAddr.Unmap() {
+				t.Errorf("pinned server = %s, want %s", tunnel.pinnedServerAddr, serverAddr.Unmap())
 			}
-			if !slices.Equal(manager.splitsv4, routesV4) || !slices.Equal(manager.splitsv6, routesV6) {
-				t.Errorf("manager changed stored routes: IPv4=%v IPv6=%v", manager.splitsv4, manager.splitsv6)
+			if !slices.Equal(tunnel.splitsv4, routesV4) || !slices.Equal(tunnel.splitsv6, routesV6) {
+				t.Errorf("tunnel changed stored routes: IPv4=%v IPv6=%v", tunnel.splitsv4, tunnel.splitsv6)
 			}
 			if !slices.Equal(configuration.TunnelRoutesV4, routesV4) || !slices.Equal(configuration.TunnelRoutesV6, routesV6) {
-				t.Errorf("manager changed configured routes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
+				t.Errorf("tunnel changed configured routes: IPv4=%v IPv6=%v", configuration.TunnelRoutesV4, configuration.TunnelRoutesV6)
 			}
 		})
 	}
 }
 
-func TestOpenTunnelConfiguresAndRestoresDNS(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	dnsMock := &clienttunManagerDNSMock{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpenConfiguresAndRestoresDNS(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	dnsMock := &clientTUNDNSMock{}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 	m.dns = dnsMock
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+	if _, err := m.Open(testServerAddrV4); err != nil {
+		t.Fatalf("Open() error = %v", err)
 	}
 	if !reflect.DeepEqual(dnsMock.setInterfaces, []string{"tun0"}) ||
 		!reflect.DeepEqual(dnsMock.setResolvers4, [][]string{{"1.1.1.1", "8.8.8.8"}}) ||
@@ -633,28 +633,28 @@ func TestOpenTunnelConfiguresAndRestoresDNS(t *testing.T) {
 		)
 	}
 
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if dnsMock.revertCalls != 1 {
 		t.Fatalf("DNS Revert() calls = %d, want 1", dnsMock.revertCalls)
 	}
 }
 
-func TestOpenTunnelContinuesWhenDNSSetupFails(t *testing.T) {
+func TestOpenContinuesWhenDNSSetupFails(t *testing.T) {
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	dnsMock := &clienttunManagerDNSMock{setErr: errors.New("DNS failed")}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	dnsMock := &clientTUNDNSMock{setErr: errors.New("DNS failed")}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 	m.dns = dnsMock
 
-	dev, err := m.OpenTunnel(testServerAddrV4)
+	dev, err := m.Open(testServerAddrV4)
 	if err != nil || dev == nil {
-		t.Fatalf("OpenTunnel() = %v, %v; want working degraded tunnel", dev, err)
+		t.Fatalf("Open() = %v, %v; want working degraded tunnel", dev, err)
 	}
 	if dnsMock.revertCalls != 0 || m.tun == nil {
 		t.Fatalf("degraded state: Revert calls=%d TUN=%v", dnsMock.revertCalls, m.tun)
@@ -664,32 +664,32 @@ func TestOpenTunnelContinuesWhenDNSSetupFails(t *testing.T) {
 		t.Fatalf("DNS degradation log = %q", logs.String())
 	}
 
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if dnsMock.revertCalls != 1 {
 		t.Fatalf("DNS Revert() calls = %d, want 1", dnsMock.revertCalls)
 	}
 }
 
-func TestOpenTunnelRejectsInvalidServerAddr(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpenRejectsInvalidServerAddr(t *testing.T) {
+	ipMock := &clientTUNIPMock{}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(netip.Addr{}); err == nil || !strings.Contains(err.Error(), "invalid server address") {
-		t.Fatalf("OpenTunnel() error = %v, want invalid server address", err)
+	if _, err := m.Open(netip.Addr{}); err == nil || !strings.Contains(err.Error(), "invalid server address") {
+		t.Fatalf("Open() error = %v, want invalid server address", err)
 	}
 	if ipMock.log.Len() != 0 {
-		t.Fatalf("OpenTunnel() configured TUN before validation: %q", ipMock.log.String())
+		t.Fatalf("Open() configured TUN before validation: %q", ipMock.log.String())
 	}
 }
 
-func TestOpenTunnelNormalizesIPv4MappedServerAddr(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpenNormalizesIPv4MappedServerAddr(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(mustAddr("::ffff:198.51.100.1")); err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+	if _, err := m.Open(mustAddr("::ffff:198.51.100.1")); err != nil {
+		t.Fatalf("Open() error = %v", err)
 	}
 	if got := ipMock.routeGetTargets; len(got) != 1 || got[0] != testServerAddrV4 {
 		t.Fatalf("RouteGet() targets = %v, want [%s]", got, testServerAddrV4)
@@ -697,26 +697,26 @@ func TestOpenTunnelNormalizesIPv4MappedServerAddr(t *testing.T) {
 	if m.pinnedServerAddr != testServerAddrV4 {
 		t.Fatalf("pinnedServerAddr = %s, want %s", m.pinnedServerAddr, testServerAddrV4)
 	}
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if got := ipMock.routeDelTargets; len(got) != 1 || got[0] != testServerAddrV4 {
 		t.Fatalf("RouteDel() targets = %v, want [%s]", got, testServerAddrV4)
 	}
 }
 
-func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
-	m := newMgr(settings.TCP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpen_TCP_NoGateway(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
+	m := newTestTUN(settings.TCP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	dev, err := m.OpenTunnel(testServerAddrV4)
+	dev, err := m.Open(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	defer func() { _ = m.CloseTunnel() }()
+	defer func() { _ = m.Close() }()
 
 	want := "up;addr;rreplace;split;mtu;"
 	if got := ipMock.log.String(); got != want {
@@ -724,59 +724,59 @@ func TestOpenTunnel_TCP_NoGateway(t *testing.T) {
 	}
 }
 
-func TestOpenTunnel_WS_Path(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "203.0.113.2 dev eth0"}
-	m := newMgr(settings.WS, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpen_WS_Path(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "203.0.113.2 dev eth0"}
+	m := newTestTUN(settings.WS, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	dev, err := m.OpenTunnel(testServerAddrV4)
+	dev, err := m.Open(testServerAddrV4)
 	if err != nil {
 		t.Fatalf("WS path failed: %v", err)
 	}
 	if dev == nil {
 		t.Fatal("nil device returned")
 	}
-	defer func() { _ = m.CloseTunnel() }()
+	defer func() { _ = m.Close() }()
 }
 
-func TestOpenTunnel_ParseRouteError_NoDev(t *testing.T) {
+func TestOpen_ParseRouteError_NoDev(t *testing.T) {
 	// Missing "dev" -> parse must fail.
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+	if _, err := m.Open(testServerAddrV4); err == nil {
 		t.Fatal("expected parse error (no dev)")
 	} else if !strings.Contains(err.Error(), "failed to parse route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestOpenTunnel_ParseRouteError_InvalidGateway(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 via invalid dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpen_ParseRouteError_InvalidGateway(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 via invalid dev eth0"}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+	if _, err := m.Open(testServerAddrV4); err == nil {
 		t.Fatal("expected invalid gateway error")
 	} else if !strings.Contains(err.Error(), "failed to parse route gateway") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestOpenTunnel_RouteGetError(t *testing.T) {
-	ipMock := &clienttunManagerIPGetErr{}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpen_RouteGetError(t *testing.T) {
+	ipMock := &clientTUNIPGetErr{}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+	if _, err := m.Open(testServerAddrV4); err == nil {
 		t.Fatal("expected RouteGet error")
 	} else if !strings.Contains(err.Error(), "failed to get route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestOpenTunnel_OpenTunError(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{openErr: errors.New("open fail")}, clienttunManagerMSSMock{})
+func TestOpen_OpenTunError(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{openErr: errors.New("open fail")}, clientTUNMSSMock{})
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+	if _, err := m.Open(testServerAddrV4); err == nil {
 		t.Fatal("expected open TUN error")
 	} else if !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Fatalf("unexpected error: %v", err)
@@ -789,43 +789,43 @@ func TestOpenTunnel_OpenTunError(t *testing.T) {
 	}
 }
 
-func TestOpenTunnelReturnsInterfaceCleanupError(t *testing.T) {
+func TestOpenReturnsInterfaceCleanupError(t *testing.T) {
 	openErr := errors.New("open TUN failed")
 	deleteErr := errors.New("delete interface failed")
 	mssErr := errors.New("remove MSS clamping failed")
-	m := newMgr(
+	m := newTestTUN(
 		settings.UDP,
-		&clienttunManagerIPMock{linkDeleteErr: deleteErr},
-		clienttunManagerIOCTLMock{openErr: openErr},
-		clienttunManagerMSSMock{removeErr: mssErr},
+		&clientTUNIPMock{linkDeleteErr: deleteErr},
+		clientTUNIOCTLMock{openErr: openErr},
+		clientTUNMSSMock{removeErr: mssErr},
 	)
 
-	_, err := m.OpenTunnel(testServerAddrV4)
+	_, err := m.Open(testServerAddrV4)
 	for _, wantErr := range []error{openErr, deleteErr, mssErr} {
 		if !errors.Is(err, wantErr) {
-			t.Errorf("OpenTunnel() error = %v, want %v", err, wantErr)
+			t.Errorf("Open() error = %v, want %v", err, wantErr)
 		}
 	}
 }
 
-func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
+func TestOpen_EpollErrorClosesTunFile(t *testing.T) {
 	tunFile, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatalf("open test TUN file: %v", err)
 	}
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	m := newTestTUN(
 		settings.UDP,
 		ipMock,
-		clienttunManagerIOCTLMock{file: tunFile},
-		clienttunManagerMSSMock{},
+		clientTUNIOCTLMock{file: tunFile},
+		clientTUNMSSMock{},
 	)
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil || !strings.Contains(err.Error(), "failed to initialize TUN I/O") {
-		t.Fatalf("OpenTunnel() error = %v, want epoll initialization error", err)
+	if _, err := m.Open(testServerAddrV4); err == nil || !strings.Contains(err.Error(), "failed to initialize TUN I/O") {
+		t.Fatalf("Open() error = %v, want epoll initialization error", err)
 	}
 	if _, err := tunFile.Stat(); err == nil {
-		t.Fatal("OpenTunnel() left TUN file open after epoll initialization error")
+		t.Fatal("Open() left TUN file open after epoll initialization error")
 	}
 	if strings.Contains(ipMock.log.String(), "up;") || len(ipMock.routeGetTargets) != 0 {
 		t.Fatalf("TUN configuration started before initializing I/O: log=%q routes=%v", ipMock.log.String(), ipMock.routeGetTargets)
@@ -835,17 +835,17 @@ func TestOpenTunnel_EpollErrorClosesTunFile(t *testing.T) {
 	}
 }
 
-func TestOpenTunnelCreatesTunBeforeConfiguringLink(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{failStep: "up"}
+func TestOpenCreatesTunBeforeConfiguringLink(t *testing.T) {
+	ipMock := &clientTUNIPMock{failStep: "up"}
 	createCalls := 0
-	m := newMgr(
+	m := newTestTUN(
 		settings.UDP,
 		ipMock,
-		clienttunManagerIOCTLMock{createCalls: &createCalls},
-		clienttunManagerMSSMock{},
+		clientTUNIOCTLMock{createCalls: &createCalls},
+		clientTUNMSSMock{},
 	)
 
-	if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+	if _, err := m.Open(testServerAddrV4); err == nil {
 		t.Fatal("expected link configuration error")
 	}
 	if createCalls != 1 {
@@ -875,9 +875,9 @@ func TestConfigureTUNErrorRollback(t *testing.T) {
 		t.Run(path.name, func(t *testing.T) {
 			for _, step := range path.steps {
 				t.Run(step, func(t *testing.T) {
-					ipMock := &clienttunManagerIPMock{routeReply: path.routeReply, failStep: step}
-					m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-					if _, err := m.OpenTunnel(testServerAddrV4); err == nil {
+					ipMock := &clientTUNIPMock{routeReply: path.routeReply, failStep: step}
+					m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
+					if _, err := m.Open(testServerAddrV4); err == nil {
 						t.Fatalf("expected error on step %s", step)
 					}
 					if m.pinnedServerAddr.IsValid() {
@@ -896,15 +896,15 @@ func TestConfigureTUNErrorRollback(t *testing.T) {
 	}
 }
 
-func TestCloseTunnelCleansEveryConfiguredProfile(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{}
+func TestCloseCleansEveryConfiguredProfile(t *testing.T) {
+	ipMock := &clientTUNIPMock{}
 	var removedTunNames []string
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{
 		removedTunNames: &removedTunNames,
 	})
 
-	if err := m.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel error: %v", err)
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
 	}
 	if got, want := strings.Join(removedTunNames, ","), "tun1,tun0,tun2"; got != want {
 		t.Fatalf("MSS cleanup interfaces = %q, want %q", got, want)
@@ -915,45 +915,45 @@ func TestCloseTunnelCleansEveryConfiguredProfile(t *testing.T) {
 }
 
 func TestConfigureTUN_MSSInstallError(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
 	var removedTunNames []string
-	mssMock := clienttunManagerMSSMock{
+	mssMock := clientTUNMSSMock{
 		installErr:      errors.New("iptables fail"),
 		removedTunNames: &removedTunNames,
 	}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock)
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, mssMock)
 
-	_, err := m.OpenTunnel(testServerAddrV4)
+	_, err := m.Open(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected MSS install error")
 	}
 	if !strings.Contains(err.Error(), "failed to install MSS clamping") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertOpenTunnelRolledBack(t, m, ipMock)
+	assertOpenRolledBack(t, m, ipMock)
 	if got, want := strings.Join(removedTunNames, ","), "tun1,tun0,tun2"; got != want {
 		t.Fatalf("MSS rollback interfaces = %q, want %q", got, want)
 	}
 }
 
-func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
+func TestOpen_IPv6_FullPath(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
 	var installedFamilies []mssclamp.Families
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{
 		installedFamilies: &installedFamilies,
 	})
 
 	// Enable IPv6 on the active protocol's settings.
-	mgr.settings.IPv6 = mustAddr("fd00::2")
-	mgr.settings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.settings.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
-	mgr.configuration.UDPSettings = mgr.settings
+	tunnel.settings.IPv6 = mustAddr("fd00::2")
+	tunnel.settings.IPv6Subnet = mustPrefix("fd00::/64")
+	tunnel.settings.DNSv6 = []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
+	tunnel.configuration.UDPSettings = tunnel.settings
 
-	_, err := mgr.OpenTunnel(testServerAddrV6)
+	_, err := tunnel.Open(testServerAddrV6)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer func() { _ = mgr.CloseTunnel() }()
+	defer func() { _ = tunnel.Close() }()
 
 	got := ipMock.log.String()
 	if !strings.Contains(got, "split6;") {
@@ -974,23 +974,23 @@ func TestOpenTunnel_IPv6_FullPath(t *testing.T) {
 	}
 }
 
-func TestOpenTunnel_IPv6Only_FullPath(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
+func TestOpen_IPv6Only_FullPath(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "2001:db8::1 via fe80::1 dev eth0"}
 	var installedFamilies []mssclamp.Families
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{
 		installedFamilies: &installedFamilies,
 	})
-	active := mgr.settings
+	active := tunnel.settings
 	active.IPv4 = netip.Addr{}
 	active.IPv4Subnet = netip.Prefix{}
 	active.IPv6 = mustAddr("fd00::2")
 	active.IPv6Subnet = mustPrefix("fd00::/64")
-	setLinuxActiveSettings(mgr, active)
+	setLinuxActiveSettings(tunnel, active)
 
-	if _, err := mgr.OpenTunnel(testServerAddrV6); err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+	if _, err := tunnel.Open(testServerAddrV6); err != nil {
+		t.Fatalf("Open() error = %v", err)
 	}
-	defer func() { _ = mgr.CloseTunnel() }()
+	defer func() { _ = tunnel.Close() }()
 
 	want := "up;addr;rreplacevia;split6;mtu;"
 	if got := ipMock.log.String(); got != want {
@@ -1004,67 +1004,67 @@ func TestOpenTunnel_IPv6Only_FullPath(t *testing.T) {
 	}
 }
 
-func TestOpenTunnelSingleStackSkipsUncoveredServerFamily(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestOpenSingleStackSkipsUncoveredServerFamily(t *testing.T) {
+	ipMock := &clientTUNIPMock{}
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if _, err := mgr.OpenTunnel(testServerAddrV6); err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+	if _, err := tunnel.Open(testServerAddrV6); err != nil {
+		t.Fatalf("Open() error = %v", err)
 	}
-	defer func() { _ = mgr.CloseTunnel() }()
+	defer func() { _ = tunnel.Close() }()
 
-	if len(ipMock.routeGetTargets) != 0 || len(ipMock.routeReplaceTargets) != 0 || mgr.pinnedServerAddr.IsValid() {
-		t.Fatalf("unexpected pinned route: get=%v replace=%v cached=%s", ipMock.routeGetTargets, ipMock.routeReplaceTargets, mgr.pinnedServerAddr)
+	if len(ipMock.routeGetTargets) != 0 || len(ipMock.routeReplaceTargets) != 0 || tunnel.pinnedServerAddr.IsValid() {
+		t.Fatalf("unexpected pinned route: get=%v replace=%v cached=%s", ipMock.routeGetTargets, ipMock.routeReplaceTargets, tunnel.pinnedServerAddr)
 	}
 }
 
-func TestOpenTunnel_IPv6_AddrAddError(t *testing.T) {
+func TestOpen_IPv6_AddrAddError(t *testing.T) {
 	// When IPv6 AddrAddDev fails, creation should fail.
 	calls := 0
-	ipMock := &clienttunManagerIPMockFailNthAddr{
-		clienttunManagerIPMock: clienttunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
-		failOnCall:             2,
-		callCount:              &calls,
+	ipMock := &clientTUNIPMockFailNthAddr{
+		clientTUNIPMock: clientTUNIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
+		failOnCall:      2,
+		callCount:       &calls,
 	}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	active := mgr.settings
+	active := tunnel.settings
 	active.IPv6 = mustAddr("fd00::2")
 	active.IPv6Subnet = mustPrefix("fd00::/64")
-	setLinuxActiveSettings(mgr, active)
+	setLinuxActiveSettings(tunnel, active)
 
-	_, err := mgr.OpenTunnel(testServerAddrV4)
+	_, err := tunnel.Open(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on IPv6 addr add failure")
 	}
-	if mgr.pinnedServerAddr.IsValid() || len(ipMock.routeDelTargets) != 0 {
-		t.Fatalf("failed address assignment changed pinned route state: pinned=%s deleted=%v", mgr.pinnedServerAddr, ipMock.routeDelTargets)
+	if tunnel.pinnedServerAddr.IsValid() || len(ipMock.routeDelTargets) != 0 {
+		t.Fatalf("failed address assignment changed pinned route state: pinned=%s deleted=%v", tunnel.pinnedServerAddr, ipMock.routeDelTargets)
 	}
 }
 
-func TestOpenTunnel_IPv6_Route6SplitError(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{
+func TestOpen_IPv6_Route6SplitError(t *testing.T) {
+	ipMock := &clientTUNIPMock{
 		routeReply: "198.51.100.1 dev eth0",
 		failStep:   "split6",
 	}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-	active := mgr.settings
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
+	active := tunnel.settings
 	active.IPv6 = mustAddr("fd00::2")
 	active.IPv6Subnet = mustPrefix("fd00::/64")
-	setLinuxActiveSettings(mgr, active)
+	setLinuxActiveSettings(tunnel, active)
 
-	_, err := mgr.OpenTunnel(testServerAddrV4)
+	_, err := tunnel.Open(testServerAddrV4)
 	if err == nil {
 		t.Fatal("expected error on Route6AddSplitDev failure")
 	}
-	assertOpenTunnelRolledBack(t, mgr, ipMock)
+	assertOpenRolledBack(t, tunnel, ipMock)
 }
 
-func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+func TestCloseWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
+	ipMock := &clientTUNIPMock{}
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 
-	if err := mgr.CloseTunnel(); err != nil {
+	if err := tunnel.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1073,141 +1073,141 @@ func TestCloseTunnelWithoutOpenedServerSkipsHostRouteCleanup(t *testing.T) {
 	}
 }
 
-func TestCloseTunnelCancelsDefaultRouteWatcher(t *testing.T) {
-	mgr := newMgr(
+func TestCloseCancelsDefaultRouteWatcher(t *testing.T) {
+	tunnel := newTestTUN(
 		settings.UDP,
-		&clienttunManagerIPMock{},
-		clienttunManagerIOCTLMock{},
-		clienttunManagerMSSMock{},
+		&clientTUNIPMock{},
+		clientTUNIOCTLMock{},
+		clientTUNMSSMock{},
 	)
 	cancelled := false
-	mgr.defaultRouteWatcherCancel = func() { cancelled = true }
+	tunnel.defaultRouteWatcherCancel = func() { cancelled = true }
 
-	if err := mgr.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if !cancelled {
-		t.Fatal("CloseTunnel() did not cancel the default route watcher")
+		t.Fatal("Close() did not cancel the default route watcher")
 	}
 }
 
-func TestCloseTunnelRemovesOpenedServerRoute(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-	_, err := mgr.OpenTunnel(testServerAddrV4)
+func TestCloseRemovesOpenedServerRoute(t *testing.T) {
+	ipMock := &clientTUNIPMock{routeReply: "198.51.100.1 dev eth0"}
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
+	_, err := tunnel.Open(testServerAddrV4)
 	if err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+		t.Fatalf("Open() error = %v", err)
 	}
 
-	if err := mgr.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if len(ipMock.routeDelTargets) != 1 || ipMock.routeDelTargets[0] != testServerAddrV4 {
 		t.Fatalf("deleted host routes = %v, want [%s]", ipMock.routeDelTargets, testServerAddrV4)
 	}
 }
 
-func TestCloseTunnelRetriesServerRouteDeletion(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{
+func TestCloseRetriesServerRouteDeletion(t *testing.T) {
+	ipMock := &clientTUNIPMock{
 		routeReply: "198.51.100.1 dev eth0",
 		failStep:   "rdel",
 	}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-	dev, err := mgr.OpenTunnel(testServerAddrV4)
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
+	dev, err := tunnel.Open(testServerAddrV4)
 	if err != nil {
-		t.Fatalf("OpenTunnel() error = %v", err)
+		t.Fatalf("Open() error = %v", err)
 	}
-	if err := mgr.CloseTunnel(); err == nil {
-		t.Fatal("CloseTunnel() error = nil, want route deletion error")
+	if err := tunnel.Close(); err == nil {
+		t.Fatal("Close() error = nil, want route deletion error")
 	}
 	if _, err := dev.Read(make([]byte, 1)); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("TUN read after CloseTunnel() error = %v, want %v", err, io.ErrClosedPipe)
+		t.Fatalf("TUN read after Close() error = %v, want %v", err, io.ErrClosedPipe)
 	}
-	if mgr.tun != nil {
-		t.Fatal("CloseTunnel() retained a closed TUN")
+	if tunnel.tun != nil {
+		t.Fatal("Close() retained a closed TUN")
 	}
-	if mgr.pinnedServerAddr != testServerAddrV4 {
-		t.Fatalf("pinnedServerAddr = %s, want retained %s", mgr.pinnedServerAddr, testServerAddrV4)
+	if tunnel.pinnedServerAddr != testServerAddrV4 {
+		t.Fatalf("pinnedServerAddr = %s, want retained %s", tunnel.pinnedServerAddr, testServerAddrV4)
 	}
 
 	ipMock.failStep = ""
-	if err := mgr.CloseTunnel(); err != nil {
-		t.Fatalf("retry CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("retry Close() error = %v", err)
 	}
-	if mgr.pinnedServerAddr.IsValid() {
-		t.Fatalf("pinnedServerAddr = %s, want cleared address", mgr.pinnedServerAddr)
+	if tunnel.pinnedServerAddr.IsValid() {
+		t.Fatalf("pinnedServerAddr = %s, want cleared address", tunnel.pinnedServerAddr)
 	}
 	if len(ipMock.routeDelTargets) != 2 {
 		t.Fatalf("route deletion attempts = %d, want 2", len(ipMock.routeDelTargets))
 	}
 }
 
-func TestCloseTunnelReturnsTunCloseErrorAndClearsTun(t *testing.T) {
+func TestCloseReturnsTunCloseErrorAndClearsTun(t *testing.T) {
 	closeErr := errors.New("close failed")
 	tun := &clientTunMock{closeErr: closeErr}
-	mgr := newMgr(
+	tunnel := newTestTUN(
 		settings.UDP,
-		&clienttunManagerIPMock{},
-		clienttunManagerIOCTLMock{},
-		clienttunManagerMSSMock{},
+		&clientTUNIPMock{},
+		clientTUNIOCTLMock{},
+		clientTUNMSSMock{},
 	)
-	mgr.tun = tun
+	tunnel.tun = tun
 
-	if err := mgr.CloseTunnel(); !errors.Is(err, closeErr) {
-		t.Fatalf("CloseTunnel() error = %v, want %v", err, closeErr)
+	if err := tunnel.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("Close() error = %v, want %v", err, closeErr)
 	}
 	if tun.closeCalls != 1 {
 		t.Fatalf("TUN Close() calls = %d, want 1", tun.closeCalls)
 	}
-	if mgr.tun != nil {
-		t.Fatal("CloseTunnel() retained TUN after Close returned an error")
+	if tunnel.tun != nil {
+		t.Fatal("Close() retained TUN after Close returned an error")
 	}
 }
 
-func TestCloseTunnelReturnsLinkDeleteErrorAndContinuesCleanup(t *testing.T) {
+func TestCloseReturnsLinkDeleteErrorAndContinuesCleanup(t *testing.T) {
 	deleteErr := errors.New("delete interface failed")
-	ipMock := &clienttunManagerIPMock{linkDeleteErr: deleteErr}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
+	ipMock := &clientTUNIPMock{linkDeleteErr: deleteErr}
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
 	tun := &clientTunMock{}
-	mgr.tun = tun
-	mgr.pinnedServerAddr = testServerAddrV4
+	tunnel.tun = tun
+	tunnel.pinnedServerAddr = testServerAddrV4
 
-	if err := mgr.CloseTunnel(); !errors.Is(err, deleteErr) {
-		t.Errorf("CloseTunnel() error = %v, want %v", err, deleteErr)
+	if err := tunnel.Close(); !errors.Is(err, deleteErr) {
+		t.Errorf("Close() error = %v, want %v", err, deleteErr)
 	}
-	if tun.closeCalls != 1 || mgr.tun != nil {
-		t.Errorf("TUN cleanup: close calls = %d, TUN = %v", tun.closeCalls, mgr.tun)
+	if tun.closeCalls != 1 || tunnel.tun != nil {
+		t.Errorf("TUN cleanup: close calls = %d, TUN = %v", tun.closeCalls, tunnel.tun)
 	}
 	if !slices.Equal(ipMock.deletedInterfaces, []string{"tun1", "tun0", "tun2"}) {
 		t.Errorf("deleted interfaces = %v, want all configured interfaces", ipMock.deletedInterfaces)
 	}
-	if !slices.Equal(ipMock.routeDelTargets, []netip.Addr{testServerAddrV4}) || mgr.pinnedServerAddr.IsValid() {
-		t.Errorf("server route cleanup: deleted = %v, pinned = %v", ipMock.routeDelTargets, mgr.pinnedServerAddr)
+	if !slices.Equal(ipMock.routeDelTargets, []netip.Addr{testServerAddrV4}) || tunnel.pinnedServerAddr.IsValid() {
+		t.Errorf("server route cleanup: deleted = %v, pinned = %v", ipMock.routeDelTargets, tunnel.pinnedServerAddr)
 	}
 }
 
-func TestCloseTunnelRetriesDNSRestore(t *testing.T) {
-	dnsMock := &clienttunManagerDNSMock{revertErr: errors.New("restore failed")}
-	mgr := newMgr(
+func TestCloseRetriesDNSRestore(t *testing.T) {
+	dnsMock := &clientTUNDNSMock{revertErr: errors.New("restore failed")}
+	tunnel := newTestTUN(
 		settings.UDP,
-		&clienttunManagerIPMock{},
-		clienttunManagerIOCTLMock{},
-		clienttunManagerMSSMock{},
+		&clientTUNIPMock{},
+		clientTUNIOCTLMock{},
+		clientTUNMSSMock{},
 	)
-	mgr.dns = dnsMock
+	tunnel.dns = dnsMock
 	tun := &clientTunMock{}
-	mgr.tun = tun
+	tunnel.tun = tun
 
-	if err := mgr.CloseTunnel(); err == nil || !strings.Contains(err.Error(), "restore failed") {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err == nil || !strings.Contains(err.Error(), "restore failed") {
+		t.Fatalf("Close() error = %v", err)
 	}
-	if mgr.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
-		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", mgr.tun, tun.closeCalls, dnsMock.revertCalls)
+	if tunnel.tun != nil || tun.closeCalls != 1 || dnsMock.revertCalls != 1 {
+		t.Fatalf("failed restore state: TUN=%v close calls=%d Revert calls=%d", tunnel.tun, tun.closeCalls, dnsMock.revertCalls)
 	}
 
 	dnsMock.revertErr = nil
-	if err := mgr.CloseTunnel(); err != nil {
-		t.Fatalf("retry CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("retry Close() error = %v", err)
 	}
 	if dnsMock.revertCalls != 2 {
 		t.Fatalf("DNS Revert() calls = %d, want 2", dnsMock.revertCalls)
@@ -1217,28 +1217,28 @@ func TestCloseTunnelRetriesDNSRestore(t *testing.T) {
 	}
 }
 
-func TestCloseTunnelSkipsProfilesWithoutTunName(t *testing.T) {
-	ipMock := &clienttunManagerIPMock{}
-	mgr := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, clienttunManagerMSSMock{})
-	mgr.configuration.TCPSettings.TunName = ""
-	mgr.configuration.WSSettings.TunName = ""
+func TestCloseSkipsProfilesWithoutTunName(t *testing.T) {
+	ipMock := &clientTUNIPMock{}
+	tunnel := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, clientTUNMSSMock{})
+	tunnel.configuration.TCPSettings.TunName = ""
+	tunnel.configuration.WSSettings.TunName = ""
 
-	if err := mgr.CloseTunnel(); err != nil {
-		t.Fatalf("CloseTunnel() error = %v", err)
+	if err := tunnel.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 	if got := strings.Count(ipMock.log.String(), "ldel;"); got != 1 {
 		t.Fatalf("LinkDelete() calls = %d, want 1", got)
 	}
 }
 
-// clienttunManagerIPMockFailNthAddr fails AddrAddDev on the N-th call.
-type clienttunManagerIPMockFailNthAddr struct {
-	clienttunManagerIPMock
+// clientTUNIPMockFailNthAddr fails AddrAddDev on the N-th call.
+type clientTUNIPMockFailNthAddr struct {
+	clientTUNIPMock
 	failOnCall int
 	callCount  *int
 }
 
-func (m *clienttunManagerIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
+func (m *clientTUNIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
 	*m.callCount++
 	if *m.callCount == m.failOnCall {
 		return errors.New("addr add failed")
@@ -1246,13 +1246,13 @@ func (m *clienttunManagerIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
 	return nil
 }
 
-func TestCloseTunnelReturnsMSSRemoveError(t *testing.T) {
+func TestCloseReturnsMSSRemoveError(t *testing.T) {
 	cleanupErr := errors.New("cleanup fail")
-	ipMock := &clienttunManagerIPMock{}
-	mssMock := clienttunManagerMSSMock{removeErr: cleanupErr}
-	m := newMgr(settings.UDP, ipMock, clienttunManagerIOCTLMock{}, mssMock)
+	ipMock := &clientTUNIPMock{}
+	mssMock := clientTUNMSSMock{removeErr: cleanupErr}
+	m := newTestTUN(settings.UDP, ipMock, clientTUNIOCTLMock{}, mssMock)
 
-	if err := m.CloseTunnel(); !errors.Is(err, cleanupErr) {
-		t.Fatalf("CloseTunnel() error = %v, want %v", err, cleanupErr)
+	if err := m.Close(); !errors.Is(err, cleanupErr) {
+		t.Fatalf("Close() error = %v, want %v", err, cleanupErr)
 	}
 }

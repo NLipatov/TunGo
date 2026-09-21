@@ -18,7 +18,7 @@ import (
 	"tungo/internal/protocol/keys"
 )
 
-type clientTestTunManager struct {
+type clientTestTUN struct {
 	disposeCalls atomic.Int32
 	closeErr     error
 }
@@ -59,21 +59,21 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func (*clientTestTunManager) OpenTunnel(netip.Addr) (io.ReadWriter, error) {
+func (*clientTestTUN) Open(netip.Addr) (io.ReadWriter, error) {
 	return nil, nil
 }
 
-func (m *clientTestTunManager) CloseTunnel() error {
+func (m *clientTestTUN) Close() error {
 	m.disposeCalls.Add(1)
 	return m.closeErr
 }
 
 func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	cleanupErr := errors.New("cleanup failed")
-	manager := &clientTestTunManager{closeErr: cleanupErr}
+	tunnel := &clientTestTUN{closeErr: cleanupErr}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tunManager:    manager,
+		tun:           tunnel,
 	}
 
 	var logs bytes.Buffer
@@ -88,15 +88,15 @@ func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 		!strings.Contains(logs.String(), cleanupErr.Error()) {
 		t.Fatalf("preflight cleanup log = %q", logs.String())
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
+	if got := tunnel.disposeCalls.Load(); got != 1 {
+		t.Fatalf("Close() calls = %d, want 1", got)
 	}
 }
 
 func TestCloseTunLogsCleanupFailure(t *testing.T) {
 	cleanupErr := errors.New("cleanup failed")
-	manager := &clientTestTunManager{closeErr: cleanupErr}
-	client := &Client{tunManager: manager}
+	tunnel := &clientTestTUN{closeErr: cleanupErr}
+	client := &Client{tun: tunnel}
 
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
@@ -109,23 +109,23 @@ func TestCloseTunLogsCleanupFailure(t *testing.T) {
 		!strings.Contains(logs.String(), cleanupErr.Error()) {
 		t.Fatalf("cleanup log = %q", logs.String())
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
+	if got := tunnel.disposeCalls.Load(); got != 1 {
+		t.Fatalf("Close() calls = %d, want 1", got)
 	}
 }
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
-	manager := &clientTestTunManager{}
+	tunnel := &clientTestTUN{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tunManager:    manager,
+		tun:           tunnel,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- client.Run(ctx) }()
 
 	deadline := time.After(2 * time.Second)
-	for manager.disposeCalls.Load() == 0 {
+	for tunnel.disposeCalls.Load() == 0 {
 		select {
 		case <-deadline:
 			t.Fatal("client did not start a session")
@@ -143,8 +143,8 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("client did not stop after cancellation")
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("CloseTunnel() calls = %d, want preflight cleanup", got)
+	if got := tunnel.disposeCalls.Load(); got != 1 {
+		t.Fatalf("Close() calls = %d, want preflight cleanup", got)
 	}
 }
 
@@ -229,10 +229,10 @@ func TestAllowedSources(t *testing.T) {
 }
 
 func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
-	manager := &clientTestTunManager{}
+	tunnel := &clientTestTUN{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tunManager:    manager,
+		tun:           tunnel,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -240,24 +240,24 @@ func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
 	if err := client.Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := manager.disposeCalls.Load(); got != 0 {
-		t.Fatalf("CloseTunnel() calls = %d, want no session cleanup", got)
+	if got := tunnel.disposeCalls.Load(); got != 0 {
+		t.Fatalf("Close() calls = %d, want no session cleanup", got)
 	}
 }
 
 func TestRunSessionReturnsForwardError(t *testing.T) {
-	manager := &clientTestTunManager{}
+	tunnel := &clientTestTUN{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tunManager:    manager,
+		tun:           tunnel,
 	}
 
 	err := client.runSession(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "unsupported protocol") {
 		t.Fatalf("runSession() error = %v, want unsupported protocol", err)
 	}
-	if got := manager.disposeCalls.Load(); got != 1 {
-		t.Fatalf("CloseTunnel() calls = %d, want 1", got)
+	if got := tunnel.disposeCalls.Load(); got != 1 {
+		t.Fatalf("Close() calls = %d, want 1", got)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestRunSessionCancellationStopsForward(t *testing.T) {
 		t.Fatalf("generate client key: %v", err)
 	}
 
-	manager := &clientTestTunManager{}
+	tunnel := &clientTestTUN{}
 	client := &Client{
 		configuration: &clientconfig.Configuration{
 			ClientID:         1,
@@ -298,7 +298,7 @@ func TestRunSessionCancellationStopsForward(t *testing.T) {
 			ClientPrivateKey: clientPrivateKey[:],
 			X25519PublicKey:  serverPublicKey,
 		},
-		tunManager: manager,
+		tun: tunnel,
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
