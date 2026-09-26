@@ -402,6 +402,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
         with:
+          ref: refs/tags/${{ needs.version-and-tag.outputs.tag_name }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -418,40 +419,29 @@ jobs:
       - uses: actions/download-artifact@v8.0.1
         with: { name: tungo-windows-arm64, path: artifacts }
 
-      - name: Determine release range
-        id: release-range
+      - name: Get published release tags
+        id: release-tags
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.version-and-tag.outputs.tag_name }}
         run: |
-          # On reruns, use the release before this tag, even if newer releases exist.
-          previous_tag=$(gh api --paginate --slurp \
+          pattern=$(gh api --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r --arg tag "$TAG_NAME" '
-              [.[][] | select(.draft == false and .prerelease == false)]
-              | sort_by(.published_at) | reverse
-              | map(.tag_name)
-              | index($tag) as $current_index
-              | if $current_index == null then .[0] else .[$current_index + 1] end
-              | . // empty
+              [.[][] | select(.draft == false and .prerelease == false) | .tag_name] + [$tag]
+              | unique
+              | map(gsub("(?<meta>[\\\\.^$|?*+()\\[\\]{}])"; "\\\(.meta)"))
+              | "^(" + join("|") + ")$"
             ')
-
-          if [[ -n "$previous_tag" ]]; then
-            range="$previous_tag..$TAG_NAME"
-          else
-            range=$(git rev-parse "$TAG_NAME^{commit}")
-          fi
-          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "pattern=$pattern" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         uses: orhun/git-cliff-action@v4.9.1
         with:
           version: v2.14.2
-          config: .github/cliff.toml
-          args: '"$RELEASE_RANGE" --tag "$TAG_NAME"'
+          args: '--current --use-branch-tags --tag-pattern "$RELEASE_TAG_PATTERN"'
         env:
-          RELEASE_RANGE: ${{ steps.release-range.outputs.range }}
-          TAG_NAME: ${{ needs.version-and-tag.outputs.tag_name }}
+          RELEASE_TAG_PATTERN: ${{ steps.release-tags.outputs.pattern }}
           OUTPUT: release-notes.md
 
       - name: Publish GitHub Release
