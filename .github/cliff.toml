@@ -1,0 +1,3 @@
+[git]
+# The workflow supplies the release range; intermediate CI tags are not releases.
+ignore_tags = ".*"
