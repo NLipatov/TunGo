@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"tungo/internal/config/client"
+	"tungo/internal/config/internal/splits"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/transport/host"
@@ -73,6 +74,8 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		Protocol:         defaultProtocol(serverConfiguration),
 		ClientPublicKey:  append([]byte(nil), publicKey...),
 		ClientPrivateKey: append([]byte(nil), privateKey[:]...),
+		TunnelRoutesV4:   splits.FullTunnelV4(),
+		TunnelRoutesV6:   splits.FullTunnelV6(),
 	}
 	data, err := json.MarshalIndent(configuration, "", "  ")
 	if err != nil {

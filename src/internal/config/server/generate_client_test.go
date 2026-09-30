@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,6 +41,12 @@ func TestFileGenerateClient(t *testing.T) {
 	}
 	if clientConfiguration.UDPSettings.Server.IPv4 != "192.0.2.1" {
 		t.Fatalf("server host = %+v", clientConfiguration.UDPSettings.Server)
+	}
+	if want := []string{"0.0.0.0/1", "128.0.0.0/1"}; !slices.Equal(clientConfiguration.TunnelRoutesV4, want) {
+		t.Fatalf("TunnelRoutesV4 = %v, want %v", clientConfiguration.TunnelRoutesV4, want)
+	}
+	if want := []string{"::/1", "8000::/1"}; !slices.Equal(clientConfiguration.TunnelRoutesV6, want) {
+		t.Fatalf("TunnelRoutesV6 = %v, want %v", clientConfiguration.TunnelRoutesV6, want)
 	}
 	active, err := clientConfiguration.ActiveSettings()
 	if err != nil {
