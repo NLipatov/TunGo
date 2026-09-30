@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"tungo/internal/config/internal/splits"
 	"tungo/internal/config/settings"
 )
 
@@ -71,8 +72,8 @@ func effectiveTunnelRoutes(
 	tunSubnetV4, tunSubnetV6 netip.Prefix,
 ) ([]string, []string) {
 	configuredV4, configuredV6 := v4, v6
-	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
-	defaultV6 := []string{"::/1", "8000::/1"}
+	defaultV4 := splits.FullTunnelV4()
+	defaultV6 := splits.FullTunnelV6()
 	if v4 == nil {
 		v4 = defaultV4
 	}
