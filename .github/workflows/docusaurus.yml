@@ -30,6 +30,7 @@ jobs:
         run: |
           cd docs/TunGo
           npm run build
+          npm run check:redirects
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v5.0.0

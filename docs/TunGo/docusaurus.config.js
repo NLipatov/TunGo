@@ -54,6 +54,8 @@ const config = {
     },
   },
 
+  plugins: ['./plugins/legacy-doc-redirects.js'],
+
   presets: [
     [
       'classic',
