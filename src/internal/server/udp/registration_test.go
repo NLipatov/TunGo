@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/netip"
-	"sync"
 	"testing"
 	"time"
 	"tungo/internal/protocol/chacha20"
@@ -78,31 +78,25 @@ func (f *udpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto,
 	return f.crypto, f.ctrl, nil
 }
 
-// udpRegListener is a minimal mock for UdpListener.
-type udpRegListener struct {
-	mu      sync.Mutex
-	written []udpRegWrite
-}
-
-type udpRegWrite struct {
-	data []byte
-	addr netip.AddrPort
-}
-
-func (l *udpRegListener) Close() error             { return nil }
-func (l *udpRegListener) SetReadBuffer(int) error  { return nil }
-func (l *udpRegListener) SetWriteBuffer(int) error { return nil }
-func (l *udpRegListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
-	return 0, 0, 0, netip.AddrPort{}, errors.New("not implemented")
-}
-
-func (l *udpRegListener) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	buf := make([]byte, len(data))
-	copy(buf, data)
-	l.written = append(l.written, udpRegWrite{data: buf, addr: addr})
-	return len(data), nil
+func registrationTestSockets(t *testing.T) (*net.UDPConn, registrationKey) {
+	t.Helper()
+	listen := func() *net.UDPConn {
+		t.Helper()
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		return conn
+	}
+	server, client := listen(), listen()
+	return server, registrationKey{
+		clientAddrPort: client.LocalAddr().(*net.UDPAddr).AddrPort(),
+		serverAddr:     server.LocalAddr().(*net.UDPAddr).AddrPort().Addr(),
+	}
 }
 
 func registrationCount(r *registrar) int {
@@ -127,7 +121,8 @@ func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 	r := newRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, isNew := r.getOrCreateRegistrationQueue(addr)
+	key := registrationKey{clientAddrPort: addr, serverAddr: netip.MustParseAddr("192.0.2.1")}
+	q, isNew := r.getOrCreateRegistrationQueue(key)
 	if !isNew {
 		t.Fatal("expected isNew=true for first call")
 	}
@@ -136,7 +131,7 @@ func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 	}
 
 	// Second call returns existing.
-	q2, isNew2 := r.getOrCreateRegistrationQueue(addr)
+	q2, isNew2 := r.getOrCreateRegistrationQueue(key)
 	if isNew2 {
 		t.Fatal("expected isNew=false for second call")
 	}
@@ -149,8 +144,8 @@ func TestCloseAll_ClearsRegistrations(t *testing.T) {
 	ctx := context.Background()
 	r := newRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	r.getOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.1:1234"))
-	r.getOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.2:5678"))
+	r.getOrCreateRegistrationQueue(registrationKey{clientAddrPort: netip.MustParseAddrPort("192.168.1.1:1234"), serverAddr: netip.MustParseAddr("192.0.2.1")})
+	r.getOrCreateRegistrationQueue(registrationKey{clientAddrPort: netip.MustParseAddrPort("192.168.1.2:5678"), serverAddr: netip.MustParseAddr("192.0.2.1")})
 
 	if registrationCount(r) != 2 {
 		t.Fatalf("expected 2 registrations, got %d", registrationCount(r))
@@ -167,7 +162,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
@@ -182,8 +177,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 
 	r := newRegistrar(ctx, listener, repo, hf.NewHandshake, cf.FromHandshake, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	r.enqueuePacket(addr, []byte("hello"))
+	r.enqueuePacket(key, []byte("hello"))
 
 	// After registration failure, the queue should be removed.
 	// Give time for the registration goroutine to complete.
@@ -197,7 +191,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
@@ -214,12 +208,11 @@ func TestRegisterClient_Success(t *testing.T) {
 
 	r := newRegistrar(ctx, listener, repo, hf.NewHandshake, cf.FromHandshake, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -247,7 +240,7 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
@@ -261,12 +254,11 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 
 	r := newRegistrar(ctx, listener, repo, hf.NewHandshake, cf.FromHandshake, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -293,7 +285,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
@@ -310,12 +302,11 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 
 	r := newRegistrar(ctx, listener, repo, hf.NewHandshake, cf.FromHandshake, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -367,7 +358,8 @@ func TestEnqueuePacket_AtCapacity_SilentDrop(t *testing.T) {
 	for i := 0; i < maxConcurrentRegistrations; i++ {
 		ip := netip.AddrFrom4([4]byte{10, 0, byte(i >> 8), byte(i)})
 		addr := netip.AddrPortFrom(ip, 1234)
-		r.getOrCreateRegistrationQueue(addr)
+		key := registrationKey{clientAddrPort: addr, serverAddr: netip.MustParseAddr("192.0.2.1")}
+		r.getOrCreateRegistrationQueue(key)
 	}
 
 	if registrationCount(r) != maxConcurrentRegistrations {
@@ -376,7 +368,7 @@ func TestEnqueuePacket_AtCapacity_SilentDrop(t *testing.T) {
 
 	// EnqueuePacket for a new address should be silently dropped.
 	excess := netip.MustParseAddrPort("255.255.255.255:9999")
-	r.enqueuePacket(excess, []byte("should-be-dropped"))
+	r.enqueuePacket(registrationKey{clientAddrPort: excess, serverAddr: netip.MustParseAddr("192.0.2.1")}, []byte("should-be-dropped"))
 
 	// No new queue should have been created.
 	if registrationCount(r) != maxConcurrentRegistrations {
@@ -388,7 +380,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeWithResultFactory{
@@ -414,12 +406,11 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 		netip.MustParsePrefix("fd00::/64"),
 	)
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -489,7 +480,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 
 	hf := &udpRegCookieHandshakeFactory{clientID: 1}
@@ -500,12 +491,11 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 
 	r := newRegistrar(ctx, listener, repo, hf.NewHandshake, cf.FromHandshake, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -537,7 +527,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	listener := &udpRegListener{}
+	listener, key := registrationTestSockets(t)
 	repo := session.NewRepository()
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
@@ -562,12 +552,11 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 		io.Discard,
 	))
 
-	addr := netip.MustParseAddrPort("192.168.1.1:1234")
-	q, _ := r.getOrCreateRegistrationQueue(addr)
+	q, _ := r.getOrCreateRegistrationQueue(key)
 
 	done := make(chan struct{})
 	go func() {
-		r.registerClient(addr, q)
+		r.registerClient(key, q)
 		close(done)
 	}()
 
@@ -594,13 +583,14 @@ func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 	r := newRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	key := registrationKey{clientAddrPort: addr, serverAddr: netip.MustParseAddr("192.0.2.1")}
 
-	q1, isNew1 := r.getOrCreateRegistrationQueue(addr)
+	q1, isNew1 := r.getOrCreateRegistrationQueue(key)
 	if !isNew1 {
 		t.Fatal("expected isNew=true for first call")
 	}
 
-	q2, isNew2 := r.getOrCreateRegistrationQueue(addr)
+	q2, isNew2 := r.getOrCreateRegistrationQueue(key)
 	if isNew2 {
 		t.Fatal("expected isNew=false for second call")
 	}
@@ -610,11 +600,28 @@ func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 
 	// Different address gets a new queue.
 	addr2 := netip.MustParseAddrPort("192.168.1.2:5678")
-	q3, isNew3 := r.getOrCreateRegistrationQueue(addr2)
+	q3, isNew3 := r.getOrCreateRegistrationQueue(registrationKey{clientAddrPort: addr2, serverAddr: key.serverAddr})
 	if !isNew3 {
 		t.Fatal("expected isNew=true for different address")
 	}
 	if q3 == q1 {
 		t.Fatal("expected different queue for different address")
+	}
+
+	// A client can contact multiple IPs of a wildcard listener from one port.
+	// Each handshake must retain its own reply source, including cookie retries.
+	otherLocal := registrationKey{clientAddrPort: addr, serverAddr: netip.MustParseAddr("192.0.2.2")}
+	q4, isNew4 := r.getOrCreateRegistrationQueue(otherLocal)
+	if !isNew4 || q4 == q1 {
+		t.Fatal("handshakes to different local IPs must use different queues")
+	}
+	r.removeRegistrationQueue(key)
+	if _, err := q1.ReadInto(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("removed queue read error = %v, want EOF", err)
+	}
+	q4.enqueue([]byte("retry"))
+	buf := make([]byte, 5)
+	if n, err := q4.ReadInto(buf); err != nil || string(buf[:n]) != "retry" {
+		t.Fatalf("other local IP's queue was affected: n=%d err=%v data=%q", n, err, buf[:n])
 	}
 }

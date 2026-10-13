@@ -2,8 +2,12 @@ package udp
 
 import (
 	"io"
+	"net"
 	"net/netip"
 	"sync/atomic"
+
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 type registrationQueue interface {
@@ -15,22 +19,31 @@ type registrationQueue interface {
 //
 // The destination address is stored atomically so that it can be updated
 // after NAT roaming without replacing the writer in the egress pipeline.
+// The source IP is fixed for the lifetime of the connection, including handshake
+// replies and encrypted peer traffic. Its control message is immutable.
 type registrationConn struct {
-	conn  UdpListener
+	conn  *net.UDPConn
 	addr  atomic.Pointer[netip.AddrPort]
+	oob   []byte
 	queue registrationQueue
 }
 
 func NewRegistrationConn(
-	conn UdpListener,
-	addrPort netip.AddrPort,
+	conn *net.UDPConn,
+	clientAddrPort netip.AddrPort,
+	serverAddr netip.Addr,
 	queue registrationQueue,
 ) io.ReadWriteCloser {
 	a := &registrationConn{
 		conn:  conn,
 		queue: queue,
 	}
-	a.addr.Store(&addrPort)
+	if serverAddr.Unmap().Is4() {
+		a.oob = (&ipv4.ControlMessage{Src: serverAddr.Unmap().AsSlice()}).Marshal()
+	} else {
+		a.oob = (&ipv6.ControlMessage{Src: serverAddr.AsSlice()}).Marshal()
+	}
+	a.addr.Store(&clientAddrPort)
 	return a
 }
 
@@ -39,12 +52,12 @@ func (t *registrationConn) Read(p []byte) (int, error) {
 }
 
 func (t *registrationConn) Write(p []byte) (int, error) {
-	return t.conn.WriteToUDPAddrPort(p, *t.addr.Load())
+	n, _, err := t.conn.WriteMsgUDPAddrPort(p, t.oob, *t.addr.Load())
+	return n, err
 }
 
 func (t *registrationConn) Close() error {
-	// Do not close the shared UDP socket; its lifecycle is controlled by
-	// The queue is closed by the server registration lifecycle.
+	// The server owns the shared socket; the registrar owns the queue.
 	return nil
 }
 

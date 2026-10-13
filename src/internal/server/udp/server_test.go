@@ -121,7 +121,7 @@ func TestServer_HandleDatagramLooksUpPeerByRouteID(t *testing.T) {
 	binary.BigEndian.PutUint64(frame[:udpcrypto.RouteIDLength], routeID)
 	roamed := netip.MustParseAddrPort("192.0.2.2:51820")
 
-	if err := server.handleDatagram(roamed, frame); err != nil {
+	if err := server.handleDatagram(roamed, frame, nil); err != nil {
 		t.Fatal(err)
 	}
 	if crypto.decrypts != 1 || len(tun.writes) != 1 {
@@ -131,11 +131,24 @@ func TestServer_HandleDatagramLooksUpPeerByRouteID(t *testing.T) {
 		t.Fatalf("external address = %v, want %v", peer.ExternalAddrPort(), roamed)
 	}
 	binary.BigEndian.PutUint64(frame[:udpcrypto.RouteIDLength], routeID+1)
-	if err := server.handleDatagram(roamed, frame); err != nil {
+	if err := server.handleDatagram(roamed, frame, nil); err != nil {
 		t.Fatal(err)
 	}
 	if crypto.decrypts != 1 {
 		t.Fatalf("unknown route ID must not trial-decrypt peers: decrypts=%d", crypto.decrypts)
+	}
+}
+
+func TestServer_RegistrationRequiresDestination(t *testing.T) {
+	r := newRegistrar(t.Context(), nil, nil, nil, nil, netip.Prefix{}, netip.Prefix{})
+	server := &Server{peers: session.NewRepository(), registrar: r}
+	frame := make([]byte, udpcrypto.MinPacketSize)
+	remote := netip.MustParseAddrPort("192.0.2.1:51820")
+	if err := server.handleDatagram(remote, frame, nil); err == nil {
+		t.Fatal("registration without destination metadata must fail")
+	}
+	if count := registrationCount(r); count != 0 {
+		t.Fatalf("registrations = %d, want 0", count)
 	}
 }
 

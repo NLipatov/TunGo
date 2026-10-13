@@ -258,11 +258,7 @@ func (s *Server) newUDPTunnel(
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
-	slog.Info("server listening", "protocol", workerSettings.Protocol, "address", conn.LocalAddr())
-
-	s.register(sessionManager)
-
-	server := udp.New(
+	server, err := udp.New(
 		ctx, tun, conn, sessionManager,
 		func() *noise.IKHandshake {
 			return noise.NewIKHandshakeServer(
@@ -275,6 +271,12 @@ func (s *Server) newUDPTunnel(
 		},
 		workerSettings.IPv4Subnet, workerSettings.IPv6Subnet,
 	)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	slog.Info("server listening", "protocol", workerSettings.Protocol, "address", conn.LocalAddr())
+	s.register(sessionManager)
 	return server, nil
 }
 

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 // ---------------------------
@@ -47,61 +49,32 @@ func (m *mockQueue) Close() {
 	m.closed = true
 }
 
-type mockUdpListener struct {
-	writes []struct {
-		data []byte
-		addr netip.AddrPort
+func listenRegistrationUDP(t *testing.T) *net.UDPConn {
+	t.Helper()
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	writeErr error
-
-	closed           bool
-	setReadBufCalls  int
-	setWriteBufCalls int
-}
-
-func (m *mockUdpListener) Close() error {
-	m.closed = true
-	return nil
-}
-
-func (m *mockUdpListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
-	return 0, 0, 0, netip.AddrPort{}, errors.New("should not be called in adapter tests")
-}
-
-func (m *mockUdpListener) SetReadBuffer(_ int) error {
-	m.setReadBufCalls++
-	return nil
-}
-
-func (m *mockUdpListener) SetWriteBuffer(_ int) error {
-	m.setWriteBufCalls++
-	return nil
-}
-
-func (m *mockUdpListener) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (int, error) {
-	if m.writeErr != nil {
-		return 0, m.writeErr
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
 	}
-	cp := make([]byte, len(data))
-	copy(cp, data)
-	m.writes = append(m.writes, struct {
-		data []byte
-		addr netip.AddrPort
-	}{cp, addr})
-	return len(data), nil
+	return conn
 }
 
 // ---------------------------
 // Tests
 // ---------------------------
 
-// Write should forward data to listener.WriteToUDPAddrPort.
+// Write should forward data to listener.WriteMsgUDPAddrPort.
 func TestRegistrationConn_Write_OK(t *testing.T) {
 	q := &mockQueue{}
-	ul := &mockUdpListener{}
-	addr := netip.MustParseAddrPort("10.0.0.1:9999")
+	listener := listenRegistrationUDP(t)
+	client := listenRegistrationUDP(t)
+	addr := client.LocalAddr().(*net.UDPAddr).AddrPort()
+	server := listener.LocalAddr().(*net.UDPAddr).AddrPort()
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(listener, addr, server.Addr(), q)
 
 	data := []byte{1, 2, 3, 4}
 
@@ -113,30 +86,30 @@ func TestRegistrationConn_Write_OK(t *testing.T) {
 		t.Fatalf("expected %d bytes written, got %d", len(data), n)
 	}
 
-	if len(ul.writes) != 1 {
-		t.Fatalf("expected 1 write, got %d", len(ul.writes))
+	buf := make([]byte, 16)
+	n, from, err := client.ReadFromUDPAddrPort(buf)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	if !bytes.Equal(ul.writes[0].data, data) {
-		t.Fatalf("written data mismatch")
-	}
-
-	if ul.writes[0].addr != addr {
-		t.Fatalf("expected write to %v, got %v", addr, ul.writes[0].addr)
+	if !bytes.Equal(buf[:n], data) || from != server {
+		t.Fatalf("received %x from %s; want %x from %s", buf[:n], from, data, server)
 	}
 }
 
 // Write should forward listener errors.
 func TestRegistrationConn_Write_Error(t *testing.T) {
 	q := &mockQueue{}
-	ul := &mockUdpListener{writeErr: errors.New("write fail")}
-	addr := netip.MustParseAddrPort("10.0.0.1:9999")
+	listener := listenRegistrationUDP(t)
+	addr := listener.LocalAddr().(*net.UDPAddr).AddrPort()
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(listener, addr, addr.Addr(), q)
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := adapter.Write([]byte{9, 9})
-	if err == nil || err.Error() != "write fail" {
-		t.Fatalf("expected write fail, got %v", err)
+	n, err := adapter.Write([]byte{9, 9})
+	if n != 0 || !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Write() = %d, %v; want 0, net.ErrClosed", n, err)
 	}
 }
 
@@ -152,10 +125,9 @@ func TestRegistrationConn_Read_OK(t *testing.T) {
 		},
 	}
 
-	ul := &mockUdpListener{}
 	addr := netip.MustParseAddrPort("10.0.0.1:8888")
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(nil, addr, netip.MustParseAddr("192.0.2.1"), q)
 
 	dst := make([]byte, 10)
 	n, err := adapter.Read(dst)
@@ -181,10 +153,9 @@ func TestRegistrationConn_Read_Error(t *testing.T) {
 			{n: 0, err: io.EOF},
 		},
 	}
-	ul := &mockUdpListener{}
 	addr := netip.MustParseAddrPort("10.0.0.1:7777")
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(nil, addr, netip.MustParseAddr("192.0.2.1"), q)
 
 	_, err := adapter.Read(make([]byte, 10))
 	if err != io.EOF {
@@ -195,10 +166,9 @@ func TestRegistrationConn_Read_Error(t *testing.T) {
 // RemoteAddrPort should return the address passed at construction time.
 func TestRegistrationConn_RemoteAddrPort(t *testing.T) {
 	q := &mockQueue{}
-	ul := &mockUdpListener{}
 	addr := netip.MustParseAddrPort("10.0.0.1:5555")
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(nil, addr, netip.MustParseAddr("192.0.2.1"), q)
 
 	type addrPorter interface {
 		RemoteAddrPort() netip.AddrPort
@@ -215,27 +185,26 @@ func TestRegistrationConn_RemoteAddrPort(t *testing.T) {
 // Close should do nothing (no panic, no close of UDP socket).
 func TestRegistrationConn_Close_NoEffect(t *testing.T) {
 	q := &mockQueue{}
-	ul := &mockUdpListener{}
+	listener := listenRegistrationUDP(t)
 	addr := netip.MustParseAddrPort("10.0.0.1:6666")
 
-	adapter := NewRegistrationConn(ul, addr, q)
+	adapter := NewRegistrationConn(listener, addr, netip.MustParseAddr("192.0.2.1"), q)
 
 	err := adapter.Close()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if ul.closed {
-		t.Fatalf("Close() on adapter must NOT close UDP listener")
+	if err := listener.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("shared UDP socket was closed by adapter: %v", err)
 	}
 }
 
 func TestRegistrationConn_SetAddrPort(t *testing.T) {
 	q := &mockQueue{}
-	ul := &mockUdpListener{}
 	original := netip.MustParseAddrPort("10.0.0.1:9999")
 	updated := netip.MustParseAddrPort("10.0.0.2:8888")
-	adapter := NewRegistrationConn(ul, original, q).(*registrationConn)
+	adapter := NewRegistrationConn(nil, original, netip.MustParseAddr("192.0.2.1"), q).(*registrationConn)
 
 	adapter.SetAddrPort(updated)
 

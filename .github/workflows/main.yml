@@ -44,6 +44,9 @@ jobs:
           cd src
           go mod tidy
 
+      - name: Prepare IPv6 address for UDP source regression test
+        run: sudo ip -6 addr add fd00::2/128 dev lo nodad
+
       - name: Run tests with coverage
         run: |
           cd src
