@@ -7,8 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"time"
+
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
@@ -18,28 +22,32 @@ import (
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/servicepacket"
 	"tungo/internal/server/session"
-	transport "tungo/internal/transport/udp"
 )
 
 // Server moves packets between a TUN device and UDP client transports.
 type Server struct {
 	ctx       context.Context
 	tun       io.ReadWriter
-	conn      transport.UdpListener
+	conn      *net.UDPConn
 	peers     *session.Repository
 	registrar *registrar
 	deriver   keys.DefaultKeyDeriver
 }
 
+// New configures conn for receiving destination addresses. On error, the caller
+// retains ownership of conn and must close it.
 func New(
 	ctx context.Context,
 	tun io.ReadWriter,
-	conn transport.UdpListener,
+	conn *net.UDPConn,
 	peers *session.Repository,
 	newHandshake func() *noise.IKHandshake,
 	ipv4Subnet netip.Prefix,
 	ipv6Subnet netip.Prefix,
-) *Server {
+) (*Server, error) {
+	if err := setControlMessage(conn); err != nil {
+		return nil, fmt.Errorf("enable UDP destination control messages: %w", err)
+	}
 	return &Server{
 		ctx: ctx, tun: tun, conn: conn,
 		peers: peers,
@@ -54,7 +62,16 @@ func New(
 			ipv4Subnet,
 			ipv6Subnet,
 		),
+	}, nil
+}
+
+func setControlMessage(conn *net.UDPConn) error {
+	// ListenUDP("udp", 0.0.0.0) may create a dual-stack IPv6 socket.
+	// IPv6 packet info also reports destinations of mapped IPv4 datagrams.
+	if conn.LocalAddr().(*net.UDPAddr).AddrPort().Addr().Is4() {
+		return ipv4.NewPacketConn(conn).SetControlMessage(ipv4.FlagDst, true)
 	}
+	return ipv6.NewPacketConn(conn).SetControlMessage(ipv6.FlagDst, true)
 }
 
 // Run moves packets in both directions until the context is cancelled or one
@@ -86,7 +103,7 @@ func (s *Server) runTransport() error {
 	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	var oob [1024]byte
 	for {
-		n, _, _, addr, err := s.conn.ReadMsgUDPAddrPort(frame[:], oob[:])
+		n, oobn, _, addr, err := s.conn.ReadMsgUDPAddrPort(frame[:], oob[:])
 		if err != nil {
 			if s.ctx.Err() != nil {
 				s.closeRegistrations()
@@ -98,7 +115,7 @@ func (s *Server) runTransport() error {
 		if n == 0 {
 			continue
 		}
-		if err := s.handleDatagram(addr, frame[:n]); err != nil {
+		if err := s.handleDatagram(addr, frame[:n], oob[:oobn]); err != nil {
 			slog.Warn("failed to handle UDP packet", "err", err)
 		}
 	}
@@ -125,7 +142,7 @@ func (s *Server) closeRegistrations() {
 	}
 }
 
-func (s *Server) handleDatagram(addr netip.AddrPort, frame []byte) error {
+func (s *Server) handleDatagram(clientAddrPort netip.AddrPort, frame, oob []byte) error {
 	routeID, ok := udpcrypto.ReadRouteID(frame)
 	if !ok {
 		return nil
@@ -133,11 +150,35 @@ func (s *Server) handleDatagram(addr netip.AddrPort, frame []byte) error {
 	peer, err := s.peers.GetByRouteID(routeID)
 	if err != nil {
 		if s.registrar != nil {
-			s.registrar.enqueuePacket(addr, frame)
+			serverAddr, err := datagramDestination(oob)
+			if err != nil {
+				return err
+			}
+			s.registrar.enqueuePacket(registrationKey{clientAddrPort: clientAddrPort, serverAddr: serverAddr}, frame)
 		}
 		return nil
 	}
-	return s.handleEstablished(addr, peer, frame)
+	return s.handleEstablished(clientAddrPort, peer, frame)
+}
+
+// Copy the destination out of the receive buffer before it is reused. A missing
+// destination must not silently fall back to the kernel's default reply source.
+func datagramDestination(oob []byte) (netip.Addr, error) {
+	var cm4 ipv4.ControlMessage
+	if err := cm4.Parse(oob); err != nil {
+		return netip.Addr{}, fmt.Errorf("parse UDP IPv4 control message: %w", err)
+	}
+	if addr, ok := netip.AddrFromSlice(cm4.Dst); ok {
+		return addr.Unmap(), nil
+	}
+	var cm6 ipv6.ControlMessage
+	if err := cm6.Parse(oob); err != nil {
+		return netip.Addr{}, fmt.Errorf("parse UDP IPv6 control message: %w", err)
+	}
+	if addr, ok := netip.AddrFromSlice(cm6.Dst); ok {
+		return addr.Unmap(), nil
+	}
+	return netip.Addr{}, errors.New("UDP destination control message missing")
 }
 
 func (s *Server) handleEstablished(addr netip.AddrPort, peer *session.Peer, frame []byte) error {

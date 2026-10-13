@@ -24,8 +24,11 @@ const MaxNameLength = 16
 // through List, Activate, and Delete under the original path restrictions.
 func ValidateName(name string) error {
 	if len(name) == 0 || len(name) > MaxNameLength || strings.IndexFunc(name, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '_' || r == '-')
+		return (r < 'a' || r > 'z') &&
+			(r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') &&
+			r != '_' &&
+			r != '-'
 	}) >= 0 {
 		return fmt.Errorf("configuration name must be 1-%d characters using only A-Z, a-z, 0-9, _ or -", MaxNameLength)
 	}

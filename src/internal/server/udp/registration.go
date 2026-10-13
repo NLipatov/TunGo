@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"sync"
 	"time"
@@ -59,12 +60,19 @@ const (
 	maxConcurrentRegistrations = 1000
 )
 
+// registrationKey separates handshakes to different local IPs, even when they
+// originate from the same client endpoint on a shared wildcard listener.
+type registrationKey struct {
+	clientAddrPort netip.AddrPort
+	serverAddr     netip.Addr
+}
+
 // registrar turns unknown UDP peers into established sessions using a
-// per-client packet queue.
+// per-endpoint-pair packet queue.
 type registrar struct {
 	ctx context.Context
 
-	listenerConn transport.UdpListener
+	listenerConn *net.UDPConn
 	sessionRepo  udpRegistrationRepo
 
 	newHandshake newHandshake
@@ -74,7 +82,7 @@ type registrar struct {
 	ipv6Subnet      netip.Prefix
 
 	mu            sync.Mutex
-	registrations map[netip.AddrPort]*registrationQueue
+	registrations map[registrationKey]*registrationQueue
 }
 
 type udpRegistrationRepo interface {
@@ -85,7 +93,7 @@ type udpRegistrationRepo interface {
 
 func newRegistrar(
 	ctx context.Context,
-	listenerConn transport.UdpListener,
+	listenerConn *net.UDPConn,
 	sessionRepo udpRegistrationRepo,
 	newHandshake newHandshake,
 	newCrypto newCrypto,
@@ -100,12 +108,12 @@ func newRegistrar(
 		newCrypto:       newCrypto,
 		interfaceSubnet: interfaceSubnet,
 		ipv6Subnet:      ipv6Subnet,
-		registrations:   make(map[netip.AddrPort]*registrationQueue),
+		registrations:   make(map[registrationKey]*registrationQueue),
 	}
 }
 
-func (r *registrar) enqueuePacket(addrPort netip.AddrPort, packet []byte) {
-	q, isNew := r.getOrCreateRegistrationQueue(addrPort)
+func (r *registrar) enqueuePacket(key registrationKey, packet []byte) {
+	q, isNew := r.getOrCreateRegistrationQueue(key)
 	if q == nil {
 		// At registration capacity - silently drop to prevent DoS amplification.
 		// Legitimate clients will retry; attackers waste resources.
@@ -113,7 +121,7 @@ func (r *registrar) enqueuePacket(addrPort netip.AddrPort, packet []byte) {
 	}
 	q.enqueue(packet)
 	if isNew {
-		go r.registerClient(addrPort, q)
+		go r.registerClient(key, q)
 	}
 }
 
@@ -123,7 +131,7 @@ func (r *registrar) closeAll() {
 	for _, q := range r.registrations {
 		queues = append(queues, q)
 	}
-	r.registrations = make(map[netip.AddrPort]*registrationQueue)
+	r.registrations = make(map[registrationKey]*registrationQueue)
 	r.mu.Unlock()
 
 	for _, q := range queues {
@@ -131,11 +139,11 @@ func (r *registrar) closeAll() {
 	}
 }
 
-func (r *registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*registrationQueue, bool) {
+func (r *registrar) getOrCreateRegistrationQueue(key registrationKey) (*registrationQueue, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if q, ok := r.registrations[addrPort]; ok {
+	if q, ok := r.registrations[key]; ok {
 		return q, false
 	}
 
@@ -148,15 +156,15 @@ func (r *registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*regi
 	}
 
 	q := newRegistrationQueue(registrationQueueCapacity)
-	r.registrations[addrPort] = q
+	r.registrations[key] = q
 	return q, true
 }
 
-func (r *registrar) removeRegistrationQueue(addrPort netip.AddrPort) {
+func (r *registrar) removeRegistrationQueue(key registrationKey) {
 	r.mu.Lock()
-	q, ok := r.registrations[addrPort]
+	q, ok := r.registrations[key]
 	if ok {
-		delete(r.registrations, addrPort)
+		delete(r.registrations, key)
 	}
 	r.mu.Unlock()
 
@@ -165,8 +173,9 @@ func (r *registrar) removeRegistrationQueue(addrPort netip.AddrPort) {
 	}
 }
 
-func (r *registrar) registerClient(addrPort netip.AddrPort, queue *registrationQueue) {
-	defer r.removeRegistrationQueue(addrPort)
+func (r *registrar) registerClient(key registrationKey, queue *registrationQueue) {
+	defer r.removeRegistrationQueue(key)
+	clientAddrPort := key.clientAddrPort
 
 	ctx, cancel := context.WithTimeout(r.ctx, handshakeTimeout)
 	defer cancel()
@@ -178,7 +187,7 @@ func (r *registrar) registerClient(addrPort netip.AddrPort, queue *registrationQ
 
 	// Transport reads packets queued by the UDP receive loop during registration.
 	// and writes responses to the shared UDP socket.
-	regTransport := transport.NewRegistrationConn(r.listenerConn, addrPort, queue)
+	regTransport := transport.NewRegistrationConn(r.listenerConn, clientAddrPort, key.serverAddr, queue)
 
 	var h handshake
 	var clientID int
@@ -190,22 +199,22 @@ func (r *registrar) registerClient(addrPort netip.AddrPort, queue *registrationQ
 			break
 		}
 		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
-			slog.Warn("UDP cookie sent, awaiting retry", "client", addrPort.Addr().AsSlice())
+			slog.Warn("UDP cookie sent, awaiting retry", "client", clientAddrPort.Addr().AsSlice())
 			continue
 		}
-		slog.Warn("UDP host failed registration", "client", addrPort.Addr().AsSlice(), "err", handshakeErr)
+		slog.Warn("UDP host failed registration", "client", clientAddrPort.Addr().AsSlice(), "err", handshakeErr)
 		return
 	}
 
 	internalIP, allocErr := addressing.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
-		slog.Error("UDP host IP allocation failed", "client", addrPort.Addr().AsSlice(), "err", allocErr)
+		slog.Error("UDP host IP allocation failed", "client", clientAddrPort.Addr().AsSlice(), "err", allocErr)
 		return
 	}
 
 	cryptoSession, epochController, cryptoSessionErr := r.newCrypto(h, true)
 	if cryptoSessionErr != nil {
-		slog.Error("failed to init UDP crypto session", "client", addrPort.Addr().AsSlice(), "err", cryptoSessionErr)
+		slog.Error("failed to init UDP crypto session", "client", clientAddrPort.Addr().AsSlice(), "err", cryptoSessionErr)
 		return
 	}
 	var rekeyCoordinator *rekey.ServerRekeyCoordinator
@@ -241,8 +250,8 @@ func (r *registrar) registerClient(addrPort netip.AddrPort, queue *registrationQ
 	}
 
 	peer := session.NewPeerWithAuth(
-		cryptoSession, rekeyCoordinator, internalIP, addrPort, clientPubKey, allowedIPs, regTransport,
+		cryptoSession, rekeyCoordinator, internalIP, clientAddrPort, clientPubKey, allowedIPs, regTransport,
 	)
 	r.sessionRepo.Add(peer)
-	slog.Info("UDP client registered", "client", addrPort.Addr(), "internal_ip", internalIP)
+	slog.Info("UDP client registered", "client", clientAddrPort.Addr(), "internal_ip", internalIP)
 }

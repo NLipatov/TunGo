@@ -78,5 +78,7 @@ func (q *registrationQueue) Close() {
 		return
 	}
 	q.closed = true
+	q.queue = nil
+	q.head, q.tail, q.count = 0, 0, 0
 	q.cond.Broadcast()
 }
