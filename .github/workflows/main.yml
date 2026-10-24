@@ -21,7 +21,7 @@ on:
       - '.github/tests/tunnel/**'
 
 env:
-  GO_VERSION: '1.27.0'
+  GO_VERSION: '1.27.3'
   GOTOOLCHAIN: 'local'
 
 jobs:
