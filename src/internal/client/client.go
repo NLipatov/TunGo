@@ -103,11 +103,11 @@ func (c *Client) runSession(parentCtx context.Context) error {
 	select {
 	case <-ctx.Done():
 		cancel()
-		<-done
+		<-done //nolint:errcheck
 		return ctx.Err()
 	case <-resume.Watch(ctx):
 		cancel()
-		<-done
+		<-done //nolint:errcheck
 		return ErrResumeDetected
 	case err := <-done:
 		return err
