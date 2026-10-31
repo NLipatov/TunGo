@@ -60,7 +60,6 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	clientConfigurations := clientconfig.Files()
 	var serverFile *serverconfig.File
 	if platform.ServerModeSupported() {
 		serverFile = serverconfig.DefaultFile()
@@ -70,17 +69,14 @@ func runTUI(ctx context.Context) error {
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}
-	tuiUI, err := tui.New(clientConfigurations, serverFile, daemonControl)
-	if err != nil {
-		return err
-	}
+	runner := tui.New(serverFile, daemonControl)
 	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 	trafficstats.SetGlobal(trafficCollector)
 	go trafficCollector.Start(ctx)
 
 	defer trafficstats.SetGlobal(nil)
 
-	return tuiUI.Run(ctx)
+	return runner.Run(ctx)
 }
 
 // requireElevation verifies that the process has administrative privileges and returns an error with elevation instructions when it does not.

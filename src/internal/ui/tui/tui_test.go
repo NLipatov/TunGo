@@ -18,23 +18,12 @@ import (
 
 func TestNewTUI(t *testing.T) {
 	directory := t.TempDir()
-	ui, err := New(
-		clientconfig.Files(),
+	ui := New(
 		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
 		nil,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if ui.clientConfigurations == nil || ui.serverFile == nil {
 		t.Fatal("configuration files were not registered")
-	}
-}
-
-func TestNewTUIRejectsMissingClientConfigurations(t *testing.T) {
-	ui, err := New(nil, nil, nil)
-	if err == nil || ui != nil {
-		t.Fatalf("New() = %v, %v; want nil and error", ui, err)
 	}
 }
 
@@ -178,15 +167,10 @@ func validClientConfiguration() *clientconfig.Configuration {
 func newTestTUI(t *testing.T) *TUI {
 	t.Helper()
 	directory := t.TempDir()
-	ui, err := New(
-		clientconfig.Files(),
+	return New(
 		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
 		nil,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ui
 }
 
 func requireNoTTY(t *testing.T) {
