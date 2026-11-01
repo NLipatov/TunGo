@@ -22,7 +22,7 @@ func TestFailoverRotatesNamedConfigurations(t *testing.T) {
 			if err := configurations.Activate("a"); err != nil {
 				t.Fatal(err)
 			}
-			failover := NewFailover(configurations)
+			failover := Failover{configurations: configurations}
 			// Rotation starts at the first named profile, even if it is already active.
 			for i, want := range tc.sequence {
 				if err := failover.Failover(); err != nil {
@@ -53,9 +53,9 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 			initial := validTestConfiguration()
 			initial.ClientID = 7
 			writeConfiguration(t, configurations.activePath, initial)
-			failover := NewFailover(configurations)
+			failover := Failover{configurations: configurations}
 			if err := failover.Failover(); !errors.Is(err, ErrNoFailoverCandidates) {
-				t.Fatalf("Failover() error = %v, want ErrNoFailoverOptionAvailable", err)
+				t.Fatalf("Failover() error = %v, want ErrNoFailoverCandidates", err)
 			}
 			active, err := configurations.Active()
 			if err != nil {
@@ -70,7 +70,7 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 
 func TestFailoverAfterNamedConfigurationDeleted(t *testing.T) {
 	configurations := failoverTestConfigurations(t, "a", "b", "c")
-	failover := NewFailover(configurations)
+	failover := Failover{configurations: configurations}
 	for range 2 {
 		if err := failover.Failover(); err != nil {
 			t.Fatal(err)
@@ -96,7 +96,7 @@ func TestFailoverAdvancesAfterActivationError(t *testing.T) {
 	if err := os.WriteFile(configurations.activePath+".a", []byte("{"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	failover := NewFailover(configurations)
+	failover := Failover{configurations: configurations}
 	var syntaxError *json.SyntaxError
 	if err := failover.Failover(); !errors.As(err, &syntaxError) {
 		t.Fatalf("Failover() error = %v, want JSON syntax error", err)

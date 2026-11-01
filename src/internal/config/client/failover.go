@@ -13,9 +13,9 @@ type Failover struct {
 	cur            int
 }
 
-func NewFailover(configurations *Configurations) Failover {
+func NewFailover() Failover {
 	return Failover{
-		configurations: configurations,
+		configurations: Files(),
 	}
 }
 
