@@ -96,7 +96,7 @@ func (c *Client) Run(ctx context.Context) error {
 
 func (c *Client) attemptFailover(sessionErr error) error {
 	if !c.sessionReadyAt.IsZero() &&
-		time.Now().Sub(c.sessionReadyAt) >= 5*time.Minute {
+		time.Since(c.sessionReadyAt) >= 5*time.Minute {
 		c.failoverCount = 0
 	}
 	if sessionErr != nil && !errors.Is(sessionErr, ErrResumeDetected) {
