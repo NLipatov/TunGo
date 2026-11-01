@@ -126,6 +126,14 @@ func (c *Configurations) Delete(name string) error {
 	return os.Remove(path)
 }
 
+func (c *Configurations) Read(name string) ([]byte, error) {
+	path, err := c.alternativePath(name)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
 func (c *Configurations) alternativePath(name string) (string, error) {
 	if name == "" || name == "." || name == ".." ||
 		strings.ContainsAny(name, "/\\:\x00") {
