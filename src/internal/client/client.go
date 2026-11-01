@@ -66,7 +66,7 @@ func New() (*Client, error) {
 	return &Client{
 		configurations:    configurations,
 		failover:          clientconfig.NewFailover(configurations),
-		failoverThreshold: 5,
+		failoverThreshold: 3,
 	}, nil
 }
 
