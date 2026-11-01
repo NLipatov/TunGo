@@ -112,9 +112,11 @@ func (c *Client) attemptFailover(sessionErr error) error {
 		c.failoverCount++
 	}
 	if c.failoverCount >= c.failoverThreshold {
-		if err := c.failover.Failover(); err != nil {
+		name, err := c.failover.Failover()
+		if err != nil {
 			return err
 		}
+		slog.Warn("failover configuration activated", "configuration", name)
 		c.failoverCount = 0
 	}
 	return nil

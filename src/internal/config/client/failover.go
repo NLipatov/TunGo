@@ -19,15 +19,16 @@ func NewFailover(configurations *Configurations) Failover {
 	}
 }
 
-func (f *Failover) Failover() error {
+func (f *Failover) Failover() (string, error) {
 	candidates, err := f.configurations.List()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(candidates) < 2 {
-		return ErrNoFailoverCandidates
+		return "", ErrNoFailoverCandidates
 	}
-	err = f.configurations.Activate(candidates[f.cur%len(candidates)])
+	candidate := candidates[f.cur%len(candidates)]
+	err = f.configurations.Activate(candidate)
 	f.cur++
-	return err
+	return candidate, err
 }

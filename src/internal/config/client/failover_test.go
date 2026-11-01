@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -24,8 +25,12 @@ func TestFailoverRotatesNamedConfigurations(t *testing.T) {
 			failover := NewFailover(configurations)
 			// Rotation starts at the first named profile, even if it is already active.
 			for i, want := range tc.sequence {
-				if err := failover.Failover(); err != nil {
+				name, err := failover.Failover()
+				if err != nil {
 					t.Fatalf("Failover() call %d: %v", i+1, err)
+				}
+				if wantName := tc.names[want-1]; name != wantName {
+					t.Fatalf("call %d: name = %q, want %q", i+1, name, wantName)
 				}
 				active, err := configurations.Active()
 				if err != nil {
@@ -53,8 +58,9 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 			initial.ClientID = 7
 			writeConfiguration(t, configurations.activePath, initial)
 			failover := NewFailover(configurations)
-			if err := failover.Failover(); !errors.Is(err, ErrNoFailoverCandidates) {
-				t.Fatalf("Failover() error = %v, want ErrNoFailoverCandidates", err)
+			name, err := failover.Failover()
+			if name != "" || !errors.Is(err, ErrNoFailoverCandidates) {
+				t.Fatalf("Failover() = %q, %v; want empty name and ErrNoFailoverCandidates", name, err)
 			}
 			active, err := configurations.Active()
 			if err != nil {
@@ -67,19 +73,36 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 	}
 }
 
+func TestFailoverReturnsEmptyNameOnListError(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "configurations")
+	if err := os.WriteFile(directory, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	failover := NewFailover(NewConfigurations(directory))
+	name, err := failover.Failover()
+	var pathError *os.PathError
+	if name != "" || !errors.As(err, &pathError) {
+		t.Fatalf("Failover() = %q, %v; want empty name and directory read error", name, err)
+	}
+}
+
 func TestFailoverAfterNamedConfigurationDeleted(t *testing.T) {
 	configurations := failoverTestConfigurations(t, "a", "b", "c")
 	failover := NewFailover(configurations)
 	for range 2 {
-		if err := failover.Failover(); err != nil {
+		if _, err := failover.Failover(); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := configurations.Delete("a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := failover.Failover(); err != nil {
+	name, err := failover.Failover()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if name != "b" {
+		t.Fatalf("Failover() name = %q, want b", name)
 	}
 	active, err := configurations.Active()
 	if err != nil {
@@ -97,11 +120,16 @@ func TestFailoverAdvancesAfterActivationError(t *testing.T) {
 	}
 	failover := NewFailover(configurations)
 	var syntaxError *json.SyntaxError
-	if err := failover.Failover(); !errors.As(err, &syntaxError) {
-		t.Fatalf("Failover() error = %v, want JSON syntax error", err)
+	name, err := failover.Failover()
+	if name != "a" || !errors.As(err, &syntaxError) {
+		t.Fatalf("Failover() = %q, %v; want a and JSON syntax error", name, err)
 	}
-	if err := failover.Failover(); err != nil {
+	name, err = failover.Failover()
+	if err != nil {
 		t.Fatalf("Failover() after invalid profile: %v", err)
+	}
+	if name != "b" {
+		t.Fatalf("Failover() name after invalid profile = %q, want b", name)
 	}
 	active, err := configurations.Active()
 	if err != nil {
