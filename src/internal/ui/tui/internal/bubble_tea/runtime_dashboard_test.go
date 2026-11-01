@@ -488,13 +488,17 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Protocol: settings.UDP,
-		Endpoints: []EndpointInfo{{
-			Protocol:   settings.UDP,
-			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
-			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
-			TunnelIPv6: netip.MustParseAddr("fd00::2"),
-		}},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Protocol: settings.UDP,
+				Endpoints: []EndpointInfo{{
+					Protocol:   settings.UDP,
+					Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
+					TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+					TunnelIPv6: netip.MustParseAddr("fd00::2"),
+				}},
+			}
+		},
 	}, testSettings())
 	view := m.View().Content
 	if !strings.Contains(view, "Protocol: UDP") {
@@ -511,25 +515,29 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: mode.Server,
-		Endpoints: []EndpointInfo{
-			{
-				Protocol:   settings.TCP,
-				Server:     settings.Host{IPv4: "198.51.100.10"},
-				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
-				TunnelIPv6: netip.MustParseAddr("fd00::1"),
-			},
-			{
-				Protocol:   settings.UDP,
-				Server:     settings.Host{IPv4: "198.51.100.10"},
-				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
-				TunnelIPv6: netip.MustParseAddr("fd00::2"),
-			},
-			{
-				Protocol:   settings.WS,
-				Server:     settings.Host{IPv4: "198.51.100.10"},
-				TunnelIPv4: netip.MustParseAddr("10.0.2.1"),
-				TunnelIPv6: netip.MustParseAddr("fd00::3"),
-			},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Endpoints: []EndpointInfo{
+					{
+						Protocol:   settings.TCP,
+						Server:     settings.Host{IPv4: "198.51.100.10"},
+						TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
+						TunnelIPv6: netip.MustParseAddr("fd00::1"),
+					},
+					{
+						Protocol:   settings.UDP,
+						Server:     settings.Host{IPv4: "198.51.100.10"},
+						TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
+						TunnelIPv6: netip.MustParseAddr("fd00::2"),
+					},
+					{
+						Protocol:   settings.WS,
+						Server:     settings.Host{IPv4: "198.51.100.10"},
+						TunnelIPv4: netip.MustParseAddr("10.0.2.1"),
+						TunnelIPv6: netip.MustParseAddr("fd00::3"),
+					},
+				},
+			}
 		},
 	}, testSettings())
 
@@ -554,17 +562,21 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: mode.Server,
-		Endpoints: []EndpointInfo{
-			{
-				Protocol:   settings.TCP,
-				Server:     settings.Host{IPv4: "198.51.100.10"},
-				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
-			},
-			{
-				Protocol:   settings.UDP,
-				Server:     settings.Host{IPv6: "2001:db8::20"},
-				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
-			},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Endpoints: []EndpointInfo{
+					{
+						Protocol:   settings.TCP,
+						Server:     settings.Host{IPv4: "198.51.100.10"},
+						TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
+					},
+					{
+						Protocol:   settings.UDP,
+						Server:     settings.Host{IPv6: "2001:db8::20"},
+						TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
+					},
+				},
+			}
 		},
 	}, testSettings())
 
@@ -1534,9 +1546,13 @@ func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []EndpointInfo{{
-			Protocol: settings.TCP,
-		}},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Endpoints: []EndpointInfo{{
+					Protocol: settings.TCP,
+				}},
+			}
+		},
 	}, testSettings())
 
 	if got := m.tunnelIPLines(); got != nil {
@@ -1547,9 +1563,13 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: mode.Server,
-		Endpoints: []EndpointInfo{
-			{Protocol: settings.TCP},
-			{Protocol: settings.UDP},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Endpoints: []EndpointInfo{
+					{Protocol: settings.TCP},
+					{Protocol: settings.UDP},
+				},
+			}
 		},
 	}, testSettings())
 
@@ -1560,9 +1580,13 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *t
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []EndpointInfo{{
-			Protocol: settings.TCP,
-		}},
+		RuntimeInfo: func() RuntimeInfo {
+			return RuntimeInfo{
+				Endpoints: []EndpointInfo{{
+					Protocol: settings.TCP,
+				}},
+			}
+		},
 	}, testSettings())
 
 	if got := m.serverAddressLines(); got != nil {

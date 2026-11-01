@@ -18,8 +18,7 @@ type RuntimeDashboardOptions struct {
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	Ready           func() bool
-	Protocol        settings.Protocol
-	Endpoints       []EndpointInfo
+	RuntimeInfo     func() RuntimeInfo
 }
 
 type runtimeTickMsg struct {
@@ -72,6 +71,7 @@ type RuntimeDashboard struct {
 	reconfigureRequested bool
 	ready                func() bool
 	connected            bool
+	runtimeInfo          func() RuntimeInfo
 	protocol             settings.Protocol
 	endpoints            []EndpointInfo
 }
@@ -102,9 +102,9 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		tickSeq:         1,
 		ready:           ready,
 		connected:       connected,
-		protocol:        options.Protocol,
-		endpoints:       options.Endpoints,
+		runtimeInfo:     options.RuntimeInfo,
 	}
+	model.refreshRuntimeInfo()
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
 	}
@@ -138,6 +138,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen != runtimeScreenDataplane {
 			return m, nil
 		}
+		m.refreshRuntimeInfo()
 		if m.preferences.ShowDataplaneGraph {
 			m.recordTrafficSample(trafficstats.SnapshotGlobal())
 		}
@@ -172,10 +173,12 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logs.stopUpdates()
 				m.screen = runtimeScreenDataplane
 				m.tickSeq++
+				m.refreshRuntimeInfo()
 				return m, runtimeTickCmd(m.tickSeq)
 			case runtimeScreenSettings:
 				m.screen = runtimeScreenDataplane
 				m.tickSeq++
+				m.refreshRuntimeInfo()
 				return m, runtimeTickCmd(m.tickSeq)
 			}
 			return m, nil
@@ -192,6 +195,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.screen == runtimeScreenDataplane && previous != runtimeScreenDataplane {
 				m.tickSeq++
+				m.refreshRuntimeInfo()
 				return m, runtimeTickCmd(m.tickSeq)
 			}
 			return m, nil
@@ -207,6 +211,15 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *RuntimeDashboard) refreshRuntimeInfo() {
+	if m.runtimeInfo == nil {
+		return
+	}
+	info := m.runtimeInfo()
+	m.protocol = info.Protocol
+	m.endpoints = info.Endpoints
 }
 
 func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

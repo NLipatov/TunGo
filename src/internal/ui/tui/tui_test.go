@@ -2,10 +2,7 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,49 +94,27 @@ func TestShowFatalErrorReturnsWhenProgramCannotOpenTTY(t *testing.T) {
 }
 
 func TestClientRuntimeInfo(t *testing.T) {
-	configurations := clientconfig.NewConfigurations(t.TempDir())
-	configuration := validClientConfiguration()
-	data, err := json.Marshal(configuration)
-	if err != nil {
-		t.Fatal(err)
+	active := settings.Settings{
+		Protocol: settings.TCP,
+		Network: settings.Network{
+			Server: settings.Host{IPv4: "192.0.2.1", IPv6: "2001:db8::1"},
+			Port:   8080,
+			IPv4:   netip.MustParseAddr("10.0.0.2"),
+			IPv6:   netip.MustParseAddr("fd00::2"),
+		},
 	}
-	if err := configurations.Import("server", string(data)); err != nil {
-		t.Fatal(err)
-	}
-	if err := configurations.Activate("server"); err != nil {
-		t.Fatal(err)
-	}
-	info, err := clientRuntimeInfo(configurations)
-	if err != nil {
-		t.Fatal(err)
-	}
+	info := clientRuntimeInfo(active)
 	if info.Protocol != settings.TCP || len(info.Endpoints) != 1 || info.Endpoints[0].Port != 8080 ||
-		info.Endpoints[0].Server != configuration.TCPSettings.Server ||
-		info.Endpoints[0].TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
+		info.Endpoints[0].Protocol != active.Protocol || info.Endpoints[0].Server != active.Server ||
+		info.Endpoints[0].TunnelIPv4 != active.IPv4 || info.Endpoints[0].TunnelIPv6 != active.IPv6 {
 		t.Fatalf("runtime info = %+v", info)
 	}
 }
 
-func TestClientRuntimeInfoRejectsInvalidConfiguration(t *testing.T) {
-	directory := t.TempDir()
-	configurations := clientconfig.NewConfigurations(directory)
-	configuration := validClientConfiguration()
-	configuration.Protocol = settings.UNKNOWN
-	data, err := json.Marshal(configuration)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "client_configuration.json"), data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := clientRuntimeInfo(configurations); err == nil || !strings.Contains(err.Error(), "unsupported protocol") {
-		t.Fatalf("clientRuntimeInfo() error = %v, want unsupported protocol", err)
-	}
-}
-
-func TestClientRuntimeInfoReportsMissingConfiguration(t *testing.T) {
-	if _, err := clientRuntimeInfo(clientconfig.NewConfigurations(t.TempDir())); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("clientRuntimeInfo() error = %v, want missing configuration", err)
+func TestClientRuntimeInfoBeforeFirstConnectionAttempt(t *testing.T) {
+	info := clientRuntimeInfo(settings.Settings{})
+	if info.Protocol != settings.UNKNOWN || len(info.Endpoints) != 0 {
+		t.Fatalf("runtime info before settings are loaded = %+v", info)
 	}
 }
 
@@ -172,26 +147,6 @@ func TestEndpointInfo(t *testing.T) {
 	endpoint, ok := endpointInfo(settings.TCP, protocolSettings)
 	if !ok || endpoint.Protocol != settings.WS || endpoint.TunnelIPv4 != protocolSettings.IPv4 {
 		t.Fatalf("endpointInfo() = %+v, %v", endpoint, ok)
-	}
-}
-
-func validClientConfiguration() *clientconfig.Configuration {
-	return &clientconfig.Configuration{
-		ClientID: 1,
-		Protocol: settings.TCP,
-		TCPSettings: settings.Settings{
-			Network: settings.Network{
-				TunName:    "tun0",
-				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-				Server:     settings.Host{IPv4: "192.0.2.1"},
-				Port:       8080,
-			},
-			MTU:      1500,
-			Protocol: settings.TCP,
-		},
-		X25519PublicKey:  make([]byte, 32),
-		ClientPublicKey:  make([]byte, 32),
-		ClientPrivateKey: make([]byte, 32),
 	}
 }
 

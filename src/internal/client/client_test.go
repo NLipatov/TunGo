@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,6 +33,70 @@ func TestNewClient(t *testing.T) {
 	}
 	if client.configurations == nil || client.tunManager != nil || client.Ready() {
 		t.Fatalf("unexpected new client state: %+v", client)
+	}
+}
+
+func TestActiveSettingsTracksConnectionAttempts(t *testing.T) {
+	client := newTestClient(t)
+	names := []string{"a", "b"}
+	want := make([]settings.Settings, len(names))
+	for i, name := range names {
+		configuration := clientTestConfiguration()
+		configuration.ClientID = i + 1
+		configuration.TCPSettings.Port = 8080 + i
+		importClientConfiguration(t, client.configurations, name, configuration)
+		if err := client.configurations.Activate(name); err != nil {
+			t.Fatal(err)
+		}
+		active, err := client.configurations.Active()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want[i], err = active.ActiveSettings()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stopReading := make(chan struct{})
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			select {
+			case <-stopReading:
+				return
+			default:
+				got := client.ActiveSettings()
+				if got.Protocol == settings.UNKNOWN {
+					continue
+				}
+				if !reflect.DeepEqual(got, want[0]) && !reflect.DeepEqual(got, want[1]) {
+					t.Errorf("ActiveSettings() returned an inconsistent snapshot: %+v", got)
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		close(stopReading)
+		<-readerDone
+	}()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for i := range 32 {
+		index := i % len(names)
+		if err := client.configurations.Activate(names[index]); err != nil {
+			t.Fatal(err)
+		}
+		// Cancellation stops before TUN setup while still publishing this attempt's settings.
+		if err := client.runTunnel(ctx); !errors.Is(err, context.Canceled) {
+			t.Fatalf("runTunnel() error = %v, want context cancellation", err)
+		}
+		if got := client.ActiveSettings(); !reflect.DeepEqual(got, want[index]) {
+			t.Fatalf("attempt %d: ActiveSettings() = %+v, want %+v", i, got, want[index])
+		}
 	}
 }
 

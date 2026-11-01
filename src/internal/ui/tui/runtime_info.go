@@ -1,27 +1,18 @@
 package tui
 
 import (
-	clientconfig "tungo/internal/config/client"
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
 	bubbleTea "tungo/internal/ui/tui/internal/bubble_tea"
 )
 
-// clientRuntimeInfo retrieves the client's active settings and builds runtime information with the configured protocol and available endpoint.
-func clientRuntimeInfo(configurations *clientconfig.Configurations) (bubbleTea.RuntimeInfo, error) {
-	configuration, err := configurations.Active()
-	if err != nil {
-		return bubbleTea.RuntimeInfo{}, err
-	}
-	active, err := configuration.ActiveSettings()
-	if err != nil {
-		return bubbleTea.RuntimeInfo{}, err
-	}
-	info := bubbleTea.RuntimeInfo{Protocol: configuration.Protocol}
-	if endpoint, ok := endpointInfo(configuration.Protocol, active); ok {
+// clientRuntimeInfo builds runtime information from the client's current settings.
+func clientRuntimeInfo(active settings.Settings) bubbleTea.RuntimeInfo {
+	info := bubbleTea.RuntimeInfo{Protocol: active.Protocol}
+	if endpoint, ok := endpointInfo(active.Protocol, active); ok {
 		info.Endpoints = []bubbleTea.EndpointInfo{endpoint}
 	}
-	return info, nil
+	return info
 }
 
 // serverRuntimeInfo builds runtime information from all enabled server profiles with valid endpoint settings.

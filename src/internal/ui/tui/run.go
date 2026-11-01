@@ -51,13 +51,17 @@ func (t *TUI) runRuntime(
 		Run(context.Context) error
 		Ready() bool
 	}
-	var info bubbleTea.RuntimeInfo
+	var runtimeInfo func() bubbleTea.RuntimeInfo
 	var err error
 	switch runtimeMode {
 	case mode.Client:
-		info, err = clientRuntimeInfo(t.clientConfigurations)
-		if err == nil {
-			running, err = client.New()
+		runningClient, createErr := client.New()
+		if createErr != nil {
+			return createErr
+		}
+		running = runningClient
+		runtimeInfo = func() bubbleTea.RuntimeInfo {
+			return clientRuntimeInfo(runningClient.ActiveSettings())
 		}
 	case mode.Server:
 		if t.serverFile == nil {
@@ -67,7 +71,8 @@ func (t *TUI) runRuntime(
 		if loadErr != nil {
 			return fmt.Errorf("load server configuration: %w", loadErr)
 		}
-		info = serverRuntimeInfo(configuration)
+		info := serverRuntimeInfo(configuration)
+		runtimeInfo = func() bubbleTea.RuntimeInfo { return info }
 		running, err = server.New(t.serverFile)
 	default:
 		return fmt.Errorf("invalid runtime mode: %v", runtimeMode)
@@ -85,8 +90,7 @@ func (t *TUI) runRuntime(
 			LogFeed:         logBuffer,
 			ServerSupported: t.serverFile != nil,
 			Ready:           running.Ready,
-			Protocol:        info.Protocol,
-			Endpoints:       info.Endpoints,
+			RuntimeInfo:     runtimeInfo,
 		})
 		if err == nil && reconfigure {
 			err = errReconfigureRequested
