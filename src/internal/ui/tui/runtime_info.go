@@ -8,7 +8,11 @@ import (
 )
 
 // clientRuntimeInfo retrieves the client's active settings and builds runtime information with the configured protocol and available endpoint.
-func clientRuntimeInfo(configuration *clientconfig.Configuration) (bubbleTea.RuntimeInfo, error) {
+func clientRuntimeInfo(configurations *clientconfig.Configurations) (bubbleTea.RuntimeInfo, error) {
+	configuration, err := configurations.Active()
+	if err != nil {
+		return bubbleTea.RuntimeInfo{}, err
+	}
 	active, err := configuration.ActiveSettings()
 	if err != nil {
 		return bubbleTea.RuntimeInfo{}, err

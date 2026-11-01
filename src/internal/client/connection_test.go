@@ -97,8 +97,8 @@ func mkWSSettings(host string, port int, proto settings.Protocol) settings.Setti
 	}
 }
 
-func testClientWithSettings(selected settings.Settings) *Client {
-	conf := &clientconfig.Configuration{ClientID: 1, Protocol: selected.Protocol}
+func testConfigurationWithSettings(selected settings.Settings) clientconfig.Configuration {
+	conf := clientconfig.Configuration{ClientID: 1, Protocol: selected.Protocol}
 	switch selected.Protocol {
 	case settings.UDP:
 		conf.UDPSettings = selected
@@ -107,7 +107,7 @@ func testClientWithSettings(selected settings.Settings) *Client {
 	case settings.WS, settings.WSS:
 		conf.WSSettings = selected
 	}
-	return &Client{configuration: conf}
+	return conf
 }
 
 // ConnectionFactoryMockWSServer spins up a barebones WS echo server at /ws.
@@ -156,9 +156,10 @@ func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shut
 func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 	t.Parallel()
 	// Out-of-range port should fail during addr:port parsing.
-	client := testClientWithSettings(mkTCPSettings(70000))
+	client := &Client{}
+	configuration := testConfigurationWithSettings(mkTCPSettings(70000))
 
-	_, _, _, err := client.connect(context.Background())
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil {
 		t.Fatalf("expected parse error for bad port")
 	}
@@ -166,9 +167,10 @@ func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 
 func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
 	t.Parallel()
-	client := testClientWithSettings(mkUDPSettings(70000))
+	client := &Client{}
+	configuration := testConfigurationWithSettings(mkUDPSettings(70000))
 
-	_, _, _, err := client.connect(context.Background())
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil {
 		t.Fatalf("expected parse error for bad UDP port")
 	}
@@ -294,8 +296,9 @@ func TestDialWS_Error_NoServer(t *testing.T) {
 func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	t.Parallel()
 	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
-	client := testClientWithSettings(mkWSSettings("127.0.0.1", 0, settings.WSS))
-	_, _, _, err := client.connect(context.Background())
+	client := &Client{}
+	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", 0, settings.WSS))
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
 	}
@@ -303,8 +306,9 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 
 func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
-	client := testClientWithSettings(settings.Settings{Protocol: 999})
-	_, _, _, err := client.connect(context.Background())
+	client := &Client{}
+	configuration := testConfigurationWithSettings(settings.Settings{Protocol: 999})
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol")
 	}
@@ -313,9 +317,10 @@ func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 // Verifies the error wrapping path for TCP.
 func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
-	client := testClientWithSettings(mkTCPSettings(1)) // likely closed → Dial error
+	client := &Client{}
+	configuration := testConfigurationWithSettings(mkTCPSettings(1)) // likely closed → Dial error
 
-	_, _, _, err := client.connect(context.Background())
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil {
 		t.Fatalf("expected dial error")
 	}
@@ -327,8 +332,9 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 // Verifies the error wrapping path for WS with provided Host fallback.
 func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
-	client := testClientWithSettings(mkWSSettings("127.0.0.1", 9, settings.WS))
-	_, _, _, err := client.connect(context.Background())
+	client := &Client{}
+	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", 9, settings.WS))
+	_, _, _, err := client.connect(context.Background(), configuration)
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
 		t.Fatalf("expected wrapped WS dial error, got: %v", err)
 	}
@@ -432,11 +438,10 @@ func (t *cfUnitNoDeadlineTransport) Close() error {
 }
 
 func TestEstablishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T) {
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientPublicKey:  []byte{1, 2, 3}, // invalid length
-			ClientPrivateKey: []byte{4, 5, 6}, // invalid length
-		},
+	client := &Client{}
+	configuration := clientconfig.Configuration{
+		ClientPublicKey:  []byte{1, 2, 3}, // invalid length
+		ClientPrivateKey: []byte{4, 5, 6}, // invalid length
 	}
 	tr := &cfUnitTransport{}
 
@@ -444,6 +449,7 @@ func TestEstablishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T
 		context.Background(),
 		tr,
 		settings.TCP,
+		configuration,
 	)
 	if err == nil || !strings.Contains(err.Error(), "client keys not configured") {
 		t.Fatalf("expected client keys error, got %v", err)
@@ -457,12 +463,11 @@ func TestEstablishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *test
 	clientPub := make([]byte, 32)
 	clientPriv := make([]byte, 32)
 
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientPublicKey:  clientPub,
-			ClientPrivateKey: clientPriv,
-			X25519PublicKey:  []byte{7, 8, 9}, // invalid length
-		},
+	client := &Client{}
+	configuration := clientconfig.Configuration{
+		ClientPublicKey:  clientPub,
+		ClientPrivateKey: clientPriv,
+		X25519PublicKey:  []byte{7, 8, 9}, // invalid length
 	}
 	tr := &cfUnitTransport{}
 
@@ -470,6 +475,7 @@ func TestEstablishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *test
 		context.Background(),
 		tr,
 		settings.TCP,
+		configuration,
 	)
 	if err == nil || !strings.Contains(err.Error(), "server public key not configured") {
 		t.Fatalf("expected server public key error, got %v", err)
@@ -485,12 +491,11 @@ func TestEstablishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
 	serverPub := make([]byte, 32)
 	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
 
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientPublicKey:  clientPub,
-			ClientPrivateKey: clientPriv,
-			X25519PublicKey:  serverPub,
-		},
+	client := &Client{}
+	configuration := clientconfig.Configuration{
+		ClientPublicKey:  clientPub,
+		ClientPrivateKey: clientPriv,
+		X25519PublicKey:  serverPub,
 	}
 	tr := &cfUnitTransport{readErr: io.ErrUnexpectedEOF}
 
@@ -498,6 +503,7 @@ func TestEstablishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
 		context.Background(),
 		tr,
 		settings.TCP,
+		configuration,
 	)
 	if err == nil {
 		t.Fatal("expected handshake error")
@@ -513,19 +519,18 @@ func TestEstablishSecuredConnection_CancelClosesAdapter(t *testing.T) {
 	serverPub := make([]byte, 32)
 	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
 
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientPublicKey:  clientPub,
-			ClientPrivateKey: clientPriv,
-			X25519PublicKey:  serverPub,
-		},
+	client := &Client{}
+	configuration := clientconfig.Configuration{
+		ClientPublicKey:  clientPub,
+		ClientPrivateKey: clientPriv,
+		X25519PublicKey:  serverPub,
 	}
 	transport := newCFBlockingTransport()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, _, err := client.handshake(ctx, transport, settings.TCP)
+		_, _, _, err := client.handshake(ctx, transport, settings.TCP, configuration)
 		errCh <- err
 	}()
 
@@ -578,24 +583,27 @@ func TestConnectionFactoryUnit_WithReadDeadline_WithDeadlineSupport_WrapsAndSets
 
 func TestEstablishConnection_ErrorBranches(t *testing.T) {
 	t.Run("unsupported protocol", func(t *testing.T) {
-		client := testClientWithSettings(settings.Settings{Protocol: settings.UNKNOWN})
-		_, _, _, err := client.connect(context.Background())
+		client := &Client{}
+		configuration := testConfigurationWithSettings(settings.Settings{Protocol: settings.UNKNOWN})
+		_, _, _, err := client.connect(context.Background(), configuration)
 		if err == nil {
 			t.Fatal("expected unsupported protocol error")
 		}
 	})
 
 	t.Run("tcp parse addr error", func(t *testing.T) {
-		client := testClientWithSettings(mkTCPSettings(70000))
-		_, _, _, err := client.connect(context.Background())
+		client := &Client{}
+		configuration := testConfigurationWithSettings(mkTCPSettings(70000))
+		_, _, _, err := client.connect(context.Background(), configuration)
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
 	})
 
 	t.Run("udp parse addr error", func(t *testing.T) {
-		client := testClientWithSettings(mkUDPSettings(70000))
-		_, _, _, err := client.connect(context.Background())
+		client := &Client{}
+		configuration := testConfigurationWithSettings(mkUDPSettings(70000))
+		_, _, _, err := client.connect(context.Background(), configuration)
 		if err == nil {
 			t.Fatal("expected parse error")
 		}
@@ -645,12 +653,11 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 		t.Fatalf("client keygen failed: %v", err)
 	}
 
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientPublicKey:  clientPub,
-			ClientPrivateKey: clientPrivArr[:],
-			X25519PublicKey:  serverPub,
-		},
+	client := &Client{}
+	configuration := clientconfig.Configuration{
+		ClientPublicKey:  clientPub,
+		ClientPrivateKey: clientPrivArr[:],
+		X25519PublicKey:  serverPub,
 	}
 
 	clientConn, serverConn := net.Pipe()
@@ -695,6 +702,7 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 		context.Background(),
 		clientAdapter,
 		settings.TCP,
+		configuration,
 	)
 	if err != nil {
 		t.Fatalf("establishSecuredConnection failed: %v", err)

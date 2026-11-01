@@ -55,13 +55,9 @@ func (t *TUI) runRuntime(
 	var err error
 	switch runtimeMode {
 	case mode.Client:
-		configuration, loadErr := t.clientConfigurations.Active()
-		if loadErr != nil {
-			return fmt.Errorf("load client configuration: %w", loadErr)
-		}
-		info, err = clientRuntimeInfo(configuration)
+		info, err = clientRuntimeInfo(t.clientConfigurations)
 		if err == nil {
-			running, err = client.New(configuration)
+			running, err = client.New()
 		}
 	case mode.Server:
 		if t.serverFile == nil {

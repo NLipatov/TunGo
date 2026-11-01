@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -94,21 +97,49 @@ func TestShowFatalErrorReturnsWhenProgramCannotOpenTTY(t *testing.T) {
 }
 
 func TestClientRuntimeInfo(t *testing.T) {
+	configurations := clientconfig.NewConfigurations(t.TempDir())
 	configuration := validClientConfiguration()
-	info, err := clientRuntimeInfo(configuration)
+	data, err := json.Marshal(configuration)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Protocol != settings.TCP || len(info.Endpoints) != 1 || info.Endpoints[0].Port != 8080 {
+	if err := configurations.Import("server", string(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := configurations.Activate("server"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := clientRuntimeInfo(configurations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Protocol != settings.TCP || len(info.Endpoints) != 1 || info.Endpoints[0].Port != 8080 ||
+		info.Endpoints[0].Server != configuration.TCPSettings.Server ||
+		info.Endpoints[0].TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
 		t.Fatalf("runtime info = %+v", info)
 	}
 }
 
 func TestClientRuntimeInfoRejectsInvalidConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	configurations := clientconfig.NewConfigurations(directory)
 	configuration := validClientConfiguration()
 	configuration.Protocol = settings.UNKNOWN
-	if _, err := clientRuntimeInfo(configuration); err == nil {
-		t.Fatal("clientRuntimeInfo() accepted an invalid protocol")
+	data, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "client_configuration.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clientRuntimeInfo(configurations); err == nil || !strings.Contains(err.Error(), "unsupported protocol") {
+		t.Fatalf("clientRuntimeInfo() error = %v, want unsupported protocol", err)
+	}
+}
+
+func TestClientRuntimeInfoReportsMissingConfiguration(t *testing.T) {
+	if _, err := clientRuntimeInfo(clientconfig.NewConfigurations(t.TempDir())); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("clientRuntimeInfo() error = %v, want missing configuration", err)
 	}
 }
 
@@ -167,10 +198,12 @@ func validClientConfiguration() *clientconfig.Configuration {
 func newTestTUI(t *testing.T) *TUI {
 	t.Helper()
 	directory := t.TempDir()
-	return New(
+	ui := New(
 		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
 		nil,
 	)
+	ui.clientConfigurations = clientconfig.NewConfigurations(directory)
+	return ui
 }
 
 func requireNoTTY(t *testing.T) {

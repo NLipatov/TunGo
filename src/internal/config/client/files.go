@@ -37,8 +37,13 @@ func ValidateName(name string) error {
 
 // Files returns the client configurations stored at the platform-specific system path.
 func Files() *Configurations {
+	return NewConfigurations(configpath.Directory())
+}
+
+// NewConfigurations returns the client configurations stored in directory.
+func NewConfigurations(directory string) *Configurations {
 	return &Configurations{
-		activePath: filepath.Join(configpath.Directory(), "client_configuration.json"),
+		activePath: filepath.Join(directory, "client_configuration.json"),
 	}
 }
 

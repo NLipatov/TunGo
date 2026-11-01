@@ -9,7 +9,6 @@ import (
 
 	"tungo/internal/client"
 	"tungo/internal/commandline"
-	clientconfig "tungo/internal/config/client"
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/elevation"
@@ -120,11 +119,7 @@ func runCLI(ctx context.Context) error {
 	case commandline.CommandRuntime:
 		switch command.RuntimeMode {
 		case mode.Client:
-			configuration, err := clientconfig.Files().Active()
-			if err != nil {
-				return fmt.Errorf("failed to load client configuration: %w", err)
-			}
-			runningClient, err := client.New(configuration)
+			runningClient, err := client.New()
 			if err != nil {
 				return err
 			}

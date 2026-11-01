@@ -3,11 +3,13 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/netip"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,43 +21,17 @@ import (
 )
 
 type clientTestTUN struct {
-	disposeCalls atomic.Int32
-	closeErr     error
+	closeCalls atomic.Int32
+	closeErr   error
 }
 
 func TestNewClient(t *testing.T) {
-	if client, err := New(nil); err == nil || client != nil {
-		t.Fatalf("New(nil) = %v, %v; want nil and error", client, err)
-	}
-
-	configuration := &clientconfig.Configuration{
-		ClientID: 1,
-		Protocol: settings.TCP,
-		TCPSettings: settings.Settings{
-			Network: settings.Network{
-				TunName:    "tun0",
-				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-				Server:     settings.Host{IPv4: "192.0.2.1"},
-				Port:       8080,
-			},
-			MTU:      settings.DefaultMTU,
-			Protocol: settings.TCP,
-		},
-		X25519PublicKey:  make([]byte, 32),
-		ClientPublicKey:  make([]byte, 32),
-		ClientPrivateKey: make([]byte, 32),
-	}
-	client, err := New(configuration)
+	client, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if client.configuration != configuration || client.Ready() {
+	if client.configurations == nil || client.tunManager != nil || client.Ready() {
 		t.Fatalf("unexpected new client state: %+v", client)
-	}
-
-	configuration.Protocol = settings.UNKNOWN
-	if client, err := New(configuration); err == nil || client != nil {
-		t.Fatalf("New(invalid configuration) = %v, %v; want nil and error", client, err)
 	}
 }
 
@@ -64,74 +40,107 @@ func (*clientTestTUN) Open(netip.Addr) (io.ReadWriter, error) {
 }
 
 func (m *clientTestTUN) Close() error {
-	m.disposeCalls.Add(1)
+	m.closeCalls.Add(1)
 	return m.closeErr
 }
 
 func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	cleanupErr := errors.New("cleanup failed")
 	tunnel := &clientTestTUN{closeErr: cleanupErr}
-	client := &Client{
-		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tun:           tunnel,
-	}
+	client := newTestClient(t)
+	client.tunManager = tunnel
 
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 
-	if err := client.runTunnel(t.Context()); err == nil {
-		t.Fatal("runTunnel() error = nil")
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := client.runTunnel(t.Context()); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("runTunnel() error = %v, want missing configuration", err)
+		}
+		if client.tunManager != tunnel {
+			t.Fatal("failed cleanup discarded the manager before it could be retried")
+		}
+		if got := tunnel.closeCalls.Load(); got != int32(attempt) {
+			t.Fatalf("Close() calls = %d, want %d", got, attempt)
+		}
 	}
 	if !strings.Contains(logs.String(), "failed to clean stale tunnel state") ||
 		!strings.Contains(logs.String(), cleanupErr.Error()) {
 		t.Fatalf("preflight cleanup log = %q", logs.String())
 	}
-	if got := tunnel.disposeCalls.Load(); got != 1 {
-		t.Fatalf("Close() calls = %d, want 1", got)
+}
+
+func TestRunTunnelClearsPreviousSessionState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ready bool
+	}{
+		{name: "before first ready"},
+		{name: "after first ready", ready: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tunnel := &clientTestTUN{}
+			client := newTestClient(t)
+			client.tunManager = tunnel
+			if tc.ready {
+				client.sessionReadyAt = time.Now().Add(-6 * time.Minute)
+			}
+			client.ready.Store(tc.ready)
+			for range 2 {
+				if err := client.runTunnel(t.Context()); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("runTunnel() error = %v, want missing configuration", err)
+				}
+				if client.tunManager != nil || !client.sessionReadyAt.IsZero() {
+					t.Fatal("previous session state was retained")
+				}
+				if client.Ready() != tc.ready {
+					t.Fatalf("Ready() = %v, want %v", client.Ready(), tc.ready)
+				}
+			}
+			if got := tunnel.closeCalls.Load(); got != 1 {
+				t.Fatalf("Close() calls = %d, want 1", got)
+			}
+		})
 	}
 }
 
-func TestCloseTunLogsCleanupFailure(t *testing.T) {
-	cleanupErr := errors.New("cleanup failed")
-	tunnel := &clientTestTUN{closeErr: cleanupErr}
-	client := &Client{tun: tunnel}
+type clientTestReconnectHandler struct {
+	slog.Handler
+	reconnecting chan struct{}
+}
 
-	var logs bytes.Buffer
-	originalLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(originalLogger) })
-
-	client.closeTun()
-
-	if !strings.Contains(logs.String(), "failed to close tunnel") ||
-		!strings.Contains(logs.String(), cleanupErr.Error()) {
-		t.Fatalf("cleanup log = %q", logs.String())
+func (h clientTestReconnectHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "session error, reconnecting" {
+		select {
+		case h.reconnecting <- struct{}{}:
+		default:
+		}
 	}
-	if got := tunnel.disposeCalls.Load(); got != 1 {
-		t.Fatalf("Close() calls = %d, want 1", got)
-	}
+	return h.Handler.Handle(ctx, record)
 }
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	tunnel := &clientTestTUN{}
-	client := &Client{
-		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tun:           tunnel,
-	}
+	client := newTestClient(t)
+	client.tunManager = tunnel
+	reconnecting := make(chan struct{}, 1)
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(clientTestReconnectHandler{
+		Handler:      slog.NewTextHandler(io.Discard, nil),
+		reconnecting: reconnecting,
+	}))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- client.Run(ctx) }()
 
-	deadline := time.After(2 * time.Second)
-	for tunnel.disposeCalls.Load() == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("client did not start a session")
-		default:
-			time.Sleep(time.Millisecond)
-		}
+	select {
+	case <-reconnecting:
+	case <-time.After(2 * time.Second):
+		t.Fatal("client did not reach the reconnect delay")
 	}
 	cancel()
 
@@ -140,11 +149,14 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run() error = %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(reconnectInterval / 2):
 		t.Fatal("client did not stop after cancellation")
 	}
-	if got := tunnel.disposeCalls.Load(); got != 1 {
+	if got := tunnel.closeCalls.Load(); got != 1 {
 		t.Fatalf("Close() calls = %d, want preflight cleanup", got)
+	}
+	if client.failoverCount != 1 {
+		t.Fatalf("failoverCount = %d, want one failed session", client.failoverCount)
 	}
 }
 
@@ -230,33 +242,28 @@ func TestAllowedSources(t *testing.T) {
 
 func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
 	tunnel := &clientTestTUN{}
-	client := &Client{
-		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tun:           tunnel,
-	}
+	client := &Client{tunManager: tunnel}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	if err := client.Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := tunnel.disposeCalls.Load(); got != 0 {
+	if got := tunnel.closeCalls.Load(); got != 0 {
 		t.Fatalf("Close() calls = %d, want no session cleanup", got)
 	}
 }
 
-func TestRunSessionReturnsForwardError(t *testing.T) {
+func TestRunSessionReturnsConfigurationError(t *testing.T) {
 	tunnel := &clientTestTUN{}
-	client := &Client{
-		configuration: &clientconfig.Configuration{Protocol: settings.UNKNOWN},
-		tun:           tunnel,
-	}
+	client := newTestClient(t)
+	client.tunManager = tunnel
 
 	err := client.runSession(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "unsupported protocol") {
-		t.Fatalf("runSession() error = %v, want unsupported protocol", err)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("runSession() error = %v, want missing configuration", err)
 	}
-	if got := tunnel.disposeCalls.Load(); got != 1 {
+	if got := tunnel.closeCalls.Load(); got != 1 {
 		t.Fatalf("Close() calls = %d, want 1", got)
 	}
 }
@@ -288,17 +295,15 @@ func TestRunSessionCancellationStopsForward(t *testing.T) {
 		t.Fatalf("generate client key: %v", err)
 	}
 
-	tunnel := &clientTestTUN{}
-	client := &Client{
-		configuration: &clientconfig.Configuration{
-			ClientID:         1,
-			Protocol:         settings.TCP,
-			TCPSettings:      mkTCPSettings(listener.Addr().(*net.TCPAddr).Port),
-			ClientPublicKey:  clientPublicKey,
-			ClientPrivateKey: clientPrivateKey[:],
-			X25519PublicKey:  serverPublicKey,
-		},
-		tun: tunnel,
+	client := newTestClient(t)
+	configuration := clientTestConfiguration()
+	configuration.TCPSettings.Port = listener.Addr().(*net.TCPAddr).Port
+	configuration.ClientPublicKey = clientPublicKey
+	configuration.ClientPrivateKey = clientPrivateKey[:]
+	configuration.X25519PublicKey = serverPublicKey
+	importClientConfiguration(t, client.configurations, "server", configuration)
+	if err := client.configurations.Activate("server"); err != nil {
+		t.Fatal(err)
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -341,5 +346,50 @@ func TestRunSessionCancellationStopsForward(t *testing.T) {
 	case <-connectionClosed:
 	case <-time.After(time.Second):
 		t.Fatal("connection remained open after cancellation")
+	}
+	if client.Ready() || !client.sessionReadyAt.IsZero() || client.tunManager != nil {
+		t.Fatal("an interrupted handshake marked the session ready or created a TUN")
+	}
+}
+
+func newTestClient(t *testing.T) *Client {
+	t.Helper()
+	client, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.configurations = clientconfig.NewConfigurations(t.TempDir())
+	client.failover = clientconfig.NewFailover(client.configurations)
+	return client
+}
+
+func clientTestConfiguration() clientconfig.Configuration {
+	return clientconfig.Configuration{
+		ClientID: 1,
+		Protocol: settings.TCP,
+		TCPSettings: settings.Settings{
+			Network: settings.Network{
+				TunName:    "tun0",
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+				Server:     settings.Host{IPv4: "127.0.0.1"},
+				Port:       8080,
+			},
+			MTU:      settings.DefaultMTU,
+			Protocol: settings.TCP,
+		},
+		X25519PublicKey:  make([]byte, 32),
+		ClientPublicKey:  make([]byte, 32),
+		ClientPrivateKey: make([]byte, 32),
+	}
+}
+
+func importClientConfiguration(t *testing.T, configurations *clientconfig.Configurations, name string, configuration clientconfig.Configuration) {
+	t.Helper()
+	data, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configurations.Import(name, string(data)); err != nil {
+		t.Fatal(err)
 	}
 }

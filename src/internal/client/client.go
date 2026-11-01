@@ -27,7 +27,7 @@ const (
 	reconnectInterval = 500 * time.Millisecond
 )
 
-type tun interface {
+type tunManager interface {
 	Open(serverAddr netip.Addr) (io.ReadWriter, error)
 	Close() error
 }
@@ -47,25 +47,23 @@ type clientRekey interface {
 // Client owns the client lifecycle: reconnects, transport sessions, TUN setup,
 // packet forwarding, and cleanup.
 type Client struct {
-	configuration *clientconfig.Configuration
-	tun           tun
-	ready         atomic.Bool
+	configurations                   *clientconfig.Configurations
+	tunManager                       tunManager
+	ready                            atomic.Bool
+	failover                         clientconfig.Failover
+	failoverCount, failoverThreshold int
+	sessionReadyAt                   time.Time
 }
 
-// New creates a client using the provided configuration and initializes its TUN.
-// It returns an error if the configuration is nil or the TUN cannot be initialized.
-func New(configuration *clientconfig.Configuration) (*Client, error) {
+// New creates a client using the system configuration files.
+// Each session loads the active configuration and initializes its own TUN.
+func New() (*Client, error) {
 	slog.Info("starting client")
-	if configuration == nil {
-		return nil, fmt.Errorf("client configuration is nil")
-	}
-	tun, err := clienttun.New(configuration)
-	if err != nil {
-		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
-	}
+	configurations := clientconfig.Files()
 	return &Client{
-		configuration: configuration,
-		tun:           tun,
+		configurations:    configurations,
+		failover:          clientconfig.NewFailover(configurations),
+		failoverThreshold: 5,
 	}, nil
 }
 
@@ -81,6 +79,9 @@ func (c *Client) Run(ctx context.Context) error {
 		if err == nil || errors.Is(err, context.Canceled) {
 			return nil
 		}
+		if err := c.attemptFailover(err); err != nil {
+			slog.Warn("failover failed", "err", err)
+		}
 		slog.Warn("session error, reconnecting", "err", err)
 		timer := time.NewTimer(reconnectInterval)
 		select {
@@ -89,6 +90,23 @@ func (c *Client) Run(ctx context.Context) error {
 			return nil
 		case <-timer.C:
 		}
+	}
+	return nil
+}
+
+func (c *Client) attemptFailover(sessionErr error) error {
+	if !c.sessionReadyAt.IsZero() &&
+		time.Now().Sub(c.sessionReadyAt) >= 5*time.Minute {
+		c.failoverCount = 0
+	}
+	if sessionErr != nil && !errors.Is(sessionErr, ErrResumeDetected) {
+		c.failoverCount++
+	}
+	if c.failoverCount >= c.failoverThreshold {
+		if err := c.failover.Failover(); err != nil {
+			return err
+		}
+		c.failoverCount = 0
 	}
 	return nil
 }
@@ -117,10 +135,23 @@ func (c *Client) runSession(parentCtx context.Context) error {
 func (c *Client) runTunnel(
 	ctx context.Context,
 ) error {
-	if err := c.tun.Close(); err != nil {
-		slog.Warn("failed to clean stale tunnel state", "err", err)
+	c.sessionReadyAt = time.Time{}
+	if c.tunManager != nil {
+		if err := c.tunManager.Close(); err != nil {
+			slog.Warn("failed to clean stale tunnel state", "err", err)
+		} else {
+			c.tunManager = nil
+		}
 	}
-	transport, crypto, rekey, err := c.connect(ctx)
+	configuration, err := c.configurations.Active()
+	if err != nil {
+		return err
+	}
+	activeSettings, err := configuration.ActiveSettings()
+	if err != nil {
+		return err
+	}
+	transport, crypto, rekey, err := c.connect(ctx, *configuration)
 	if err != nil {
 		return err
 	}
@@ -129,34 +160,41 @@ func (c *Client) runTunnel(
 	if err != nil {
 		return err
 	}
-	tun, err := c.tun.Open(serverAddr)
+	c.tunManager, err = clienttun.New(configuration)
 	if err != nil {
-		slog.Error("failed to open tunnel", "err", err)
 		return err
 	}
-	defer c.closeTun()
+	defer func() {
+		if err := c.tunManager.Close(); err != nil {
+			slog.Warn("failed to clean stale tunnel state", "err", err)
+		} else {
+			c.tunManager = nil
+		}
+	}()
+	tun, err := c.tunManager.Open(serverAddr)
+	if err != nil {
+		return err
+	}
 	tun = trafficstats.WrapTun(tun)
-	selected, err := c.configuration.ActiveSettings()
-	if err != nil {
-		return err
-	}
-	allowed := allowedSources(selected)
-	switch selected.Protocol {
+	allowed := allowedSources(activeSettings)
+	switch activeSettings.Protocol {
 	case settings.UDP:
 		tunnel, err := udp.New(ctx, transport, tun, crypto, rekey, allowed)
 		if err != nil {
 			return err
 		}
 		c.ready.Store(true)
+		c.sessionReadyAt = time.Now()
 		slog.Info("tunneling traffic via TUN device")
 		return tunnel.Run()
 	case settings.TCP, settings.WS, settings.WSS:
 		tunnel := tcp.New(ctx, transport, tun, crypto, rekey, allowed)
 		c.ready.Store(true)
+		c.sessionReadyAt = time.Now()
 		slog.Info("tunneling traffic via TUN device")
 		return tunnel.Run()
 	default:
-		return fmt.Errorf("unsupported protocol %q", selected.Protocol)
+		return fmt.Errorf("unsupported protocol %q", activeSettings.Protocol)
 	}
 }
 
@@ -181,10 +219,4 @@ func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
 		return netip.Addr{}, fmt.Errorf("transport %T returned an invalid remote address", transport)
 	}
 	return addrPort.Addr().Unmap(), nil
-}
-
-func (c *Client) closeTun() {
-	if err := c.tun.Close(); err != nil {
-		slog.Warn("failed to close tunnel", "err", err)
-	}
 }

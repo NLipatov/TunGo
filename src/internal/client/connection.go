@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20/tcp"
 	"tungo/internal/protocol/chacha20/udp"
@@ -40,22 +41,22 @@ type rekeyV2Handshake interface {
 
 func (c *Client) connect(
 	ctx context.Context,
+	configuration client.Configuration,
 ) (io.ReadWriteCloser, crypto, clientRekey, error) {
-	connSettings, err := c.configuration.ActiveSettings()
+	settings, err := configuration.ActiveSettings()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
+	deadline := time.Now().Add(time.Duration(math.Max(float64(settings.DialTimeoutMs), 5000)) * time.Millisecond)
 	connectCtx, establishCancel := context.WithDeadline(ctx, deadline)
 	defer establishCancel()
 
-	adapter, err := dial(connectCtx, ctx, connSettings)
+	adapter, err := dial(connectCtx, ctx, settings)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", connSettings.Protocol, err)
+		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", settings.Protocol, err)
 	}
 
-	return c.handshake(connectCtx, adapter, connSettings.Protocol)
+	return c.handshake(connectCtx, adapter, settings.Protocol, configuration)
 }
 
 func dial(
@@ -76,21 +77,22 @@ func (c *Client) handshake(
 	ctx context.Context,
 	adapter io.ReadWriteCloser,
 	protocol settings.Protocol,
+	configuration client.Configuration,
 ) (io.ReadWriteCloser, crypto, clientRekey, error) {
 	// IK handshake requires client keys
-	if len(c.configuration.ClientPublicKey) != 32 || len(c.configuration.ClientPrivateKey) != 32 {
+	if len(configuration.ClientPublicKey) != 32 || len(configuration.ClientPrivateKey) != 32 {
 		_ = adapter.Close()
 		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
 	}
-	if len(c.configuration.X25519PublicKey) != 32 {
+	if len(configuration.X25519PublicKey) != 32 {
 		_ = adapter.Close()
 		return nil, nil, nil, fmt.Errorf("server public key not configured (required for IK handshake)")
 	}
 
 	handshake := noise.NewIKHandshakeClient(
-		c.configuration.ClientPublicKey,
-		c.configuration.ClientPrivateKey,
-		c.configuration.X25519PublicKey,
+		configuration.ClientPublicKey,
+		configuration.ClientPrivateKey,
+		configuration.X25519PublicKey,
 	)
 
 	var closeOnce sync.Once
