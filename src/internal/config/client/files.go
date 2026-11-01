@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"unicode"
 
 	"tungo/internal/config/internal/configpath"
@@ -14,7 +15,9 @@ import (
 
 // Configurations owns the active client configuration and its named alternatives.
 type Configurations struct {
-	activePath string
+	activePath  string
+	activeMu    sync.Mutex
+	activeCache *Configuration
 }
 
 // MaxNameLength is the maximum length of a new configuration name.
@@ -47,8 +50,13 @@ func NewConfigurations(directory string) *Configurations {
 	}
 }
 
-// Active reads, defaults, normalizes, and validates the active client configuration.
+// Active returns, defaults, normalizes, and validates the active client configuration.
 func (c *Configurations) Active() (*Configuration, error) {
+	c.activeMu.Lock()
+	defer c.activeMu.Unlock()
+	if c.activeCache != nil {
+		return c.activeCache, nil
+	}
 	data, err := os.ReadFile(c.activePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -60,7 +68,8 @@ func (c *Configurations) Active() (*Configuration, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", c.activePath, err)
 	}
-	return &configuration, nil
+	c.activeCache = &configuration
+	return c.activeCache, nil
 }
 
 // List returns the names of saved alternatives. The active configuration is excluded.
@@ -107,6 +116,8 @@ func (c *Configurations) Import(name, rawJSON string) error {
 
 // Activate replaces the active configuration with the named alternative.
 func (c *Configurations) Activate(name string) error {
+	c.activeMu.Lock()
+	defer c.activeMu.Unlock()
 	path, err := c.alternativePath(name)
 	if err != nil {
 		return err
@@ -119,7 +130,11 @@ func (c *Configurations) Activate(name string) error {
 	if err != nil {
 		return fmt.Errorf("invalid client configuration %q: %w", name, err)
 	}
-	return save(c.activePath, configuration)
+	if err := save(c.activePath, configuration); err != nil {
+		return err
+	}
+	c.activeCache = &configuration
+	return nil
 }
 
 // Delete removes the named alternative.

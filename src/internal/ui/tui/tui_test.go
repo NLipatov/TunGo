@@ -18,11 +18,13 @@ import (
 
 func TestNewTUI(t *testing.T) {
 	directory := t.TempDir()
+	configurations := clientconfig.NewConfigurations(directory)
 	ui := New(
+		configurations,
 		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
 		nil,
 	)
-	if ui.clientConfigurations == nil || ui.serverFile == nil {
+	if ui.clientConfigurations != configurations || ui.serverFile == nil {
 		t.Fatal("configuration files were not registered")
 	}
 }
@@ -111,10 +113,10 @@ func TestClientRuntimeInfo(t *testing.T) {
 	}
 }
 
-func TestClientRuntimeInfoBeforeFirstConnectionAttempt(t *testing.T) {
+func TestClientRuntimeInfoWithoutSettings(t *testing.T) {
 	info := clientRuntimeInfo(settings.Settings{})
 	if info.Protocol != settings.UNKNOWN || len(info.Endpoints) != 0 {
-		t.Fatalf("runtime info before settings are loaded = %+v", info)
+		t.Fatalf("runtime info without settings = %+v", info)
 	}
 }
 
@@ -153,12 +155,11 @@ func TestEndpointInfo(t *testing.T) {
 func newTestTUI(t *testing.T) *TUI {
 	t.Helper()
 	directory := t.TempDir()
-	ui := New(
+	return New(
+		clientconfig.NewConfigurations(directory),
 		serverconfig.NewFile(filepath.Join(directory, "server_configuration.json")),
 		nil,
 	)
-	ui.clientConfigurations = clientconfig.NewConfigurations(directory)
-	return ui
 }
 
 func requireNoTTY(t *testing.T) {

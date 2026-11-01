@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,8 +50,6 @@ type Client struct {
 	configurations                   *clientconfig.Configurations
 	tunManager                       tunManager
 	ready                            atomic.Bool
-	activeSettingsMu                 sync.RWMutex
-	activeSettings                   settings.Settings
 	failover                         clientconfig.Failover
 	failoverCount, failoverThreshold int
 	sessionReadyAt                   time.Time
@@ -60,20 +57,13 @@ type Client struct {
 
 // New creates a client using the system configuration files.
 // Each session loads the active configuration and initializes its own TUN.
-func New() (*Client, error) {
+func New(configurations *clientconfig.Configurations) (*Client, error) {
 	slog.Info("starting client")
-	configurations := clientconfig.Files()
 	return &Client{
 		configurations:    configurations,
 		failover:          clientconfig.NewFailover(configurations),
 		failoverThreshold: 3,
 	}, nil
-}
-
-func (c *Client) ActiveSettings() settings.Settings {
-	c.activeSettingsMu.RLock()
-	defer c.activeSettingsMu.RUnlock()
-	return c.activeSettings
 }
 
 func (c *Client) Ready() bool {
@@ -162,9 +152,6 @@ func (c *Client) runTunnel(
 	if err != nil {
 		return err
 	}
-	c.activeSettingsMu.Lock()
-	c.activeSettings = activeSettings
-	c.activeSettingsMu.Unlock()
 	transport, crypto, rekey, err := c.connect(ctx, *configuration)
 	if err != nil {
 		return err

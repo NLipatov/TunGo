@@ -9,6 +9,7 @@ import (
 
 	"tungo/internal/client"
 	"tungo/internal/commandline"
+	clientconfig "tungo/internal/config/client"
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/daemon/systemd"
 	"tungo/internal/elevation"
@@ -68,7 +69,7 @@ func runTUI(ctx context.Context) error {
 	if systemdControl.Available() {
 		daemonControl = systemdControl
 	}
-	runner := tui.New(serverFile, daemonControl)
+	runner := tui.New(clientconfig.Files(), serverFile, daemonControl)
 	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 	trafficstats.SetGlobal(trafficCollector)
 	go trafficCollector.Start(ctx)
@@ -119,7 +120,7 @@ func runCLI(ctx context.Context) error {
 	case commandline.CommandRuntime:
 		switch command.RuntimeMode {
 		case mode.Client:
-			runningClient, err := client.New()
+			runningClient, err := client.New(clientconfig.Files())
 			if err != nil {
 				return err
 			}

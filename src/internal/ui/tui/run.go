@@ -55,13 +55,22 @@ func (t *TUI) runRuntime(
 	var err error
 	switch runtimeMode {
 	case mode.Client:
-		runningClient, createErr := client.New()
+		runningClient, createErr := client.New(t.clientConfigurations)
 		if createErr != nil {
 			return createErr
 		}
 		running = runningClient
 		runtimeInfo = func() bubbleTea.RuntimeInfo {
-			return clientRuntimeInfo(runningClient.ActiveSettings())
+			configuration, err := t.clientConfigurations.Active()
+			if err != nil {
+				slog.Error("could not read active configuration", "err", err)
+				return bubbleTea.RuntimeInfo{}
+			}
+			settings, err := configuration.ActiveSettings()
+			if err != nil {
+				slog.Error("could not read active settings", "err", err)
+			}
+			return clientRuntimeInfo(settings)
 		}
 	case mode.Server:
 		if t.serverFile == nil {

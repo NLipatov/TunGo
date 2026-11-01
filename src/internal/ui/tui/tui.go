@@ -17,11 +17,12 @@ type TUI struct {
 // New creates a TUI with the supplied server file, and daemon control.
 // It loads the user's UI preferences during construction.
 func New(
+	configurations *clientconfig.Configurations,
 	serverFile *serverconfig.File,
 	daemonControl systemd.Control,
 ) *TUI {
 	return &TUI{
-		clientConfigurations: clientconfig.Files(),
+		clientConfigurations: configurations,
 		serverFile:           serverFile,
 		daemonControl:        daemonControl,
 		preferences:          bubbleTea.LoadPreferences(),
