@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -51,7 +52,7 @@ func (m *clientTestTUN) Close() error {
 func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	cleanupErr := errors.New("cleanup failed")
 	tunnel := &clientTestTUN{closeErr: cleanupErr}
-	client := newTestClient(t)
+	client := newTestClientWithUnavailableServer(t)
 	client.tunManager = tunnel
 
 	var logs bytes.Buffer
@@ -59,16 +60,14 @@ func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 
-	for attempt := 1; attempt <= 2; attempt++ {
-		if err := client.runTunnel(t.Context()); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("runTunnel() error = %v, want missing configuration", err)
-		}
-		if client.tunManager != tunnel {
-			t.Fatal("failed cleanup discarded the manager before it could be retried")
-		}
-		if got := tunnel.closeCalls.Load(); got != int32(attempt) {
-			t.Fatalf("Close() calls = %d, want %d", got, attempt)
-		}
+	if err := client.runTunnel(t.Context()); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("runTunnel() error = %v, want connection attempt despite cleanup failure", err)
+	}
+	if client.tunManager != nil {
+		t.Fatal("new tunnel manager was not cleaned up after connection failure")
+	}
+	if got := tunnel.closeCalls.Load(); got != 1 {
+		t.Fatalf("Close() calls = %d, want one best-effort preflight cleanup", got)
 	}
 	if !strings.Contains(logs.String(), "failed to clean stale tunnel state") ||
 		!strings.Contains(logs.String(), cleanupErr.Error()) {
@@ -78,29 +77,26 @@ func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 
 func TestRunTunnelClearsPreviousSessionState(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		ready bool
+		name    string
+		readyAt time.Time
 	}{
-		{name: "before first ready"},
-		{name: "after first ready", ready: true},
+		{name: "before first session"},
+		{name: "after stable session", readyAt: time.Now().Add(-6 * time.Minute)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tunnel := &clientTestTUN{}
-			client := newTestClient(t)
+			client := newTestClientWithUnavailableServer(t)
 			client.tunManager = tunnel
-			if tc.ready {
-				client.sessionReadyAt = time.Now().Add(-6 * time.Minute)
-			}
-			client.ready.Store(tc.ready)
+			client.sessionReadyAt = tc.readyAt
 			for range 2 {
-				if err := client.runTunnel(t.Context()); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("runTunnel() error = %v, want missing configuration", err)
+				if err := client.runTunnel(t.Context()); err == nil || !strings.Contains(err.Error(), "503") {
+					t.Fatalf("runTunnel() error = %v, want unavailable server", err)
 				}
 				if client.tunManager != nil || !client.sessionReadyAt.IsZero() {
 					t.Fatal("previous session state was retained")
 				}
-				if client.Ready() != tc.ready {
-					t.Fatalf("Ready() = %v, want %v", client.Ready(), tc.ready)
+				if client.Ready() {
+					t.Fatal("failed connection marked the session ready")
 				}
 			}
 			if got := tunnel.closeCalls.Load(); got != 1 {
@@ -126,23 +122,9 @@ func (h clientTestReconnectHandler) Handle(ctx context.Context, record slog.Reco
 }
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-
 	tunnel := &clientTestTUN{}
-	client := newTestClient(t)
+	client := newTestClientWithUnavailableServer(t)
 	client.tunManager = tunnel
-	configuration := clientTestConfiguration()
-	configuration.Protocol = settings.WS
-	configuration.WSSettings = configuration.TCPSettings
-	configuration.WSSettings.Protocol = settings.WS
-	configuration.WSSettings.Port = server.Listener.Addr().(*net.TCPAddr).Port
-	importClientConfiguration(t, client.configurations, "server", configuration)
-	if err := client.configurations.Activate("server"); err != nil {
-		t.Fatal(err)
-	}
 	reconnecting := make(chan struct{}, 1)
 	originalLogger := slog.Default()
 	slog.SetDefault(slog.New(clientTestReconnectHandler{
@@ -321,20 +303,19 @@ func TestClientWithCanceledContextDoesNotStartSession(t *testing.T) {
 }
 
 func TestRunSessionReturnsConfigurationError(t *testing.T) {
-	tunnel := &clientTestTUN{}
 	client := newTestClient(t)
-	client.tunManager = tunnel
 
 	err := client.runSession(t.Context())
-	if !errors.Is(err, os.ErrNotExist) {
+	if !errors.Is(err, ErrInvalidConfiguration) || !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("runSession() error = %v, want missing configuration", err)
 	}
-	if got := tunnel.closeCalls.Load(); got != 1 {
-		t.Fatalf("Close() calls = %d, want 1", got)
+	if client.tunManager != nil || client.Ready() {
+		t.Fatal("invalid configuration started a tunnel session")
 	}
 }
 
 func TestRunSessionCancellationStopsForward(t *testing.T) {
+	stubClientNetworkCommands(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -414,8 +395,48 @@ func TestRunSessionCancellationStopsForward(t *testing.T) {
 		t.Fatal("connection remained open after cancellation")
 	}
 	if client.Ready() || !client.sessionReadyAt.IsZero() || client.tunManager != nil {
-		t.Fatal("an interrupted handshake marked the session ready or created a TUN")
+		t.Fatal("an interrupted handshake marked the session ready or retained the tunnel manager")
 	}
+}
+
+func stubClientNetworkCommands(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("TUN cleanup uses native Windows APIs that cannot be isolated through PATH")
+	}
+	directory := t.TempDir()
+	// Use only these stubs so cleanup cannot change the host's DNS, routes or firewall.
+	t.Setenv("PATH", directory)
+	for name, script := range map[string]string{
+		"scutil":     "#!/bin/sh\nwhile IFS= read -r line; do :; done\nprintf 'No such key\\n'\n",
+		"resolvconf": "#!/bin/sh\nexit 0\n",
+		"ip":         "#!/bin/sh\nexit 0\n",
+		"iptables":   "#!/bin/sh\nexit 0\n",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func newTestClientWithUnavailableServer(t *testing.T) *Client {
+	t.Helper()
+	stubClientNetworkCommands(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	client := newTestClient(t)
+	configuration := clientTestConfiguration()
+	configuration.Protocol = settings.WS
+	configuration.WSSettings = configuration.TCPSettings
+	configuration.WSSettings.Protocol = settings.WS
+	configuration.WSSettings.Port = server.Listener.Addr().(*net.TCPAddr).Port
+	importClientConfiguration(t, client.configurations, "server", configuration)
+	if err := client.configurations.Activate("server"); err != nil {
+		t.Fatal(err)
+	}
+	return client
 }
 
 func newTestClient(t *testing.T) *Client {

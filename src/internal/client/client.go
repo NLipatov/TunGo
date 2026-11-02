@@ -133,13 +133,6 @@ func (c *Client) runTunnel(
 	ctx context.Context,
 ) error {
 	c.sessionReadyAt = time.Time{}
-	if c.tunManager != nil {
-		if err := c.tunManager.Close(); err != nil {
-			slog.Warn("failed to clean stale tunnel state", "err", err)
-		} else {
-			c.tunManager = nil
-		}
-	}
 	configuration, err := c.configurations.Active()
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidConfiguration, err)
@@ -148,15 +141,12 @@ func (c *Client) runTunnel(
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidConfiguration, err)
 	}
-	transport, crypto, rekey, err := c.connect(ctx, *configuration)
-	if err != nil {
-		return err
+	if c.tunManager != nil {
+		if err := c.tunManager.Close(); err != nil {
+			slog.Warn("failed to clean stale tunnel state", "err", err)
+		}
 	}
-	defer func() { _ = transport.Close() }()
-	serverAddr, err := transportServerAddr(transport)
-	if err != nil {
-		return err
-	}
+	// clienttun.New reverts stale dns settings which can prevent client from connecting
 	c.tunManager, err = clienttun.New(configuration)
 	if err != nil {
 		return err
@@ -168,12 +158,22 @@ func (c *Client) runTunnel(
 			c.tunManager = nil
 		}
 	}()
+	transport, crypto, rekey, err := c.connect(ctx, *configuration)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transport.Close() }()
+	serverAddr, err := transportServerAddr(transport)
+	if err != nil {
+		return err
+	}
 	tun, err := c.tunManager.Open(serverAddr)
 	if err != nil {
 		return err
 	}
 	tun = trafficstats.WrapTun(tun)
 	allowed := allowedSources(activeSettings)
+	defer c.ready.Store(false)
 	switch activeSettings.Protocol {
 	case settings.UDP:
 		tunnel, err := udp.New(ctx, transport, tun, crypto, rekey, allowed)

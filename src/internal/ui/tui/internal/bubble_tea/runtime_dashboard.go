@@ -132,9 +132,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.tickSeq {
 			return m, nil
 		}
-		if !m.connected && m.ready() {
-			m.connected = true
-		}
+		m.connected = m.mode == mode.Server || m.ready()
 		if m.screen != runtimeScreenDataplane {
 			return m, nil
 		}

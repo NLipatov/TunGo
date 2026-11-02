@@ -1425,19 +1425,40 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 }
 
 func TestRuntimeDashboard_ReadyStateUpdatesOnTick(t *testing.T) {
-	ready := false
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:  mode.Client,
-		Ready: func() bool { return ready },
-	}, testSettings())
-	if m.connected {
-		t.Fatal("runtime started connected")
-	}
+	for name, runtimeMode := range map[string]mode.Mode{"client": mode.Client, "server": mode.Server} {
+		t.Run(name, func(t *testing.T) {
+			ready := false
+			m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+				Mode:  runtimeMode,
+				Ready: func() bool { return ready },
+			}, testSettings())
+			m.width, m.height = 80, 24
+			if m.connected != (runtimeMode == mode.Server) {
+				t.Fatalf("initial connected = %v", m.connected)
+			}
 
-	ready = true
-	updated, _ := m.Update(runtimeTickMsg{seq: m.tickSeq})
-	if !updated.(RuntimeDashboard).connected {
-		t.Fatal("runtime did not become connected on tick")
+			for _, value := range []bool{true, false, true, false} {
+				ready = value
+				updated, cmd := m.Update(runtimeTickMsg{seq: m.tickSeq})
+				m = updated.(RuntimeDashboard)
+				wantConnected := runtimeMode == mode.Server || ready
+				if m.connected != wantConnected {
+					t.Fatalf("Ready = %v: connected = %v, want %v", ready, m.connected, wantConnected)
+				}
+				if cmd == nil {
+					t.Fatal("tick did not schedule the next update")
+				}
+				wantStatus := "Connecting to server..."
+				if runtimeMode == mode.Server {
+					wantStatus = "Running"
+				} else if ready {
+					wantStatus = "Connected"
+				}
+				if view := m.mainView(); !strings.Contains(view, wantStatus) {
+					t.Fatalf("view does not contain status %q: %s", wantStatus, view)
+				}
+			}
+		})
 	}
 }
 
