@@ -27,11 +27,6 @@ const (
 	reconnectInterval = 500 * time.Millisecond
 )
 
-type failover interface {
-	OnFail() (bool, string, error)
-	Reset()
-}
-
 type tunManager interface {
 	Open(serverAddr netip.Addr) (io.ReadWriter, error)
 	Close() error
@@ -65,7 +60,7 @@ func New(configurations *clientconfig.Configurations) (*Client, error) {
 	slog.Info("starting client")
 	return &Client{
 		configurations: configurations,
-		failover:       clientconfig.NewFailover(configurations, 3),
+		failover:       *newFailover(configurations, 3),
 	}, nil
 }
 

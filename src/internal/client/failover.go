@@ -2,30 +2,31 @@ package client
 
 import (
 	"errors"
+	"tungo/internal/config/client"
 )
 
 var (
 	ErrNoFailoverCandidates = errors.New("no failover option available")
 )
 
-type Failover struct {
-	configurations   *Configurations
+type failover struct {
+	configurations   *client.Configurations
 	cur              int
 	count, threshold int
 }
 
-func NewFailover(configurations *Configurations, failThreshold int) *Failover {
-	return &Failover{
+func newFailover(configurations *client.Configurations, failThreshold int) *failover {
+	return &failover{
 		configurations: configurations,
 		threshold:      failThreshold,
 	}
 }
 
-func (f *Failover) Reset() {
+func (f *failover) Reset() {
 	f.count = 0
 }
 
-func (f *Failover) OnFail() (bool, string, error) {
+func (f *failover) OnFail() (bool, string, error) {
 	f.count++
 	if f.count < f.threshold {
 		return false, "", nil

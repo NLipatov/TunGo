@@ -160,7 +160,7 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	if rotated, name, err := client.failover.OnFail(); err != nil || rotated || name != "" {
 		t.Fatalf("second failure = %v, %q, %v; want no rotation", rotated, name, err)
 	}
-	if rotated, name, err := client.failover.OnFail(); !errors.Is(err, clientconfig.ErrNoFailoverCandidates) || rotated || name != "" {
+	if rotated, name, err := client.failover.OnFail(); !errors.Is(err, ErrNoFailoverCandidates) || rotated || name != "" {
 		t.Fatalf("third failure = %v, %q, %v; want ErrNoFailoverCandidates", rotated, name, err)
 	}
 }
