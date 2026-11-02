@@ -8,8 +8,11 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -123,9 +126,23 @@ func (h clientTestReconnectHandler) Handle(ctx context.Context, record slog.Reco
 }
 
 func TestClientStopsDuringReconnectDelay(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+
 	tunnel := &clientTestTUN{}
 	client := newTestClient(t)
 	client.tunManager = tunnel
+	configuration := clientTestConfiguration()
+	configuration.Protocol = settings.WS
+	configuration.WSSettings = configuration.TCPSettings
+	configuration.WSSettings.Protocol = settings.WS
+	configuration.WSSettings.Port = server.Listener.Addr().(*net.TCPAddr).Port
+	importClientConfiguration(t, client.configurations, "server", configuration)
+	if err := client.configurations.Activate("server"); err != nil {
+		t.Fatal(err)
+	}
 	reconnecting := make(chan struct{}, 1)
 	originalLogger := slog.Default()
 	slog.SetDefault(slog.New(clientTestReconnectHandler{
@@ -140,6 +157,8 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 
 	select {
 	case <-reconnecting:
+	case err := <-done:
+		t.Fatalf("Run() returned before reconnecting: %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("client did not reach the reconnect delay")
 	}
@@ -162,6 +181,48 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	}
 	if rotated, name, err := client.failover.OnFail(); !errors.Is(err, ErrNoFailoverCandidates) || rotated || name != "" {
 		t.Fatalf("third failure = %v, %q, %v; want ErrNoFailoverCandidates", rotated, name, err)
+	}
+}
+
+func TestClientRunReturnsConfigurationError(t *testing.T) {
+	for _, tc := range []struct {
+		name, content string
+	}{
+		{name: "missing"},
+		{name: "invalid JSON", content: "{"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if tc.content != "" {
+				path := filepath.Join(directory, "client_configuration.json")
+				if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client, err := New(clientconfig.NewConfigurations(directory))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			err = client.Run(ctx)
+			if ctx.Err() != nil {
+				t.Fatalf("Run() waited for cancellation instead of returning the configuration error: %v", err)
+			}
+			if !errors.Is(err, ErrInvalidConfiguration) {
+				t.Fatalf("Run() error = %v, want ErrInvalidConfiguration", err)
+			}
+			if tc.content == "" {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("Run() error = %v, want missing configuration cause", err)
+				}
+			} else {
+				var syntaxErr *json.SyntaxError
+				if !errors.As(err, &syntaxErr) {
+					t.Fatalf("Run() error = %v, want JSON syntax cause", err)
+				}
+			}
+		})
 	}
 }
 

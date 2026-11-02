@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	ErrResumeDetected = errors.New("resume detected")
+	ErrResumeDetected       = errors.New("resume detected")
+	ErrInvalidConfiguration = errors.New("invalid configuration")
 )
 
 const (
@@ -75,6 +76,9 @@ func (c *Client) Run(ctx context.Context) error {
 		err := c.runSession(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
 			return nil
+		}
+		if errors.Is(err, ErrInvalidConfiguration) {
+			return err
 		}
 		c.attemptFailover(err)
 		slog.Warn("session error, reconnecting", "err", err)
@@ -138,11 +142,11 @@ func (c *Client) runTunnel(
 	}
 	configuration, err := c.configurations.Active()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrInvalidConfiguration, err)
 	}
 	activeSettings, err := configuration.ActiveSettings()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrInvalidConfiguration, err)
 	}
 	transport, crypto, rekey, err := c.connect(ctx, *configuration)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 const (
@@ -63,7 +64,9 @@ func TestMain_ClientWithoutConfiguration(t *testing.T) {
 	}
 	requireCleanDefaultConfigDirectory(t)
 
-	command := exec.Command(os.Args[0], "-test.run=^TestMain_ClientWithoutConfiguration$")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestMain_ClientWithoutConfiguration$")
 	command.Env = append(os.Environ(), runMainClientEnv+"=1")
 	output, err := command.CombinedOutput()
 	var exitErr *exec.ExitError
