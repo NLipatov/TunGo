@@ -60,7 +60,7 @@ func New(configurations *clientconfig.Configurations) (*Client, error) {
 	slog.Info("starting client")
 	return &Client{
 		configurations: configurations,
-		failover:       *newFailover(configurations, 3),
+		failover:       *newFailover(configurations),
 	}, nil
 }
 

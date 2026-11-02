@@ -9,16 +9,17 @@ var (
 	ErrNoFailoverCandidates = errors.New("no failover option available")
 )
 
+const failureThreshold = 3
+
 type failover struct {
-	configurations   *client.Configurations
-	cur              int
-	count, threshold int
+	configurations *client.Configurations
+	cur            int
+	count          int
 }
 
-func newFailover(configurations *client.Configurations, failThreshold int) *failover {
+func newFailover(configurations *client.Configurations) *failover {
 	return &failover{
 		configurations: configurations,
-		threshold:      failThreshold,
 	}
 }
 
@@ -28,7 +29,7 @@ func (f *failover) Reset() {
 
 func (f *failover) OnFail() (bool, string, error) {
 	f.count++
-	if f.count < f.threshold {
+	if f.count < failureThreshold {
 		return false, "", nil
 	}
 	candidates, err := f.configurations.List()

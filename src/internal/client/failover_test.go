@@ -68,7 +68,7 @@ func TestAttemptFailoverHandlesSessionOutcome(t *testing.T) {
 	}
 }
 
-func TestFailoverRotatesNamedConfigurations(t *testing.T) {
+func TestFailoverRotatesNamedConfigurationsAtThreshold(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		names    []string
@@ -82,45 +82,17 @@ func TestFailoverRotatesNamedConfigurations(t *testing.T) {
 			if err := configurations.Activate("a"); err != nil {
 				t.Fatal(err)
 			}
-			failover := newFailover(configurations, 1)
+			failover := newFailover(configurations)
+			previousID := 1
 			// Rotation starts at the first named profile, even if it is already active.
-			for i, want := range tc.sequence {
-				rotated, name, err := failover.OnFail()
-				if err != nil {
-					t.Fatalf("OnFail() call %d: %v", i+1, err)
-				}
-				if wantName := tc.names[want-1]; !rotated || name != wantName {
-					t.Fatalf("call %d: name = %q, want %q", i+1, name, wantName)
-				}
-				active, err := configurations.Active()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if active.ClientID != want {
-					t.Fatalf("call %d: active ClientID = %d, want %d", i+1, active.ClientID, want)
-				}
-			}
-		})
-	}
-}
-
-func TestFailoverRotatesAtThreshold(t *testing.T) {
-	for _, threshold := range []int{2, 3, 5} {
-		t.Run(fmt.Sprintf("threshold %d", threshold), func(t *testing.T) {
-			configurations := failoverTestConfigurations(t, "a", "b")
-			if err := configurations.Activate("b"); err != nil {
-				t.Fatal(err)
-			}
-			failover := newFailover(configurations, threshold)
-			previousID := 2
-			for _, nextID := range []int{1, 2, 1} {
-				for failure := 1; failure <= threshold; failure++ {
+			for _, nextID := range tc.sequence {
+				for failure := 1; failure <= 3; failure++ {
 					rotated, name, err := failover.OnFail()
-					wantRotation := failure == threshold
+					wantRotation := failure == 3
 					wantID, wantName := previousID, ""
 					if wantRotation {
 						wantID = nextID
-						wantName = []string{"a", "b"}[nextID-1]
+						wantName = tc.names[nextID-1]
 					}
 					if err != nil || rotated != wantRotation || name != wantName {
 						t.Fatalf("failure %d: OnFail() = %v, %q, %v; want %v, %q, nil", failure, rotated, name, err, wantRotation, wantName)
@@ -140,7 +112,7 @@ func TestFailoverRotatesAtThreshold(t *testing.T) {
 }
 
 func TestFailoverResetPreservesRotationPosition(t *testing.T) {
-	failover := newFailover(failoverTestConfigurations(t, "a", "b"), 3)
+	failover := newFailover(failoverTestConfigurations(t, "a", "b"))
 	for _, candidate := range []string{"a", "b"} {
 		for failure := 1; failure <= 3; failure++ {
 			rotated, name, err := failover.OnFail()
@@ -180,7 +152,7 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 			if err := configurations.Delete("initial"); err != nil {
 				t.Fatal(err)
 			}
-			failover := newFailover(configurations, 3)
+			failover := newFailover(configurations)
 			for range 2 {
 				if rotated, name, err := failover.OnFail(); err != nil || rotated || name != "" {
 					t.Fatalf("OnFail() below threshold = %v, %q, %v", rotated, name, err)
@@ -207,7 +179,7 @@ func TestFailoverReturnsEmptyNameOnListError(t *testing.T) {
 		t.Fatal(err)
 	}
 	configurations := clientconfig.NewConfigurations(directory)
-	failover := newFailover(configurations, 3)
+	failover := newFailover(configurations)
 	for range 2 {
 		if rotated, name, err := failover.OnFail(); err != nil || rotated || name != "" {
 			t.Fatalf("OnFail() below threshold accessed storage: %v, %q, %v", rotated, name, err)
@@ -235,7 +207,7 @@ func TestFailoverReturnsEmptyNameOnListError(t *testing.T) {
 
 func TestFailoverRetriesAfterCandidatesAdded(t *testing.T) {
 	configurations := failoverTestConfigurations(t, "a")
-	failover := newFailover(configurations, 3)
+	failover := newFailover(configurations)
 	for range 2 {
 		if rotated, name, err := failover.OnFail(); err != nil || rotated || name != "" {
 			t.Fatalf("OnFail() below threshold = %v, %q, %v", rotated, name, err)
@@ -253,14 +225,21 @@ func TestFailoverRetriesAfterCandidatesAdded(t *testing.T) {
 
 func TestFailoverAfterNamedConfigurationDeleted(t *testing.T) {
 	configurations := failoverTestConfigurations(t, "a", "b", "c")
-	failover := newFailover(configurations, 1)
-	for range 2 {
-		if rotated, _, err := failover.OnFail(); err != nil || !rotated {
-			t.Fatal(err)
+	failover := newFailover(configurations)
+	// Reach two rotations before removing a candidate.
+	for failure := 1; failure <= 6; failure++ {
+		rotated, _, err := failover.OnFail()
+		if err != nil || rotated != (failure%3 == 0) {
+			t.Fatalf("failure %d: rotated = %v, err = %v", failure, rotated, err)
 		}
 	}
 	if err := configurations.Delete("a"); err != nil {
 		t.Fatal(err)
+	}
+	for range 2 {
+		if rotated, name, err := failover.OnFail(); err != nil || rotated || name != "" {
+			t.Fatalf("OnFail() below threshold = %v, %q, %v", rotated, name, err)
+		}
 	}
 	rotated, name, err := failover.OnFail()
 	if err != nil {
@@ -290,7 +269,7 @@ func TestFailoverAdvancesAfterActivationError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "client_configuration.json.a"), []byte("{"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	failover := newFailover(configurations, 3)
+	failover := newFailover(configurations)
 	for range 2 {
 		if rotated, name, err := failover.OnFail(); err != nil || rotated || name != "" {
 			t.Fatalf("OnFail() below threshold = %v, %q, %v", rotated, name, err)
