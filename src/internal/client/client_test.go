@@ -156,8 +156,12 @@ func TestClientStopsDuringReconnectDelay(t *testing.T) {
 	if got := tunnel.closeCalls.Load(); got != 1 {
 		t.Fatalf("Close() calls = %d, want preflight cleanup", got)
 	}
-	if client.failoverCount != 1 {
-		t.Fatalf("failoverCount = %d, want one failed session", client.failoverCount)
+	// Exactly one session failed, so the next failure is still below the threshold.
+	if rotated, name, err := client.failover.OnFail(); err != nil || rotated || name != "" {
+		t.Fatalf("second failure = %v, %q, %v; want no rotation", rotated, name, err)
+	}
+	if rotated, name, err := client.failover.OnFail(); !errors.Is(err, clientconfig.ErrNoFailoverCandidates) || rotated || name != "" {
+		t.Fatalf("third failure = %v, %q, %v; want ErrNoFailoverCandidates", rotated, name, err)
 	}
 }
 

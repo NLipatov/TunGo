@@ -27,6 +27,11 @@ const (
 	reconnectInterval = 500 * time.Millisecond
 )
 
+type failover interface {
+	OnFail() (bool, string, error)
+	Reset()
+}
+
 type tunManager interface {
 	Open(serverAddr netip.Addr) (io.ReadWriter, error)
 	Close() error
@@ -47,12 +52,11 @@ type clientRekey interface {
 // Client owns the client lifecycle: reconnects, transport sessions, TUN setup,
 // packet forwarding, and cleanup.
 type Client struct {
-	configurations                   *clientconfig.Configurations
-	tunManager                       tunManager
-	ready                            atomic.Bool
-	failover                         clientconfig.Failover
-	failoverCount, failoverThreshold int
-	sessionReadyAt                   time.Time
+	configurations *clientconfig.Configurations
+	tunManager     tunManager
+	ready          atomic.Bool
+	failover       failover
+	sessionReadyAt time.Time
 }
 
 // New creates a client using the system configuration files.
@@ -60,9 +64,8 @@ type Client struct {
 func New(configurations *clientconfig.Configurations) (*Client, error) {
 	slog.Info("starting client")
 	return &Client{
-		configurations:    configurations,
-		failover:          clientconfig.NewFailover(configurations),
-		failoverThreshold: 3,
+		configurations: configurations,
+		failover:       clientconfig.NewFailover(configurations, 3),
 	}, nil
 }
 
@@ -78,9 +81,7 @@ func (c *Client) Run(ctx context.Context) error {
 		if err == nil || errors.Is(err, context.Canceled) {
 			return nil
 		}
-		if err := c.attemptFailover(err); err != nil {
-			slog.Warn("failover failed", "err", err)
-		}
+		c.attemptFailover(err)
 		slog.Warn("session error, reconnecting", "err", err)
 		timer := time.NewTimer(reconnectInterval)
 		select {
@@ -93,23 +94,19 @@ func (c *Client) Run(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) attemptFailover(sessionErr error) error {
-	if !c.sessionReadyAt.IsZero() &&
-		time.Since(c.sessionReadyAt) >= 5*time.Minute {
-		c.failoverCount = 0
+func (c *Client) attemptFailover(err error) {
+	// if session lived long enough - reset failover count
+	if !c.sessionReadyAt.IsZero() && time.Since(c.sessionReadyAt) >= 5*time.Minute {
+		c.failover.Reset()
 	}
-	if sessionErr != nil && !errors.Is(sessionErr, ErrResumeDetected) {
-		c.failoverCount++
+	if errors.Is(err, ErrResumeDetected) {
+		return
 	}
-	if c.failoverCount >= c.failoverThreshold {
-		name, err := c.failover.Failover()
-		if err != nil {
-			return err
-		}
-		slog.Warn("failover configuration activated", "configuration", name)
-		c.failoverCount = 0
+	if rotated, name, err := c.failover.OnFail(); err != nil {
+		slog.Warn("failover failed", "configuration", name, "err", err)
+	} else if rotated {
+		slog.Info("failover activated", "configuration", name)
 	}
-	return nil
 }
 
 func (c *Client) runSession(parentCtx context.Context) error {
