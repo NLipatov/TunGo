@@ -384,7 +384,7 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 		if sharedAddress, ok := sharedServerAddress(m.endpoints); ok {
 			return []string{formatRuntimeHostLine("Server Address", sharedAddress)}
 		}
-		lines := []string{"Server Addressses:"}
+		lines := []string{"Server Addresses:"}
 		for _, endpoint := range m.endpoints {
 			if line := formatRuntimeProtocolHost(endpoint.Protocol, endpoint.Server); line != "" {
 				lines = append(lines, "  "+line)
