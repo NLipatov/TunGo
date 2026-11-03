@@ -382,9 +382,9 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 	}
 	if m.mode == mode.Server && len(m.endpoints) > 1 {
 		if sharedAddress, ok := sharedServerAddress(m.endpoints); ok {
-			return []string{formatRuntimeHostLine("Server IP", sharedAddress)}
+			return []string{formatRuntimeHostLine("Server Address", sharedAddress)}
 		}
-		lines := []string{"Server IPs:"}
+		lines := []string{"Server Addressses:"}
 		for _, endpoint := range m.endpoints {
 			if line := formatRuntimeProtocolHost(endpoint.Protocol, endpoint.Server); line != "" {
 				lines = append(lines, "  "+line)
@@ -395,7 +395,7 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 		}
 		return nil
 	}
-	if line := formatRuntimeHostLine("Server IP", m.endpoints[0].Server); line != "" {
+	if line := formatRuntimeHostLine("Server Address", m.endpoints[0].Server); line != "" {
 		return []string{line}
 	}
 	return nil
