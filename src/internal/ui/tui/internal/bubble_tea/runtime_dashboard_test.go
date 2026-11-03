@@ -493,7 +493,7 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 				Protocol: settings.UDP,
 				Endpoints: []EndpointInfo{{
 					Protocol:   settings.UDP,
-					Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
+					Server:     settings.Host{Domain: "vpn.example.com", IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
 					TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
 					TunnelIPv6: netip.MustParseAddr("fd00::2"),
 				}},
@@ -504,8 +504,8 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 	if !strings.Contains(view, "Protocol: UDP") {
 		t.Fatalf("expected protocol line in main view, got %q", view)
 	}
-	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::10") {
-		t.Fatalf("expected server IPs line in main view, got %q", view)
+	if !strings.Contains(view, "Server Address: Domain vpn.example.com | IPv4 198.51.100.10 | IPv6 2001:db8::10") {
+		t.Fatalf("expected server address line in main view, got %q", view)
 	}
 	if !strings.Contains(view, "Tunnel IP: IPv4 10.0.0.2 | IPv6 fd00::2") {
 		t.Fatalf("expected network address line in main view, got %q", view)
@@ -545,8 +545,8 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 	if !strings.Contains(view, "Tunnel IPs:") {
 		t.Fatalf("expected tunnel addresses section in server main view, got %q", view)
 	}
-	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10") {
-		t.Fatalf("expected shared server IP line in server main view, got %q", view)
+	if !strings.Contains(view, "Server Address: IPv4 198.51.100.10") {
+		t.Fatalf("expected shared server address line in server main view, got %q", view)
 	}
 	if !strings.Contains(view, "TCP: IPv4 10.0.0.1 | IPv6 fd00::1") {
 		t.Fatalf("expected TCP tunnel line in server main view, got %q", view)
@@ -581,7 +581,7 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 	}, testSettings())
 
 	view := m.View().Content
-	if !strings.Contains(view, "Server IPs:") {
+	if !strings.Contains(view, "Server Addresses:") {
 		t.Fatalf("expected per-protocol server addresses section, got %q", view)
 	}
 	if !strings.Contains(view, "TCP: IPv4 198.51.100.10") {
@@ -590,8 +590,8 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 	if !strings.Contains(view, "UDP: IPv6 2001:db8::20") {
 		t.Fatalf("expected UDP server line, got %q", view)
 	}
-	if strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::20") {
-		t.Fatalf("unexpected merged server IP line, got %q", view)
+	if strings.Contains(view, "Server Address: IPv4 198.51.100.10 | IPv6 2001:db8::20") {
+		t.Fatalf("unexpected merged server address line, got %q", view)
 	}
 }
 

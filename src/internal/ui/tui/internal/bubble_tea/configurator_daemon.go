@@ -512,19 +512,18 @@ func (m Configurator) renderDaemonManageScreen() string {
 
 	rows := renderSelectableRows(m.daemon.menuOptions, m.cursor, contentWidth, styles)
 	body := make([]string, 0, len(rows)+18)
-	body = append(body, styles.title.Render("Daemon Status"))
-	body = append(body, daemonSectionDivider(contentWidth))
-	body = append(body, strings.Split(m.daemonStatusLine(), "\n")...)
-	if !m.daemon.updatedAt.IsZero() {
-		body = append(body, styles.meta.Render("Updated: "+m.daemon.updatedAt.Format("15:04:05")))
-	}
-
+	// Keep controls above status and notices, whose length can exceed the terminal height.
+	body = append(body, styles.title.Render("Actions"), daemonSectionDivider(contentWidth))
+	body = append(body, rows...)
 	if notice := strings.TrimSpace(m.notice); notice != "" {
 		body = append(body, "", notice)
 	}
 
-	body = append(body, "", styles.title.Render("Actions"), daemonSectionDivider(contentWidth))
-	body = append(body, rows...)
+	body = append(body, "", styles.title.Render("Daemon Status"), daemonSectionDivider(contentWidth))
+	body = append(body, strings.Split(m.daemonStatusLine(), "\n")...)
+	if !m.daemon.updatedAt.IsZero() {
+		body = append(body, styles.meta.Render("Updated: "+m.daemon.updatedAt.Format("15:04:05")))
+	}
 
 	return renderScreen(
 		m.width,

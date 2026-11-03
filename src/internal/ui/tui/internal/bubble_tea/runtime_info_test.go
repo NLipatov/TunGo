@@ -25,7 +25,7 @@ func TestRuntimeDashboardRefreshesRuntimeInfoOnTick(t *testing.T) {
 			}, testSettings())
 			m.preferences.ShowDataplaneGraph = graphEnabled
 			m.preferences.ShowDataplaneStats = false
-			if view := m.View().Content; strings.Contains(view, "Protocol:") || strings.Contains(view, "Server IP:") {
+			if view := m.View().Content; strings.Contains(view, "Protocol:") || strings.Contains(view, "Server Address:") {
 				t.Fatalf("runtime information shown before settings were loaded: %s", view)
 			}
 

@@ -221,6 +221,66 @@ func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 	}
 }
 
+func TestDaemonManage_StartKeepsActionsVisible(t *testing.T) {
+	for _, size := range []struct {
+		name          string
+		width, height int
+	}{
+		{"120x24", 120, 24},
+		{"80x24", 80, 24},
+		{"80x16", 80, 16},
+	} {
+		t.Run(size.name, func(t *testing.T) {
+			status := systemd.UnitStatus{
+				Installed: true, Managed: true, Role: systemd.UnitRoleServer,
+				LoadState: "loaded", UnitFileState: "enabled", ActiveState: "inactive",
+				SubState: "dead", Result: "success", ExecMainStatus: "0",
+				FragmentPath: "/etc/systemd/system/tungo.service",
+				ExecStart:    "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+			}
+			opts := defaultConfiguratorOpts()
+			opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+			opts.testDaemon().start = func() error {
+				status.ActiveState = "active"
+				status.SubState = "running"
+				// A real systemctl show response grows after the service starts.
+				status.ExecStart = "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; ignore_errors=no ; start_time=[Tue 2026-11-03 09:28:21 UTC] ; stop_time=[n/a] ; pid=2291 ; code=(null) ; status=0/0 }"
+				return nil
+			}
+			model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceNone))
+			if err != nil {
+				t.Fatal(err)
+			}
+			model.screen = configuratorScreenDaemonManage
+			model.width, model.height = size.width, size.height
+			if view := stripANSI(model.View().Content); !strings.Contains(view, "> "+daemonStartLabel) {
+				t.Fatalf("start action is outside the terminal:\n%s", view)
+			}
+
+			next, _ := model.Update(keyNamed(tea.KeyEnter))
+			model = next.(Configurator)
+			if model.daemon.status.ActiveState != "active" {
+				t.Fatal("daemon did not start")
+			}
+			for cursor, action := range model.daemon.menuOptions {
+				if cursor > 0 {
+					next, _ = model.Update(keyNamed(tea.KeyDown))
+					model = next.(Configurator)
+				}
+				view := stripANSI(model.View().Content)
+				if !strings.Contains(view, "> "+action) {
+					t.Fatalf("selected action %q is outside the terminal after start:\n%s", action, view)
+				}
+			}
+
+			model.notice = "Failed to stop daemon: " + strings.Repeat("long diagnostic output ", 30)
+			if view := stripANSI(model.View().Content); !strings.Contains(view, "> "+daemonDeleteLabel) {
+				t.Fatalf("diagnostic notice displaced the selected action:\n%s", view)
+			}
+		})
+	}
+}
+
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.Daemon = newDaemonControlStub()
