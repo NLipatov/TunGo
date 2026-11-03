@@ -241,6 +241,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	model = completeDaemonStart(model, model.Init())
 	if model.done {
 		t.Fatal("expected done=false when daemon is active")
 	}

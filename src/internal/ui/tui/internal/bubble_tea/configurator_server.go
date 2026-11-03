@@ -26,11 +26,7 @@ func (m Configurator) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 
 	switch m.server.menuOptions[m.cursor] {
 	case serverStartLabel:
-		m = m.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
-		if m.done {
-			return m, tea.Quit
-		}
-		return m, nil
+		return m.startModeWithDaemonGuard(mode.Server, configuratorScreenServerSelect, false)
 	case serverAddLabel:
 		generated, err := m.options.ServerConfigurations.GenerateClient()
 		if err != nil {

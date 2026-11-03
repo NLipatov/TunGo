@@ -17,6 +17,7 @@ func (t *TUI) configure(ctx context.Context, logFeed bubbleTea.RuntimeLogFeed) (
 		serverConfigurations = t.serverFile
 	}
 	model, err := bubbleTea.NewConfigurator(bubbleTea.ConfiguratorOptions{
+		Context:              ctx,
 		ClientConfigurations: t.clientConfigurations,
 		ServerConfigurations: serverConfigurations,
 		Daemon:               t.daemonControl,
@@ -25,6 +26,7 @@ func (t *TUI) configure(ctx context.Context, logFeed bubbleTea.RuntimeLogFeed) (
 	if err != nil {
 		return 0, err
 	}
+	defer model.Close()
 
 	program := tea.NewProgram(model)
 	stopQuit := context.AfterFunc(ctx, program.Quit)

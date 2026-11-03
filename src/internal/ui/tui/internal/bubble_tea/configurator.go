@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -32,6 +33,7 @@ const (
 )
 
 type ConfiguratorOptions struct {
+	Context              context.Context
 	ClientConfigurations ClientConfigurations
 	ServerConfigurations ServerConfigurations
 	Daemon               systemd.Control
@@ -53,6 +55,7 @@ const (
 	configuratorScreenServerManage
 	configuratorScreenServerDeleteConfirm
 	configuratorScreenDaemonManage
+	configuratorScreenDaemonChecking
 	configuratorScreenDaemonReconfigureConfirm
 	configuratorScreenDaemonActiveConfirm
 	configuratorScreenDaemonCheckErrorConfirm
@@ -114,13 +117,15 @@ type serverState struct {
 }
 
 type daemonState struct {
+	commands    *daemonCommands
+	pending     string
 	status      systemd.UnitStatus
 	statusErr   error
 	menuOptions []string
-	updatedAt   time.Time
 }
 
 type Configurator struct {
+	initialCmd      tea.Cmd
 	settings        *Preferences
 	options         ConfiguratorOptions
 	serverSupported bool
@@ -158,6 +163,9 @@ type Configurator struct {
 // It may restore a saved client configuration and start the selected mode automatically.
 // Returns the initialized configurator, or an error if required client configuration dependencies are unavailable or cannot be loaded.
 func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
+	if options.Context == nil {
+		options.Context = context.Background()
+	}
 	serverSupported := options.ServerConfigurations != nil
 	settingsNotice := ""
 	modeOptions := []string{modeClientLabel}
@@ -199,11 +207,10 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	if options.ClientConfigurations == nil {
 		return Configurator{}, errors.New("configurator dependencies are not initialized")
 	}
+	ctx, cancel := context.WithCancel(options.Context)
+	model.daemon.commands = &daemonCommands{ctx: ctx, cancel: cancel}
 	model.initNameInput()
 	model.initJSONInput()
-	if options.Daemon != nil {
-		model.refreshDaemonStatus()
-	}
 	modeAutoselectNotice := ""
 	switch settings.Current().AutoSelectMode {
 	case tuiconfig.ModePreferenceClient:
@@ -216,6 +223,7 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 	// or when client is explicitly preferred.
 	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == tuiconfig.ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
+			model.Close()
 			return Configurator{}, err
 		}
 		model.screen = configuratorScreenClientSelect
@@ -230,10 +238,10 @@ func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Config
 							model.notice = appendNotice(model.notice, settingsSaveNotice(settings.update(p)))
 						}
 						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", selected))
-						model = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
-						if !model.done && isDaemonStartConfirmationScreen(model.screen) {
-							model.pendingClientConfig = selected
-						}
+						model.pendingClientConfig = selected
+						var cmd tea.Cmd
+						model, cmd = model.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, true)
+						model.initialCmd = cmd
 					} else if isInvalidClientConfigurationError(err) {
 						model.client.invalidErr = err
 						model.client.invalidConfig = selected
@@ -279,7 +287,15 @@ func (m Configurator) Init() tea.Cmd {
 	if m.done {
 		return tea.Quit
 	}
-	return nil
+	return m.initialCmd
+}
+
+// Close cancels daemon operations and waits for their cleanup. Call it after
+// the program stops; the original model shares command ownership with all updates.
+func (m Configurator) Close() {
+	if m.daemon.commands != nil {
+		m.daemon.commands.close()
+	}
 }
 
 func (m Configurator) Result() (mode.Mode, error) {
@@ -296,6 +312,12 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case daemonStatusMsg:
+		return m.applyDaemonStatus(msg), nil
+	case daemonActiveMsg:
+		return m.applyDaemonActive(msg)
+	case daemonStoppedMsg:
+		return m.applyDaemonStopped(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -361,6 +383,11 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateServerDeleteConfirmScreen(msg)
 		case configuratorScreenDaemonManage:
 			return m.updateDaemonManageScreen(msg)
+		case configuratorScreenDaemonChecking:
+			if msg.String() == "esc" {
+				return m.cancelPendingDaemonStart("Start cancelled."), nil
+			}
+			return m, nil
 		case configuratorScreenDaemonReconfigureConfirm:
 			return m.updateDaemonReconfigureConfirmScreen(msg)
 		case configuratorScreenDaemonActiveConfirm:
@@ -413,6 +440,10 @@ func (m Configurator) updateModeScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	if msg.String() != "enter" {
 		return m, nil
 	}
+	if m.daemon.pending != "" && m.modeOptions[m.cursor] != modeDaemonLabel {
+		m.notice = "Wait for the daemon operation to finish."
+		return m, nil
+	}
 
 	switch m.modeOptions[m.cursor] {
 	case modeClientLabel:
@@ -431,8 +462,8 @@ func (m Configurator) updateModeScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	case modeDaemonLabel:
 		m.notice = ""
 		m.cursor = 0
-		m.refreshDaemonStatus()
 		m.screen = configuratorScreenDaemonManage
+		return m.refreshDaemonStatus()
 	}
 	return m, nil
 }

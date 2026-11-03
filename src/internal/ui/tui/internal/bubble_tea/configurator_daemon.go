@@ -1,126 +1,132 @@
 package bubble_tea
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"time"
-
-	"tungo/internal/daemon/systemd"
-	"tungo/internal/mode"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
+	"tungo/internal/daemon/systemd"
+	"tungo/internal/mode"
 )
 
+// Only the event loop changes the model. Commands return data, never a model snapshot.
+type daemonStatusMsg struct {
+	status systemd.UnitStatus
+	err    error
+	notice string
+}
+
+type daemonActiveMsg struct {
+	active bool
+	err    error
+}
+
+type daemonStoppedMsg struct{ err error }
+
+// daemonCommands owns the shared lifetime of commands across model copies.
+type daemonCommands struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	active sync.WaitGroup
+}
+
+func (c *daemonCommands) track(cmd tea.Cmd) tea.Cmd {
+	return func() tea.Msg {
+		c.mu.Lock()
+		if c.ctx.Err() != nil {
+			c.mu.Unlock()
+			return nil
+		}
+		c.active.Add(1)
+		c.mu.Unlock()
+		defer c.active.Done()
+		return cmd()
+	}
+}
+
+func (c *daemonCommands) close() {
+	// Serialize cancellation with registration: a command that Bubble Tea starts
+	// late must not begin work after Wait has observed zero active commands.
+	c.mu.Lock()
+	c.cancel()
+	c.mu.Unlock()
+	c.active.Wait()
+}
+
 func (m Configurator) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	if msg.String() == "esc" {
 		return m.leaveDaemonManageScreen(), nil
 	}
-
 	m.updateCursor(msg, len(m.daemon.menuOptions))
-	if msg.String() != "enter" || len(m.daemon.menuOptions) == 0 {
+	if msg.String() != "enter" || len(m.daemon.menuOptions) == 0 || m.daemon.pending != "" {
 		return m, nil
 	}
-
 	selected := m.daemon.menuOptions[m.cursor]
-	selectedCursor := m.cursor
-	var err error
 	switch selected {
 	case daemonSetupClientLabel:
-		m, err = m.applyDaemonSetup(mode.Client, false)
-		if err != nil {
-			m.notice = err.Error()
-			return m, nil
-		}
+		return m.setupDaemon(mode.Client, false)
 	case daemonSetupServerLabel:
-		m, err = m.applyDaemonSetup(mode.Server, false)
-		if err != nil {
-			m.notice = err.Error()
-			return m, nil
+		return m.setupDaemon(mode.Server, false)
+	case daemonReconfigureClientLabel, daemonReconfigureServerLabel:
+		target := mode.Client
+		if selected == daemonReconfigureServerLabel {
+			target = mode.Server
 		}
-	case daemonReconfigureClientLabel:
 		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
-			m.pendingDaemonMode = mode.Client
+			m.pendingDaemonMode = target
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
 			return m, nil
 		}
-		m, err = m.applyDaemonSetup(mode.Client, false)
-		if err != nil {
-			m.notice = err.Error()
-			return m, nil
-		}
-	case daemonReconfigureServerLabel:
-		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
-			m.pendingDaemonMode = mode.Server
-			m.cursor = 0
-			m.screen = configuratorScreenDaemonReconfigureConfirm
-			return m, nil
-		}
-		m, err = m.applyDaemonSetup(mode.Server, false)
-		if err != nil {
-			m.notice = err.Error()
-			return m, nil
-		}
+		return m.setupDaemon(target, false)
+	}
+	var action func(context.Context) error
+	var verb, progress string
+	switch selected {
 	case daemonStartLabel:
-		if m.options.Daemon == nil {
-			m.notice = "Daemon start is unavailable."
-			return m, nil
+		verb, progress = "start", "Starting daemon..."
+		if m.options.Daemon != nil {
+			action = m.options.Daemon.StartUnit
 		}
-		if err := m.options.Daemon.StartUnit(); err != nil {
-			m.notice = fmt.Sprintf("Failed to start daemon: %v", err)
-			return m, nil
-		}
-		m.notice = ""
 	case daemonStopLabel:
-		if m.options.Daemon == nil {
-			m.notice = "Daemon stop is unavailable."
-			return m, nil
+		verb, progress = "stop", "Stopping daemon..."
+		if m.options.Daemon != nil {
+			action = m.options.Daemon.StopUnit
 		}
-		if err := m.options.Daemon.StopUnit(); err != nil {
-			m.notice = fmt.Sprintf("Failed to stop daemon: %v", err)
-			return m, nil
-		}
-		m.notice = ""
 	case daemonEnableLabel:
-		if m.options.Daemon == nil {
-			m.notice = "Daemon enable is unavailable."
-			return m, nil
+		verb, progress = "enable", "Enabling autostart..."
+		if m.options.Daemon != nil {
+			action = m.options.Daemon.EnableUnit
 		}
-		if err := m.options.Daemon.EnableUnit(); err != nil {
-			m.notice = fmt.Sprintf("Failed to enable daemon: %v", err)
-			return m, nil
-		}
-		m.notice = ""
 	case daemonDisableLabel:
-		if m.options.Daemon == nil {
-			m.notice = "Daemon disable is unavailable."
-			return m, nil
+		verb, progress = "disable", "Disabling autostart..."
+		if m.options.Daemon != nil {
+			action = m.options.Daemon.DisableUnit
 		}
-		if err := m.options.Daemon.DisableUnit(); err != nil {
-			m.notice = fmt.Sprintf("Failed to disable daemon: %v", err)
-			return m, nil
-		}
-		m.notice = ""
 	case daemonDeleteLabel:
-		if m.options.Daemon == nil {
-			m.notice = "Daemon remove is unavailable."
-			return m, nil
+		verb, progress = "remove", "Removing daemon..."
+		if m.options.Daemon != nil {
+			action = m.options.Daemon.RemoveUnit
 		}
-		if err := m.options.Daemon.RemoveUnit(); err != nil {
-			m.notice = fmt.Sprintf("Failed to remove daemon: %v", err)
-			return m, nil
-		}
-		m.notice = ""
 	default:
 		return m, nil
 	}
-
-	m.refreshDaemonStatus()
-	m.cursor = daemonMenuCursorAfterRefresh(m.daemon.menuOptions, selected, selectedCursor)
-	return m, nil
+	if action == nil {
+		m.notice = fmt.Sprintf("Daemon %s is unavailable.", verb)
+		return m, nil
+	}
+	ctx := m.daemon.commands.ctx
+	return m.beginDaemonOperation(progress, func() (string, error) {
+		if err := action(ctx); err != nil {
+			return "", fmt.Errorf("Failed to %s daemon: %w", verb, err)
+		}
+		return "", nil
+	})
 }
 
 func (m Configurator) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -132,13 +138,11 @@ func (m Configurator) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) 
 		m.notice = "Reconfigure cancelled."
 		return m, nil
 	}
-
 	options := []string{daemonConfirmReconfigureNowLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
-
 	if options[m.cursor] == cancelLabel {
 		m.screen = configuratorScreenDaemonManage
 		m.cursor = 0
@@ -146,113 +150,133 @@ func (m Configurator) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) 
 		m.notice = "Reconfigure cancelled."
 		return m, nil
 	}
-
 	targetMode := m.pendingDaemonMode
 	m.pendingDaemonMode = 0
 	m.screen = configuratorScreenDaemonManage
 	m.cursor = 0
-
-	updated, err := m.applyDaemonSetup(targetMode, true)
-	if err != nil {
-		updated.notice = err.Error()
-		return updated, nil
-	}
-	return updated, nil
+	return m.setupDaemon(targetMode, true)
 }
 
-func (m Configurator) applyDaemonSetup(targetMode mode.Mode, restartRunning bool) (Configurator, error) {
+func (m Configurator) setupDaemon(targetMode mode.Mode, restartRunning bool) (Configurator, tea.Cmd) {
+	return m.beginDaemonOperation("Configuring daemon...", func() (string, error) {
+		return m.applyDaemonSetup(targetMode, restartRunning)
+	})
+}
+
+func (m Configurator) applyDaemonSetup(targetMode mode.Mode, restartRunning bool) (string, error) {
 	if m.options.Daemon == nil {
-		return m, errors.New("daemon setup is unavailable")
+		return "", errors.New("daemon setup is unavailable")
 	}
 	if targetMode == mode.Client {
 		if _, err := m.options.ClientConfigurations.Active(); err != nil {
-			return m, fmt.Errorf("cannot setup client daemon: %v", err)
+			return "", fmt.Errorf("cannot setup client daemon: %w", err)
 		}
 	}
-
-	path, err := m.options.Daemon.Setup(targetMode)
+	path, err := m.options.Daemon.Setup(m.daemon.commands.ctx, targetMode)
 	if err != nil {
-		return m, fmt.Errorf("failed to setup daemon: %v", err)
+		return "", fmt.Errorf("failed to setup daemon: %w", err)
 	}
-
 	if restartRunning {
 		role := "Client"
 		if targetMode == mode.Server {
 			role = "Server"
 		}
-		m.notice = fmt.Sprintf("%s daemon reconfigured at %s and restarted.", role, path)
-	} else {
-		m.notice = ""
+		return fmt.Sprintf("%s daemon reconfigured at %s and restarted.", role, path), nil
 	}
-	m.refreshDaemonStatus()
-	m.cursor = 0
-	return m, nil
+	return "", nil
+}
+
+func (m Configurator) beginDaemonOperation(progress string, action func() (string, error)) (Configurator, tea.Cmd) {
+	if m.daemon.pending != "" {
+		return m, nil
+	}
+	m.daemon.pending = progress
+	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
+	return m, m.daemon.commands.track(func() tea.Msg {
+		result := daemonStatusMsg{}
+		if action != nil {
+			notice, err := action()
+			result.notice = notice
+			if err != nil {
+				result.notice = err.Error()
+				if errors.Is(err, context.DeadlineExceeded) {
+					result.notice = "Daemon operation timed out; check the current status."
+				}
+			}
+		}
+		// Even a failed or timed-out command may have changed the service state.
+		if daemon == nil {
+			result.err = errors.New("daemon management is unavailable")
+		} else {
+			result.status, result.err = daemon.Status(ctx)
+		}
+		return result
+	})
+}
+
+func (m Configurator) refreshDaemonStatus() (Configurator, tea.Cmd) {
+	return m.beginDaemonOperation("Checking daemon status...", nil)
+}
+
+func (m Configurator) applyDaemonStatus(msg daemonStatusMsg) Configurator {
+	m.daemon.pending = ""
+	m.daemon.status, m.daemon.statusErr = msg.status, msg.err
+	selected := ""
+	if m.screen == configuratorScreenDaemonManage && m.cursor < len(m.daemon.menuOptions) {
+		selected = m.daemon.menuOptions[m.cursor]
+	}
+	if msg.err != nil {
+		m.daemon.menuOptions = nil
+	} else {
+		m.daemon.menuOptions = m.daemonMenuOptions(msg.status)
+	}
+	if m.screen == configuratorScreenDaemonManage {
+		m.notice = msg.notice
+		m.cursor = daemonMenuCursorAfterRefresh(m.daemon.menuOptions, selected, m.cursor)
+	}
+	return m
 }
 
 func (m Configurator) updateDaemonActiveConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m = m.cancelPendingDaemonStart("Start cancelled.")
-		return m, nil
+	if msg.String() == "esc" {
+		return m.cancelPendingDaemonStart("Start cancelled."), nil
 	}
-
 	options := []string{stopDaemonContinueLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
-
-	selected := options[m.cursor]
-	if selected == cancelLabel {
-		m = m.cancelPendingDaemonStart("Start cancelled.")
+	if options[m.cursor] == cancelLabel {
+		return m.cancelPendingDaemonStart("Start cancelled."), nil
+	}
+	if m.daemon.pending != "" {
 		return m, nil
 	}
-
 	if m.options.Daemon == nil {
-		m = m.cancelPendingDaemonStart("Stopping daemon is unavailable.")
-		return m, nil
+		return m.cancelPendingDaemonStart("Stopping daemon is unavailable."), nil
 	}
-
-	if err := m.options.Daemon.StopUnit(); err != nil {
-		m = m.cancelPendingDaemonStart(fmt.Sprintf("Failed to stop daemon: %v", err))
-		return m, nil
-	}
-
-	return m.completePendingDaemonStart("Daemon stopped. Starting selected mode.")
+	m.daemon.pending = "Stopping daemon..."
+	m.notice = m.daemon.pending
+	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
+	return m, m.daemon.commands.track(func() tea.Msg { return daemonStoppedMsg{err: daemon.StopUnit(ctx)} })
 }
 
 func (m Configurator) updateDaemonCheckErrorConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m = m.cancelPendingDaemonStart("Start cancelled.")
-		return m, nil
+	if msg.String() == "esc" {
+		return m.cancelPendingDaemonStart("Start cancelled."), nil
 	}
-
 	options := []string{retryDaemonCheckLabel, startAnywayUnsafeLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
-
-	selected := options[m.cursor]
-	switch selected {
+	switch options[m.cursor] {
 	case cancelLabel:
-		m = m.cancelPendingDaemonStart("Start cancelled.")
-		return m, nil
+		return m.cancelPendingDaemonStart("Start cancelled."), nil
 	case startAnywayUnsafeLabel:
 		return m.completePendingDaemonStart("Daemon status check failed. Starting selected mode without daemon guard.")
 	case retryDaemonCheckLabel:
-		targetMode := m.pendingStartMode
-		returnScreen := m.pendingStartScreen
-		pendingClientConfig := m.pendingClientConfig
-		m = m.startModeWithDaemonGuard(targetMode, returnScreen, true)
-		if m.done {
-			return m, tea.Quit
-		}
-		if !m.done && isDaemonStartConfirmationScreen(m.screen) && targetMode == mode.Client {
-			m.pendingClientConfig = pendingClientConfig
-		}
-		return m, nil
+		return m.startModeWithDaemonGuard(m.pendingStartMode, m.pendingStartScreen, true)
 	default:
 		return m, nil
 	}
@@ -262,51 +286,70 @@ func (m Configurator) completePendingDaemonStart(notice string) (Configurator, t
 	targetMode := m.pendingStartMode
 	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingDaemonStart()
+	m.notice = notice
 	if targetMode == mode.Client {
 		m = m.persistAutoSelectClientConfig(pendingClientConfig)
 	}
-	m.notice = notice
 	m.resultMode = targetMode
 	m.done = true
 	return m, tea.Quit
 }
 
-func (m Configurator) startModeWithDaemonGuard(targetMode mode.Mode, returnScreen configuratorScreen, preserveNotice bool) Configurator {
-	m = m.clearPendingDaemonStart()
-
+func (m Configurator) startModeWithDaemonGuard(targetMode mode.Mode, returnScreen configuratorScreen, preserveNotice bool) (Configurator, tea.Cmd) {
+	if m.daemon.pending != "" {
+		m.notice = "Wait for the daemon operation to finish."
+		return m, nil
+	}
+	m.pendingStartMode, m.pendingStartScreen = targetMode, returnScreen
 	if m.options.Daemon == nil {
-		m.resultMode = targetMode
-		m.done = true
-		return m
-	}
-
-	active, err := m.options.Daemon.IsUnitActive()
-	if err != nil {
-		message := fmt.Sprintf("Failed to check daemon status: %v", err)
-		if preserveNotice {
-			m.notice = appendNotice(m.notice, message)
-		} else {
-			m.notice = message
-		}
-		m.cursor = 0
-		m.pendingStartMode = targetMode
-		m.pendingStartScreen = returnScreen
-		m.screen = configuratorScreenDaemonCheckErrorConfirm
-		return m
-	}
-	if !active {
-		m.resultMode = targetMode
-		m.done = true
-		return m
+		return m.completePendingDaemonStart(m.notice)
 	}
 	if !preserveNotice {
 		m.notice = ""
 	}
 	m.cursor = 0
-	m.pendingStartMode = targetMode
-	m.pendingStartScreen = returnScreen
+	m.screen = configuratorScreenDaemonChecking
+	m.daemon.pending = "Checking daemon status..."
+	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
+	return m, m.daemon.commands.track(func() tea.Msg {
+		active, err := daemon.IsUnitActive(ctx)
+		return daemonActiveMsg{active: active, err: err}
+	})
+}
+
+func (m Configurator) applyDaemonActive(msg daemonActiveMsg) (Configurator, tea.Cmd) {
+	m.daemon.pending = ""
+	// Esc can withdraw the runtime start request while the check is in flight.
+	if m.pendingStartMode == 0 {
+		if m.screen == configuratorScreenDaemonManage {
+			return m.refreshDaemonStatus()
+		}
+		return m, nil
+	}
+	if msg.err != nil {
+		m.notice = appendNotice(m.notice, fmt.Sprintf("Failed to check daemon status: %v", msg.err))
+		m.screen = configuratorScreenDaemonCheckErrorConfirm
+		return m, nil
+	}
+	if !msg.active {
+		return m.completePendingDaemonStart(m.notice)
+	}
 	m.screen = configuratorScreenDaemonActiveConfirm
-	return m
+	return m, nil
+}
+
+func (m Configurator) applyDaemonStopped(msg daemonStoppedMsg) (Configurator, tea.Cmd) {
+	m.daemon.pending = ""
+	if m.pendingStartMode == 0 {
+		if m.screen == configuratorScreenDaemonManage {
+			return m.refreshDaemonStatus()
+		}
+		return m, nil
+	}
+	if msg.err != nil {
+		return m.cancelPendingDaemonStart(fmt.Sprintf("Failed to stop daemon: %v", msg.err)), nil
+	}
+	return m.completePendingDaemonStart("Daemon stopped. Starting selected mode.")
 }
 
 func (m Configurator) cancelPendingDaemonStart(notice string) Configurator {
@@ -323,38 +366,6 @@ func (m Configurator) clearPendingDaemonStart() Configurator {
 	m.pendingStartScreen = configuratorScreenMode
 	m.pendingClientConfig = ""
 	return m
-}
-
-func isDaemonStartConfirmationScreen(screen configuratorScreen) bool {
-	switch screen {
-	case configuratorScreenDaemonActiveConfirm, configuratorScreenDaemonCheckErrorConfirm:
-		return true
-	default:
-		return false
-	}
-}
-
-func (m *Configurator) refreshDaemonStatus() {
-	if m.options.Daemon == nil {
-		m.daemon.statusErr = errors.New("daemon management is unavailable")
-		m.daemon.status = systemd.UnitStatus{}
-		m.daemon.menuOptions = nil
-		m.daemon.updatedAt = time.Time{}
-		return
-	}
-
-	status, err := m.options.Daemon.Status()
-	if err != nil {
-		m.daemon.statusErr = err
-		m.daemon.status = systemd.UnitStatus{}
-		m.daemon.menuOptions = nil
-		m.daemon.updatedAt = time.Time{}
-		return
-	}
-	m.daemon.statusErr = nil
-	m.daemon.status = status
-	m.daemon.menuOptions = m.daemonMenuOptions(status)
-	m.daemon.updatedAt = time.Now()
 }
 
 func (m Configurator) daemonMenuOptions(status systemd.UnitStatus) []string {
@@ -393,39 +404,26 @@ func (m Configurator) daemonMenuOptions(status systemd.UnitStatus) []string {
 	return options
 }
 
-func (m Configurator) daemonNotice() string {
-	statusLine := m.daemonStatusLine()
-	notice := strings.TrimSpace(m.notice)
-	if notice == "" {
-		return statusLine
-	}
-	return statusLine + "\n" + notice
-}
-
 func (m Configurator) daemonStatusLine() string {
 	if m.daemon.statusErr != nil {
-		return "Status error: " + m.daemon.statusErr.Error()
+		if errors.Is(m.daemon.statusErr, context.DeadlineExceeded) {
+			return "Status check timed out."
+		}
+		return "Status error: " + strings.Join(strings.Fields(m.daemon.statusErr.Error()), " ")
 	}
-	loadState := normalizeDaemonStateField(string(m.daemon.status.LoadState))
+	if !m.daemon.status.Installed {
+		return "State: not installed"
+	}
+	role := normalizeDaemonStateField(string(m.daemon.status.Role))
 	unitFileState := normalizeDaemonStateField(string(m.daemon.status.UnitFileState))
 	activeState := normalizeDaemonStateField(string(m.daemon.status.ActiveState))
 	subState := normalizeDaemonStateField(m.daemon.status.SubState)
-	result := normalizeDaemonStateField(m.daemon.status.Result)
-	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
-	execStart := normalizeDaemonRawField(m.daemon.status.ExecStart)
-	fragmentPath := normalizeDaemonRawField(m.daemon.status.FragmentPath)
-	derivedRole, derivedRoleSource := daemonDerivedRole(m.daemon.status, execStart)
-	return strings.Join([]string{
-		fmt.Sprintf("Active: %s", activeState),
-		fmt.Sprintf("Sub: %s", subState),
-		fmt.Sprintf("Result: %s", result),
-		fmt.Sprintf("UnitFile: %s", unitFileState),
-		fmt.Sprintf("Load: %s", loadState),
-		fmt.Sprintf("ExecMainStatus: %s", execMainStatus),
-		fmt.Sprintf("ExecStart: %s", execStart),
-		fmt.Sprintf("FragmentPath: %s", fragmentPath),
-		fmt.Sprintf("DerivedRole: %s (from %s)", derivedRole, derivedRoleSource),
-	}, "\n")
+	if activeState == "inactive" {
+		activeState = "stopped"
+	} else if subState != "unknown" && subState != "dead" {
+		activeState += " / " + subState
+	}
+	return fmt.Sprintf("Role: %s\nState: %s\nAutostart: %s", role, activeState, unitFileState)
 }
 
 func normalizeDaemonStateField(value string) string {
@@ -434,42 +432,6 @@ func normalizeDaemonStateField(value string) string {
 		return "unknown"
 	}
 	return normalized
-}
-
-func normalizeDaemonRawField(value string) string {
-	normalized := strings.TrimSpace(value)
-	if normalized == "" {
-		return "unknown"
-	}
-	return normalized
-}
-
-func daemonRoleFromExecStart(execStart string) string {
-	raw := strings.ToLower(strings.TrimSpace(execStart))
-	if raw == "" || raw == "unknown" {
-		return "unknown"
-	}
-	if strings.Contains(raw, " tungo c") || strings.Contains(raw, "/tungo c") {
-		return "client"
-	}
-	if strings.Contains(raw, " tungo s") || strings.Contains(raw, "/tungo s") {
-		return "server"
-	}
-	return "unknown"
-}
-
-func daemonDerivedRole(status systemd.UnitStatus, execStart string) (string, string) {
-	if role := daemonRoleFromExecStart(execStart); role != "unknown" {
-		return role, "ExecStart"
-	}
-	switch status.Role {
-	case systemd.UnitRoleClient:
-		return "client", "Role"
-	case systemd.UnitRoleServer:
-		return "server", "Role"
-	default:
-		return "unknown", "Role"
-	}
 }
 
 func daemonStateBlocksRuntimeStart(activeState string) bool {
@@ -499,7 +461,7 @@ func (m Configurator) leaveDaemonManageScreen() Configurator {
 		m.cursor = 0
 	}
 	m.pendingDaemonMode = 0
-	m.refreshDaemonStatus()
+	m.notice = ""
 	return m
 }
 
@@ -511,21 +473,20 @@ func (m Configurator) renderDaemonManageScreen() string {
 	}
 
 	rows := renderSelectableRows(m.daemon.menuOptions, m.cursor, contentWidth, styles)
-	body := make([]string, 0, len(rows)+18)
-	// Keep controls above status and notices, whose length can exceed the terminal height.
-	body = append(body, styles.title.Render("Actions"), daemonSectionDivider(contentWidth))
+	body := make([]string, 0, len(rows)+4)
+	// Bound status and notices so they cannot push actions out of a short terminal.
+	for _, line := range strings.Split(m.daemonStatusLine(), "\n") {
+		body = append(body, truncateWithEllipsis(line, contentWidth))
+	}
+	notice := m.notice
+	if m.daemon.pending != "" {
+		notice = m.daemon.pending
+	}
+	notice = strings.Join(strings.Fields(notice), " ")
+	body = append(body, truncateWithEllipsis(notice, contentWidth))
 	body = append(body, rows...)
-	if notice := strings.TrimSpace(m.notice); notice != "" {
-		body = append(body, "", notice)
-	}
 
-	body = append(body, "", styles.title.Render("Daemon Status"), daemonSectionDivider(contentWidth))
-	body = append(body, strings.Split(m.daemonStatusLine(), "\n")...)
-	if !m.daemon.updatedAt.IsZero() {
-		body = append(body, styles.meta.Render("Updated: "+m.daemon.updatedAt.Format("15:04:05")))
-	}
-
-	return renderScreen(
+	return renderScreenRaw(
 		m.width,
 		m.height,
 		m.tabsLine(styles),
@@ -535,13 +496,6 @@ func (m Configurator) renderDaemonManageScreen() string {
 		m.preferences,
 		styles,
 	)
-}
-
-func daemonSectionDivider(contentWidth int) string {
-	if contentWidth <= 0 {
-		return strings.Repeat("-", 24)
-	}
-	return strings.Repeat("-", maxInt(12, minInt(40, contentWidth)))
 }
 
 func daemonMenuCursorAfterRefresh(options []string, selected string, fallbackCursor int) int {

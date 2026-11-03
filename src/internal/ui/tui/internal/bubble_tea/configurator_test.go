@@ -3143,6 +3143,7 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemo
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	model = completeDaemonStart(model, model.Init())
 	if model.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd active confirm screen, got %v", model.screen)
 	}

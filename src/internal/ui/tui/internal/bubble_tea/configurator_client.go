@@ -53,6 +53,10 @@ func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 		m.client.removeNames = append([]string(nil), m.client.configs...)
 		return m, nil
 	default:
+		if m.daemon.pending != "" {
+			m.notice = "Wait for the daemon operation to finish."
+			return m, nil
+		}
 		if err := m.options.ClientConfigurations.Activate(selected); err != nil {
 			if isInvalidClientConfigurationError(err) {
 				m.client.invalidErr = err
@@ -67,15 +71,8 @@ func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, 
 			return m, tea.Quit
 		}
 
-		m = m.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, false)
-		if m.done {
-			m = m.persistAutoSelectClientConfig(selected)
-			return m, tea.Quit
-		}
-		if isDaemonStartConfirmationScreen(m.screen) {
-			m.pendingClientConfig = selected
-		}
-		return m, nil
+		m.pendingClientConfig = selected
+		return m.startModeWithDaemonGuard(mode.Client, configuratorScreenClientSelect, false)
 	}
 }
 

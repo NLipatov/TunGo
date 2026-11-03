@@ -128,6 +128,13 @@ func (m Configurator) mainTabView() string {
 		)
 	case configuratorScreenDaemonManage:
 		return m.renderDaemonManageScreen()
+	case configuratorScreenDaemonChecking:
+		styles := resolveUIStyles(m.preferences)
+		return renderScreen(
+			m.width, m.height, m.tabsLine(styles), "Checking daemon",
+			[]string{m.daemon.pending},
+			"Tab switch tabs | Esc cancel | ctrl+c exit", m.preferences, styles,
+		)
 	case configuratorScreenDaemonReconfigureConfirm:
 		roleLabel := "selected role"
 		switch m.pendingDaemonMode {
