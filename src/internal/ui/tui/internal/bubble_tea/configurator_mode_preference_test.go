@@ -234,8 +234,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testDaemon().isActive = func(_ mode.Mode) (bool, error) { return true, nil }
-	opts.testDaemon().stop = func(_ mode.Mode) error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {

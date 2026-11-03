@@ -37,7 +37,7 @@ func TestSystemctl_DefaultDeadlineAndNoninteractiveExecution(t *testing.T) {
 		return nil, ctx.Err()
 	})
 	synctest.Test(t, func(t *testing.T) {
-		if err := installer.StartUnit(context.Background(), mode.Client); !errors.Is(err, context.DeadlineExceeded) {
+		if err := installer.StartUnit(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("blocked systemctl should time out, got %v", err)
 		}
 	})
@@ -61,9 +61,9 @@ func TestSystemctl_CancelsRunningProcess(t *testing.T) {
 			started := time.Now()
 			var err error
 			if operation == "start" {
-				err = installer.StartUnit(ctx, mode.Client)
+				err = installer.StartUnit(ctx)
 			} else {
-				_, err = installer.Status(ctx, mode.Client)
+				_, err = installer.Status(ctx)
 			}
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("expected deadline error, got %v", err)
@@ -80,22 +80,17 @@ func TestSystemctl_CancelsRunningProcess(t *testing.T) {
 
 type systemdTestRunner struct {
 	runs        []string
-	calls       [][]string
 	queries     []string
 	runErrors   map[string]error
 	queryResult map[string]systemdCommandResult
 }
 
 func (c *systemdTestRunner) CombinedOutputContext(_ context.Context, _ string, args ...string) ([]byte, error) {
-	c.calls = append(c.calls, append([]string(nil), args...))
 	operation := firstSystemdArg(args)
 	switch operation {
 	case "is-active", "is-enabled", "show":
 		c.queries = append(c.queries, operation)
-		result, ok := c.queryResult[operation+" "+args[1]]
-		if !ok {
-			result, ok = c.queryResult[operation]
-		}
+		result, ok := c.queryResult[operation]
 		if !ok && operation == "show" {
 			return []byte("LoadState=not-found\n"), nil
 		}
@@ -131,7 +126,8 @@ func newSystemdTestInstaller(t *testing.T, runner *systemdTestRunner) *UnitInsta
 	installer := NewUnitInstaller(runner)
 	installer.config = Config{
 		RuntimeDir: runtimeDir,
-		UnitDir:    runtimeDir,
+		UnitPath:   filepath.Join(runtimeDir, "tungo.service"),
+		UnitName:   "tungo.service",
 		BinaryPath: binaryPath,
 	}
 	return installer
@@ -148,16 +144,6 @@ func rootOwnedExecutable(t *testing.T) string {
 	return ""
 }
 
-func TestNewUnitInstaller_Defaults(t *testing.T) {
-	installer := NewUnitInstaller(nil)
-	if installer.runner == nil {
-		t.Fatal("NewUnitInstaller(nil) returned a nil runner")
-	}
-	if installer.config != DefaultConfig() {
-		t.Fatalf("config = %+v, want %+v", installer.config, DefaultConfig())
-	}
-}
-
 func TestSetup_InactiveUnit(t *testing.T) {
 	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
 		"is-active": {output: []byte("inactive\n")},
@@ -168,8 +154,8 @@ func TestSetup_InactiveUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
-	if path != installer.unitPath("tungo-server.service") {
-		t.Fatalf("Setup() path = %q, want %q", path, installer.unitPath("tungo-server.service"))
+	if path != installer.config.UnitPath {
+		t.Fatalf("Setup() path = %q, want %q", path, installer.config.UnitPath)
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -195,6 +181,100 @@ func TestSetup_RejectsInvalidModeBeforeIO(t *testing.T) {
 	}
 }
 
+func TestSetup_ExistingServiceMustBeRemovedBeforeChangingRole(t *testing.T) {
+	for _, state := range []string{"active", "inactive", "not-loaded"} {
+		t.Run(state, func(t *testing.T) {
+			runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{}}
+			installer := newSystemdTestInstaller(t, runner)
+			before := []byte(UnitFileContent(installer.config.BinaryPath, []string{"c"}))
+			if err := os.WriteFile(installer.config.UnitPath, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if state != "not-loaded" {
+				runner.queryResult["show"] = systemdCommandResult{output: []byte("LoadState=loaded\nActiveState=" + state + "\n")}
+			}
+			if _, err := installer.Setup(context.Background(), mode.Server); err == nil {
+				t.Fatal("setup must reject an existing service")
+			}
+			after, err := os.ReadFile(installer.config.UnitPath)
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("existing service changed: %q, %v", after, err)
+			}
+			if info, err := os.Stat(installer.config.UnitPath); err != nil || info.Mode().Perm() != 0600 {
+				t.Fatalf("existing unit permissions changed: %v, %v", info, err)
+			}
+			if len(runner.runs) != 0 {
+				t.Fatalf("setup changed systemd state: %v", runner.runs)
+			}
+		})
+	}
+}
+
+func TestSetup_ReusesSameUnitAfterExplicitRemoval(t *testing.T) {
+	installer := newSystemdTestInstaller(t, &systemdTestRunner{})
+	ctx := context.Background()
+	clientPath, err := installer.Setup(ctx, mode.Client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.RemoveUnit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	serverPath, err := installer.Setup(ctx, mode.Server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clientPath != serverPath || serverPath != installer.config.UnitPath {
+		t.Fatalf("role change created a different unit: %s -> %s", clientPath, serverPath)
+	}
+	body, err := os.ReadFile(serverPath)
+	if err != nil || !strings.Contains(string(body), "\" s\n") {
+		t.Fatalf("server setup did not replace the explicitly removed client: %q, %v", body, err)
+	}
+}
+
+func TestSetup_CancellationRemovesIncompleteInstallation(t *testing.T) {
+	for _, phase := range []string{"daemon-reload", "enable"} {
+		t.Run(phase, func(t *testing.T) {
+			runner := &systemdTestRunner{}
+			installer := newSystemdTestInstaller(t, runner)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			interrupted := false
+			installer.runner = systemdRunnerFunc(func(callCtx context.Context, name string, args ...string) ([]byte, error) {
+				if err := callCtx.Err(); err != nil {
+					return nil, err
+				}
+				if interrupted {
+					if _, ok := callCtx.Deadline(); !ok {
+						t.Fatal("cleanup has no deadline")
+					}
+				}
+				output, err := runner.CombinedOutputContext(callCtx, name, args...)
+				if args[0] == phase && !interrupted {
+					interrupted = true
+					cancel()
+					return output, ctx.Err()
+				}
+				return output, err
+			})
+			if _, err := installer.Setup(ctx, mode.Client); !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected cancellation: %v", err)
+			}
+			if _, err := os.Stat(installer.config.UnitPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("partial installation remains: %v", err)
+			}
+			want := []string{"daemon-reload", "daemon-reload"}
+			if phase == "enable" {
+				want = []string{"daemon-reload", "enable", "disable", "daemon-reload"}
+			}
+			if !reflect.DeepEqual(runner.runs, want) {
+				t.Fatalf("systemctl calls = %v, want %v", runner.runs, want)
+			}
+		})
+	}
+}
+
 func TestSetup_EnableFailureRemovesNewUnit(t *testing.T) {
 	enableErr := errors.New("enable failed")
 	runner := &systemdTestRunner{runErrors: map[string]error{"enable": enableErr}}
@@ -204,7 +284,7 @@ func TestSetup_EnableFailureRemovesNewUnit(t *testing.T) {
 	if !errors.Is(err, enableErr) {
 		t.Fatalf("Setup() error = %v", err)
 	}
-	if _, statErr := os.Stat(installer.unitPath("tungo-client.service")); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(installer.config.UnitPath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("rolled-back unit stat error = %v", statErr)
 	}
 	want := []string{"daemon-reload", "enable", "disable", "daemon-reload"}
@@ -226,11 +306,10 @@ func TestIsUnitActive(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(strings.TrimSpace(tt.state), func(t *testing.T) {
 			runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{
-				"is-active":                 {output: []byte(tt.state)},
-				"show tungo-client.service": {output: []byte("LoadState=loaded\nExecStart=/usr/local/bin/tungo c\n")},
+				"is-active": {output: []byte(tt.state)},
 			}}
 			installer := newSystemdTestInstaller(t, runner)
-			got, err := installer.IsUnitActive(context.Background(), mode.Client)
+			got, err := installer.IsUnitActive(context.Background())
 			if err != nil || got != tt.want {
 				t.Fatalf("IsUnitActive() = (%v, %v), want (%v, nil)", got, err, tt.want)
 			}
@@ -241,7 +320,7 @@ func TestIsUnitActive(t *testing.T) {
 func TestUnitOperations(t *testing.T) {
 	tests := []struct {
 		name string
-		call func(*UnitInstaller, context.Context, mode.Mode) error
+		call func(*UnitInstaller, context.Context) error
 		want string
 	}{
 		{name: "start", call: (*UnitInstaller).StartUnit, want: "start"},
@@ -253,7 +332,7 @@ func TestUnitOperations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := &systemdTestRunner{}
 			installer := newSystemdTestInstaller(t, runner)
-			if err := tt.call(installer, context.Background(), mode.Client); err != nil {
+			if err := tt.call(installer, context.Background()); err != nil {
 				t.Fatalf("%s error = %v", tt.name, err)
 			}
 			if want := []string{tt.want}; !reflect.DeepEqual(runner.runs, want) {
@@ -264,18 +343,16 @@ func TestUnitOperations(t *testing.T) {
 }
 
 func TestRemoveUnit(t *testing.T) {
-	runner := &systemdTestRunner{queryResult: map[string]systemdCommandResult{}}
-
+	runner := &systemdTestRunner{}
 	installer := newSystemdTestInstaller(t, runner)
-	if err := os.WriteFile(installer.unitPath("tungo-server.service"), []byte("unit"), 0o644); err != nil {
+	if err := os.WriteFile(installer.config.UnitPath, []byte("unit"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	runner.queryResult["show tungo-server.service"] = systemdCommandResult{output: []byte("LoadState=loaded\nExecStart=/usr/local/bin/tungo s\nFragmentPath=" + installer.unitPath("tungo-server.service") + "\n")}
-	if err := installer.RemoveUnit(context.Background(), mode.Server); err != nil {
+	if err := installer.RemoveUnit(context.Background()); err != nil {
 		t.Fatalf("RemoveUnit() error = %v", err)
 	}
-	if _, err := os.Stat(installer.unitPath("tungo-server.service")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(installer.config.UnitPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unit stat error = %v", err)
 	}
 	want := []string{"stop", "disable", "daemon-reload"}
@@ -295,13 +372,13 @@ func TestStatus(t *testing.T) {
 			"Result=success",
 			"ExecMainStatus=0",
 			"ExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo c ; }",
-			"FragmentPath=/etc/systemd/system/tungo-server.service",
+			"FragmentPath=/etc/systemd/system/tungo.service",
 		}, "\n"))},
 	}}
 	installer := newSystemdTestInstaller(t, runner)
-	installer.config.UnitDir = "/etc/systemd/system"
+	installer.config.UnitPath = "/etc/systemd/system/tungo.service"
 
-	status, err := installer.unitStatus(context.Background(), "tungo-server.service")
+	status, err := installer.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
@@ -317,21 +394,54 @@ func TestStatus_DetectsRoleFromManagedUnitFile(t *testing.T) {
 	}}
 	installer := newSystemdTestInstaller(t, runner)
 	runner.queryResult["show"] = systemdCommandResult{output: []byte(
-		"LoadState=loaded\nActiveState=inactive\nFragmentPath=" + installer.unitPath("tungo-server.service") + "\n",
+		"LoadState=loaded\nActiveState=inactive\nFragmentPath=" + installer.config.UnitPath + "\n",
 	)}
 	if err := os.WriteFile(
-		installer.unitPath("tungo-server.service"),
+		installer.config.UnitPath,
 		[]byte(UnitFileContent("/usr/local/bin/tungo", []string{"s"})),
 		0o644,
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	status, err := installer.unitStatus(context.Background(), "tungo-server.service")
+	status, err := installer.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
 	if status.Role != UnitRoleServer {
 		t.Fatalf("Status().Role = %q, want %q", status.Role, UnitRoleServer)
 	}
+}
+
+func TestSetup_CleanupDeadlineIsShared(t *testing.T) {
+	installer := newSystemdTestInstaller(t, &systemdTestRunner{})
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		installer.runner = systemdRunnerFunc(func(callCtx context.Context, _ string, args ...string) ([]byte, error) {
+			if args[0] == "show" {
+				return []byte("LoadState=not-found\n"), nil
+			}
+			if args[0] == "enable" {
+				cancel()
+				return nil, ctx.Err()
+			}
+			if ctx.Err() != nil {
+				<-callCtx.Done()
+				return nil, callCtx.Err()
+			}
+			return nil, nil
+		})
+		start := time.Now()
+		_, err := installer.Setup(ctx, mode.Client)
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("lost installation or cleanup error: %v", err)
+		}
+		if time.Since(start) != 2*time.Minute {
+			t.Fatalf("cleanup timeout restarted between commands: %v", time.Since(start))
+		}
+		if _, err := os.Stat(installer.config.UnitPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("file not cleaned: %v", err)
+		}
+	})
 }

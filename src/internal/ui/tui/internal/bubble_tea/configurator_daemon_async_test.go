@@ -24,22 +24,21 @@ func TestDaemonStart_DelayedCommandDoesNotBlockInput(t *testing.T) {
 				t.Fatal(err)
 			}
 			model.screen = configuratorScreenDaemonManage
-			model.daemon.menuOptions = daemonTestOptions(daemonStartLabel, daemonDisableLabel)
+			model.daemon.menuOptions = []string{daemonStartLabel, daemonDisableLabel}
 			model.width, model.height = 120, 24
 
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(release) }) }
 			t.Cleanup(unblock)
-			var enteredOnce sync.Once
-			wait := func() { enteredOnce.Do(func() { close(entered) }); <-release }
-			daemon.start = func(_ mode.Mode) error {
+			wait := func() { close(entered); <-release }
+			daemon.start = func() error {
 				if stage == "start" {
 					wait()
 				}
 				return nil
 			}
-			daemon.status = func(_ mode.Mode) (systemd.UnitStatus, error) {
+			daemon.status = func() (systemd.UnitStatus, error) {
 				if stage == "status" {
 					wait()
 				}
@@ -101,7 +100,7 @@ func TestDaemonStart_DelayedCommandDoesNotBlockInput(t *testing.T) {
 			if model.screen != configuratorScreenMode || model.cursor != cursor {
 				t.Fatal("late result changed navigation after Esc")
 			}
-			if model.daemon.units[mode.Client].status.ActiveState != "active" {
+			if model.daemon.status.ActiveState != "active" {
 				t.Fatal("daemon status was not updated after completion")
 			}
 		})
@@ -113,11 +112,9 @@ type cancellableDaemonControl struct {
 	run func(context.Context) error
 }
 
-func (d cancellableDaemonControl) StartUnit(ctx context.Context, _ mode.Mode) error {
-	return d.run(ctx)
-}
-func (d cancellableDaemonControl) StopUnit(ctx context.Context, _ mode.Mode) error { return d.run(ctx) }
-func (d cancellableDaemonControl) IsUnitActive(ctx context.Context, _ mode.Mode) (bool, error) {
+func (d cancellableDaemonControl) StartUnit(ctx context.Context) error { return d.run(ctx) }
+func (d cancellableDaemonControl) StopUnit(ctx context.Context) error  { return d.run(ctx) }
+func (d cancellableDaemonControl) IsUnitActive(ctx context.Context) (bool, error) {
 	return false, d.run(ctx)
 }
 
@@ -150,7 +147,7 @@ func TestConfiguratorClose_CancelsAndWaitsForDaemonCommands(t *testing.T) {
 			switch operation {
 			case "start":
 				model.screen = configuratorScreenDaemonManage
-				model.daemon.menuOptions = daemonTestOptions(daemonStartLabel)
+				model.daemon.menuOptions = []string{daemonStartLabel}
 			case "stop":
 				model.screen = configuratorScreenDaemonActiveConfirm
 				model.pendingStartMode, model.pendingStartScreen = mode.Server, configuratorScreenServerSelect
@@ -196,13 +193,13 @@ func TestConfiguratorClose_CancelsAndWaitsForDaemonCommands(t *testing.T) {
 
 func TestConfiguratorClose_PreventsQueuedCommandFromStarting(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.testDaemon().start = func(_ mode.Mode) error { t.Fatal("queued command started after Close"); return nil }
+	opts.testDaemon().start = func() error { t.Fatal("queued command started after Close"); return nil }
 	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatal(err)
 	}
 	model.screen = configuratorScreenDaemonManage
-	model.daemon.menuOptions = daemonTestOptions(daemonStartLabel)
+	model.daemon.menuOptions = []string{daemonStartLabel}
 	_, cmd := model.Update(keyNamed(tea.KeyEnter))
 	closed := make(chan struct{})
 	go func() { model.Close(); close(closed) }()
@@ -221,9 +218,7 @@ func TestConfiguratorClose_PreventsQueuedCommandFromStarting(t *testing.T) {
 
 func TestDaemonGuard_RefreshAfterCancellationReportsStatusFailure(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.testDaemon().status = func(_ mode.Mode) (systemd.UnitStatus, error) {
-		return systemd.UnitStatus{}, errors.New("status unavailable")
-	}
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return systemd.UnitStatus{}, errors.New("status unavailable") }
 	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 	if err != nil {
 		t.Fatal(err)
@@ -245,8 +240,8 @@ func TestDaemonGuard_RefreshAfterCancellationReportsStatusFailure(t *testing.T) 
 func TestDaemonStart_TimeoutRefreshesStatusAndAllowsNextAction(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	daemon := opts.testDaemon()
-	daemon.start = func(_ mode.Mode) error { return context.DeadlineExceeded }
-	daemon.status = func(_ mode.Mode) (systemd.UnitStatus, error) {
+	daemon.start = func() error { return context.DeadlineExceeded }
+	daemon.status = func() (systemd.UnitStatus, error) {
 		return systemd.UnitStatus{Installed: true, ActiveState: "active", SubState: "running"}, nil
 	}
 	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
@@ -254,13 +249,13 @@ func TestDaemonStart_TimeoutRefreshesStatusAndAllowsNextAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	model.screen = configuratorScreenDaemonManage
-	model.daemon.menuOptions = daemonTestOptions(daemonStartLabel)
+	model.daemon.menuOptions = []string{daemonStartLabel}
 	m, _ := completeDaemonCommands(model.Update(keyNamed(tea.KeyEnter)))
 	model = m.(Configurator)
 	if !strings.Contains(model.notice, "timed out") || model.daemon.pending != "" {
 		t.Fatalf("timeout did not release the menu with an error: %+v", model.daemon)
 	}
-	if model.daemon.menuOptions[0].action != daemonStopLabel {
+	if model.daemon.menuOptions[0] != daemonStopLabel {
 		t.Fatal("timeout hid the service's actual running state")
 	}
 	_, cmd := model.Update(keyNamed(tea.KeyEnter))
@@ -271,7 +266,7 @@ func TestDaemonStart_TimeoutRefreshesStatusAndAllowsNextAction(t *testing.T) {
 
 func TestDaemonPendingOperation_DoesNotAllowConflictingActionsAfterEsc(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.testDaemon().status = func(_ mode.Mode) (systemd.UnitStatus, error) {
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
 		t.Fatal("unexpected synchronous status query")
 		return systemd.UnitStatus{}, nil
 	}
@@ -303,7 +298,7 @@ func TestDaemonGuard_LateResultsDoNotStartCancelledRuntime(t *testing.T) {
 		t.Run(map[bool]string{false: "check", true: "stop"}[stop], func(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			daemon := opts.testDaemon()
-			daemon.isActive = func(_ mode.Mode) (bool, error) { return false, nil }
+			daemon.isActive = func() (bool, error) { return false, nil }
 			model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
 			if err != nil {
 				t.Fatal(err)
@@ -340,8 +335,8 @@ func TestDaemonGuard_CompletionRefreshesEnteredDaemonMenu(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			daemon := opts.testDaemon()
-			daemon.isActive = func(_ mode.Mode) (bool, error) { return stop, nil }
-			daemon.status = func(_ mode.Mode) (systemd.UnitStatus, error) {
+			daemon.isActive = func() (bool, error) { return stop, nil }
+			daemon.status = func() (systemd.UnitStatus, error) {
 				return systemd.UnitStatus{Installed: true, ActiveState: "inactive", UnitFileState: "enabled"}, nil
 			}
 			m, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceServer))
@@ -377,8 +372,8 @@ func TestDaemonGuard_CompletionRefreshesEnteredDaemonMenu(t *testing.T) {
 			}
 			next, _ = completeDaemonCommands(m, query)
 			m = next.(Configurator)
-			if !m.daemon.units[mode.Client].status.Installed || len(m.daemon.menuOptions) == 0 || m.daemon.menuOptions[0].action != daemonStartLabel {
-				t.Fatalf("daemon page not refreshed after %s completion: pending=%q status=%+v menu=%v", name, m.daemon.pending, m.daemon.units[mode.Client].status, m.daemon.menuOptions)
+			if !m.daemon.status.Installed || len(m.daemon.menuOptions) == 0 || m.daemon.menuOptions[0] != daemonStartLabel {
+				t.Fatalf("daemon page not refreshed after %s completion: pending=%q status=%+v menu=%v", name, m.daemon.pending, m.daemon.status, m.daemon.menuOptions)
 			}
 		})
 	}

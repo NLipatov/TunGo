@@ -2,7 +2,6 @@ package systemd
 
 // UnitStatus is the aggregate projection of service state.
 type UnitStatus struct {
-	Name           string
 	Installed      bool
 	Managed        bool
 	Role           UnitRole

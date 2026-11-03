@@ -115,8 +115,9 @@ type serverState struct {
 type daemonState struct {
 	commands    *daemonCommands
 	pending     string
-	units       map[mode.Mode]daemonUnitStatus
-	menuOptions []daemonMenuOption
+	status      systemd.UnitStatus
+	statusErr   error
+	menuOptions []string
 }
 
 type Configurator struct {

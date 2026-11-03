@@ -14,31 +14,10 @@ import (
 )
 
 // Only the event loop changes the model. Commands return data, never a model snapshot.
-type daemonUnitStatus struct {
+type daemonStatusMsg struct {
 	status systemd.UnitStatus
 	err    error
-}
-
-type daemonStatusMsg struct {
-	units  map[mode.Mode]daemonUnitStatus
 	notice string
-}
-
-// Each menu entry carries its target, so labels never determine service ownership.
-type daemonMenuOption struct {
-	mode   mode.Mode
-	action string
-}
-
-func (o daemonMenuOption) String() string {
-	if o.action == daemonSetupClientLabel || o.action == daemonSetupServerLabel {
-		return o.action
-	}
-	role := "client"
-	if o.mode == mode.Server {
-		role = "server"
-	}
-	return role + ": " + o.action
 }
 
 type daemonActiveMsg struct {
@@ -88,13 +67,15 @@ func (m Configurator) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, 
 		return m, nil
 	}
 	selected := m.daemon.menuOptions[m.cursor]
-	switch selected.action {
-	case daemonSetupClientLabel, daemonSetupServerLabel:
-		return m.beginDaemonOperation("Installing daemon...", func() error { return m.applyDaemonSetup(selected.mode) })
+	switch selected {
+	case daemonSetupClientLabel:
+		return m.beginDaemonOperation("Installing daemon...", func() error { return m.applyDaemonSetup(mode.Client) })
+	case daemonSetupServerLabel:
+		return m.beginDaemonOperation("Installing daemon...", func() error { return m.applyDaemonSetup(mode.Server) })
 	}
-	var action func(context.Context, mode.Mode) error
+	var action func(context.Context) error
 	var verb, progress string
-	switch selected.action {
+	switch selected {
 	case daemonStartLabel:
 		verb, progress = "start", "Starting daemon..."
 		if m.options.Daemon != nil {
@@ -129,7 +110,7 @@ func (m Configurator) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, 
 	}
 	ctx := m.daemon.commands.ctx
 	return m.beginDaemonOperation(progress, func() error {
-		if err := action(ctx, selected.mode); err != nil {
+		if err := action(ctx); err != nil {
 			return fmt.Errorf("Failed to %s daemon: %w", verb, err)
 		}
 		return nil
@@ -160,7 +141,7 @@ func (m Configurator) beginDaemonOperation(progress string, action func() error)
 	m.daemon.pending = progress
 	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
 	return m, m.daemon.commands.track(func() tea.Msg {
-		result := daemonStatusMsg{units: make(map[mode.Mode]daemonUnitStatus)}
+		result := daemonStatusMsg{}
 		if action != nil {
 			if err := action(); err != nil {
 				result.notice = err.Error()
@@ -170,17 +151,10 @@ func (m Configurator) beginDaemonOperation(progress string, action func() error)
 			}
 		}
 		// Even a failed or timed-out command may have changed the service state.
-		for _, runtimeMode := range []mode.Mode{mode.Client, mode.Server} {
-			if runtimeMode == mode.Server && !m.serverSupported {
-				continue
-			}
-			unit := daemonUnitStatus{}
-			if daemon == nil {
-				unit.err = errors.New("daemon management is unavailable")
-			} else {
-				unit.status, unit.err = daemon.Status(ctx, runtimeMode)
-			}
-			result.units[runtimeMode] = unit
+		if daemon == nil {
+			result.err = errors.New("daemon management is unavailable")
+		} else {
+			result.status, result.err = daemon.Status(ctx)
 		}
 		return result
 	})
@@ -192,20 +166,15 @@ func (m Configurator) refreshDaemonStatus() (Configurator, tea.Cmd) {
 
 func (m Configurator) applyDaemonStatus(msg daemonStatusMsg) Configurator {
 	m.daemon.pending = ""
-	m.daemon.units = msg.units
-	selected := daemonMenuOption{}
+	m.daemon.status, m.daemon.statusErr = msg.status, msg.err
+	selected := ""
 	if m.screen == configuratorScreenDaemonManage && m.cursor < len(m.daemon.menuOptions) {
 		selected = m.daemon.menuOptions[m.cursor]
 	}
-	m.daemon.menuOptions = nil
-	for _, runtimeMode := range []mode.Mode{mode.Client, mode.Server} {
-		unit, ok := msg.units[runtimeMode]
-		if !ok || unit.err != nil {
-			continue
-		}
-		for _, action := range m.daemonMenuOptions(unit.status, runtimeMode) {
-			m.daemon.menuOptions = append(m.daemon.menuOptions, daemonMenuOption{mode: runtimeMode, action: action})
-		}
+	if msg.err != nil {
+		m.daemon.menuOptions = nil
+	} else {
+		m.daemon.menuOptions = m.daemonMenuOptions(msg.status)
 	}
 	if m.screen == configuratorScreenDaemonManage {
 		m.notice = msg.notice
@@ -235,7 +204,7 @@ func (m Configurator) updateDaemonActiveConfirmScreen(msg tea.KeyPressMsg) (tea.
 	m.daemon.pending = "Stopping daemon..."
 	m.notice = m.daemon.pending
 	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
-	return m, m.daemon.commands.track(func() tea.Msg { return daemonStoppedMsg{err: daemon.StopUnit(ctx, m.pendingStartMode)} })
+	return m, m.daemon.commands.track(func() tea.Msg { return daemonStoppedMsg{err: daemon.StopUnit(ctx)} })
 }
 
 func (m Configurator) updateDaemonCheckErrorConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -289,7 +258,7 @@ func (m Configurator) startModeWithDaemonGuard(targetMode mode.Mode, returnScree
 	m.daemon.pending = "Checking daemon status..."
 	daemon, ctx := m.options.Daemon, m.daemon.commands.ctx
 	return m, m.daemon.commands.track(func() tea.Msg {
-		active, err := daemon.IsUnitActive(ctx, targetMode)
+		active, err := daemon.IsUnitActive(ctx)
 		return daemonActiveMsg{active: active, err: err}
 	})
 }
@@ -345,16 +314,17 @@ func (m Configurator) clearPendingDaemonStart() Configurator {
 	return m
 }
 
-func (m Configurator) daemonMenuOptions(status systemd.UnitStatus, runtimeMode mode.Mode) []string {
+func (m Configurator) daemonMenuOptions(status systemd.UnitStatus) []string {
 	if m.options.Daemon == nil {
 		return nil
 	}
 	options := make([]string, 0, 7)
 	if !status.Installed {
-		if runtimeMode == mode.Server {
-			return []string{daemonSetupServerLabel}
+		options = append(options, daemonSetupClientLabel)
+		if m.serverSupported {
+			options = append(options, daemonSetupServerLabel)
 		}
-		return []string{daemonSetupClientLabel}
+		return options
 	}
 
 	activeBlocksStart := daemonStateBlocksRuntimeStart(string(status.ActiveState))
@@ -377,24 +347,26 @@ func (m Configurator) daemonMenuOptions(status systemd.UnitStatus, runtimeMode m
 	return options
 }
 
-func daemonStatusLine(unit daemonUnitStatus) string {
-	if unit.err != nil {
-		if errors.Is(unit.err, context.DeadlineExceeded) {
+func (m Configurator) daemonStatusLine() string {
+	if m.daemon.statusErr != nil {
+		if errors.Is(m.daemon.statusErr, context.DeadlineExceeded) {
 			return "Status check timed out."
 		}
-		return "Status error: " + strings.Join(strings.Fields(unit.err.Error()), " ")
+		return "Status error: " + strings.Join(strings.Fields(m.daemon.statusErr.Error()), " ")
 	}
-	if !unit.status.Installed {
-		return "not installed"
+	if !m.daemon.status.Installed {
+		return "State: not installed"
 	}
-	activeState := normalizeDaemonStateField(string(unit.status.ActiveState))
-	subState := normalizeDaemonStateField(unit.status.SubState)
+	role := normalizeDaemonStateField(string(m.daemon.status.Role))
+	unitFileState := normalizeDaemonStateField(string(m.daemon.status.UnitFileState))
+	activeState := normalizeDaemonStateField(string(m.daemon.status.ActiveState))
+	subState := normalizeDaemonStateField(m.daemon.status.SubState)
 	if activeState == "inactive" {
 		activeState = "stopped"
 	} else if subState != "unknown" && subState != "dead" {
 		activeState += " / " + subState
 	}
-	return fmt.Sprintf("%s | Autostart: %s", activeState, normalizeDaemonStateField(string(unit.status.UnitFileState)))
+	return fmt.Sprintf("Role: %s\nState: %s\nAutostart: %s", role, activeState, unitFileState)
 }
 
 func normalizeDaemonStateField(value string) string {
@@ -442,28 +414,12 @@ func (m Configurator) renderDaemonManageScreen() string {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
 
-	labels := make([]string, len(m.daemon.menuOptions))
-	for idx, option := range m.daemon.menuOptions {
-		labels[idx] = option.String()
-	}
-	rows := renderSelectableRows(labels, m.cursor, contentWidth, styles)
+	rows := renderSelectableRows(m.daemon.menuOptions, m.cursor, contentWidth, styles)
 	body := make([]string, 0, len(rows)+4)
 	// Bound status and notices so they cannot push actions out of a short terminal.
-	for _, runtimeMode := range []mode.Mode{mode.Client, mode.Server} {
-		if runtimeMode == mode.Server && !m.serverSupported {
-			continue
-		}
-		role := "Client"
-		if runtimeMode == mode.Server {
-			role = "Server"
-		}
-		line := role + ": checking..."
-		if unit, ok := m.daemon.units[runtimeMode]; ok {
-			line = role + ": " + daemonStatusLine(unit)
-		}
+	for _, line := range strings.Split(m.daemonStatusLine(), "\n") {
 		body = append(body, truncateWithEllipsis(line, contentWidth))
 	}
-
 	notice := m.notice
 	if m.daemon.pending != "" {
 		notice = m.daemon.pending
@@ -476,7 +432,7 @@ func (m Configurator) renderDaemonManageScreen() string {
 		m.width,
 		m.height,
 		m.tabsLine(styles),
-		"Setup/Manage daemons",
+		"Setup/Manage daemon",
 		body,
 		"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		m.preferences,
@@ -484,19 +440,12 @@ func (m Configurator) renderDaemonManageScreen() string {
 	)
 }
 
-func daemonMenuCursorAfterRefresh(options []daemonMenuOption, selected daemonMenuOption, fallbackCursor int) int {
+func daemonMenuCursorAfterRefresh(options []string, selected string, fallbackCursor int) int {
 	if len(options) == 0 {
 		return 0
 	}
-	if selected.action != "" {
+	if selected = strings.TrimSpace(selected); selected != "" {
 		if idx := slices.Index(options, selected); idx >= 0 {
-			return idx
-		}
-		// A removed action must not move the cursor onto the other service.
-		if fallbackCursor >= 0 && fallbackCursor < len(options) && options[fallbackCursor].mode == selected.mode {
-			return fallbackCursor
-		}
-		if idx := slices.IndexFunc(options, func(option daemonMenuOption) bool { return option.mode == selected.mode }); idx >= 0 {
 			return idx
 		}
 	}

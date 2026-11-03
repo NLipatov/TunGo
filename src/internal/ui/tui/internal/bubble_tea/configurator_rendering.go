@@ -143,7 +143,7 @@ func (m Configurator) mainTabView() string {
 		case mode.Server:
 			modeLabel = "server"
 		}
-		notice := fmt.Sprintf("The %s daemon is active. Stop it before starting another %s in TUI mode.", modeLabel, modeLabel)
+		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)
 		if strings.TrimSpace(m.notice) != "" {
 			notice = m.notice + "\n" + notice
 		}

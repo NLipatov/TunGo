@@ -39,26 +39,26 @@ func newDaemonTestConfigurator(options ConfiguratorOptions, settings *Preference
 }
 
 type daemonControlStub struct {
-	status      func(mode.Mode) (systemd.UnitStatus, error)
+	status      func() (systemd.UnitStatus, error)
 	setupClient func() (string, error)
 	setupServer func() (string, error)
-	delete      func(mode.Mode) error
-	isActive    func(mode.Mode) (bool, error)
-	start       func(mode.Mode) error
-	stop        func(mode.Mode) error
-	enable      func(mode.Mode) error
-	disable     func(mode.Mode) error
+	delete      func() error
+	isActive    func() (bool, error)
+	start       func() error
+	stop        func() error
+	enable      func() error
+	disable     func() error
 }
 
 func newDaemonControlStub() *daemonControlStub {
 	return &daemonControlStub{}
 }
 
-func (s *daemonControlStub) Status(_ context.Context, runtimeMode mode.Mode) (systemd.UnitStatus, error) {
+func (s *daemonControlStub) Status(_ context.Context) (systemd.UnitStatus, error) {
 	if s.status == nil {
 		return systemd.UnitStatus{}, nil
 	}
-	return s.status(runtimeMode)
+	return s.status()
 }
 
 func (s *daemonControlStub) Setup(_ context.Context, runtimeMode mode.Mode) (string, error) {
@@ -77,46 +77,46 @@ func (s *daemonControlStub) Setup(_ context.Context, runtimeMode mode.Mode) (str
 	return "/etc/systemd/system/tungo.service", nil
 }
 
-func (s *daemonControlStub) RemoveUnit(_ context.Context, runtimeMode mode.Mode) error {
+func (s *daemonControlStub) RemoveUnit(_ context.Context) error {
 	if s.delete == nil {
 		return nil
 	}
-	return s.delete(runtimeMode)
+	return s.delete()
 }
 
-func (s *daemonControlStub) IsUnitActive(_ context.Context, runtimeMode mode.Mode) (bool, error) {
+func (s *daemonControlStub) IsUnitActive(_ context.Context) (bool, error) {
 	if s.isActive == nil {
 		return false, nil
 	}
-	return s.isActive(runtimeMode)
+	return s.isActive()
 }
 
-func (s *daemonControlStub) StartUnit(_ context.Context, runtimeMode mode.Mode) error {
+func (s *daemonControlStub) StartUnit(_ context.Context) error {
 	if s.start == nil {
 		return nil
 	}
-	return s.start(runtimeMode)
+	return s.start()
 }
 
-func (s *daemonControlStub) StopUnit(_ context.Context, runtimeMode mode.Mode) error {
+func (s *daemonControlStub) StopUnit(_ context.Context) error {
 	if s.stop == nil {
 		return nil
 	}
-	return s.stop(runtimeMode)
+	return s.stop()
 }
 
-func (s *daemonControlStub) EnableUnit(_ context.Context, runtimeMode mode.Mode) error {
+func (s *daemonControlStub) EnableUnit(_ context.Context) error {
 	if s.enable == nil {
 		return nil
 	}
-	return s.enable(runtimeMode)
+	return s.enable()
 }
 
-func (s *daemonControlStub) DisableUnit(_ context.Context, runtimeMode mode.Mode) error {
+func (s *daemonControlStub) DisableUnit(_ context.Context) error {
 	if s.disable == nil {
 		return nil
 	}
-	return s.disable(runtimeMode)
+	return s.disable()
 }
 
 func (o *ConfiguratorOptions) testDaemon() *daemonControlStub {
@@ -126,24 +126,4 @@ func (o *ConfiguratorOptions) testDaemon() *daemonControlStub {
 	daemon := newDaemonControlStub()
 	o.Daemon = daemon
 	return daemon
-}
-
-func daemonTestOptions(actions ...string) []daemonMenuOption {
-	options := make([]daemonMenuOption, len(actions))
-	for idx, action := range actions {
-		runtimeMode := mode.Client
-		if action == daemonSetupServerLabel {
-			runtimeMode = mode.Server
-		}
-		options[idx] = daemonMenuOption{mode: runtimeMode, action: action}
-	}
-	return options
-}
-
-func daemonTestActions(options []daemonMenuOption) []string {
-	actions := make([]string, len(options))
-	for idx, option := range options {
-		actions[idx] = option.action
-	}
-	return actions
 }
