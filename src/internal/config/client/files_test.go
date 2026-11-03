@@ -6,8 +6,10 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"tungo/internal/config/settings"
@@ -98,6 +100,126 @@ func TestConfigurationsActiveErrors(t *testing.T) {
 			t.Fatalf("error = %v", err)
 		}
 	})
+}
+
+func TestConfigurationsActiveCachesUntilActivation(t *testing.T) {
+	configurations := NewConfigurations(t.TempDir())
+	writeConfiguration(t, configurations.activePath, validTestConfiguration())
+	next := validTestConfiguration()
+	next.ClientID = 2
+	next.UDPSettings.Port = 9091
+	writeConfiguration(t, configurations.activePath+".next", next)
+
+	initial, err := configurations.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInitial := *initial
+	if err := os.WriteFile(configurations.activePath, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := configurations.Active()
+	if err != nil || !reflect.DeepEqual(*cached, wantInitial) {
+		t.Fatalf("Active() after external file change = %+v, %v; want cached configuration", cached, err)
+	}
+
+	if err := configurations.Activate("next"); err != nil {
+		t.Fatal(err)
+	}
+	// Activate must populate the cache without requiring another disk read.
+	if err := os.Remove(configurations.activePath); err != nil {
+		t.Fatal(err)
+	}
+	active, err := configurations.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.ClientID != next.ClientID || active.UDPSettings.Port != next.UDPSettings.Port {
+		t.Fatalf("Active() after activation = %+v, want next configuration", active)
+	}
+	if initial.ClientID != 1 || initial.UDPSettings.Port != 9090 {
+		t.Fatal("activation changed a previously returned configuration")
+	}
+}
+
+func TestConfigurationsActiveRetriesAfterError(t *testing.T) {
+	configurations := NewConfigurations(t.TempDir())
+	if _, err := configurations.Active(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Active() error = %v, want os.ErrNotExist", err)
+	}
+	if err := os.WriteFile(configurations.activePath, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var syntaxError *json.SyntaxError
+	if _, err := configurations.Active(); !errors.As(err, &syntaxError) {
+		t.Fatalf("Active() error = %v, want JSON syntax error", err)
+	}
+	writeConfiguration(t, configurations.activePath, validTestConfiguration())
+	active, err := configurations.Active()
+	if err != nil || active.ClientID != 1 {
+		t.Fatalf("Active() after repairing the file = %+v, %v", active, err)
+	}
+}
+
+func TestConfigurationsConcurrentActiveAndActivate(t *testing.T) {
+	configurations := NewConfigurations(t.TempDir())
+	names := []string{"a", "b"}
+	want := make([]Configuration, len(names))
+	for i, name := range names {
+		configuration := validTestConfiguration()
+		configuration.ClientID = i + 1
+		configuration.UDPSettings.Port = 9090 + i
+		path := configurations.activePath + "." + name
+		writeConfiguration(t, path, configuration)
+		var err error
+		want[i], err = decodeFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Leave the cache empty so the readers also exercise concurrent first loads.
+	writeConfiguration(t, configurations.activePath, validTestConfiguration())
+	start := make(chan struct{})
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			<-start
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				active, err := configurations.Active()
+				if err != nil {
+					t.Errorf("concurrent Active(): %v", err)
+					return
+				}
+				if !reflect.DeepEqual(*active, want[0]) && !reflect.DeepEqual(*active, want[1]) {
+					t.Errorf("Active() returned an inconsistent configuration: %+v", active)
+					return
+				}
+			}
+		}()
+	}
+	defer func() {
+		close(stop)
+		readers.Wait()
+	}()
+	close(start)
+	for i := range 32 {
+		index := i % len(names)
+		if err := configurations.Activate(names[index]); err != nil {
+			t.Fatal(err)
+		}
+		active, err := configurations.Active()
+		if err != nil || !reflect.DeepEqual(*active, want[index]) {
+			t.Fatalf("Active() after activating %q = %+v, %v", names[index], active, err)
+		}
+	}
 }
 
 func TestConfigurationsActiveNormalizesTunnelRoutes(t *testing.T) {
@@ -489,6 +611,11 @@ func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	activePath := filepath.Join(t.TempDir(), "client_configuration.json")
 	configurations := &Configurations{activePath: activePath}
 	writeConfiguration(t, activePath, validTestConfiguration())
+	cached, err := configurations.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCached := *cached
 	before, err := os.ReadFile(activePath)
 	if err != nil {
 		t.Fatal(err)
@@ -507,6 +634,37 @@ func TestConfigurationsActivateInvalidAlternativePreservesActive(t *testing.T) {
 	}
 	if !slices.Equal(before, after) {
 		t.Fatal("invalid alternative replaced the active configuration")
+	}
+	active, err := configurations.Active()
+	if err != nil || !reflect.DeepEqual(*active, wantCached) {
+		t.Fatalf("Active() after invalid activation = %+v, %v; want cached configuration", active, err)
+	}
+}
+
+func TestConfigurationsActivateWriteErrorPreservesCache(t *testing.T) {
+	configurations := NewConfigurations(t.TempDir())
+	writeConfiguration(t, configurations.activePath, validTestConfiguration())
+	cached, err := configurations.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCached := *cached
+	next := validTestConfiguration()
+	next.ClientID = 2
+	writeConfiguration(t, configurations.activePath+".next", next)
+	// A directory makes the write fail even when the tests run as root.
+	if err := os.Remove(configurations.activePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(configurations.activePath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := configurations.Activate("next"); err == nil {
+		t.Fatal("Activate() succeeded when the active path was a directory")
+	}
+	active, err := configurations.Active()
+	if err != nil || !reflect.DeepEqual(*active, wantCached) {
+		t.Fatalf("Active() after write failure = %+v, %v; want cached configuration", active, err)
 	}
 }
 
@@ -531,8 +689,12 @@ func TestConfigurationsActivateReturnsStorageErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeConfiguration(t, activePath+".office", validTestConfiguration())
-		if err := (&Configurations{activePath: activePath}).Activate("office"); err == nil {
+		configurations := &Configurations{activePath: activePath}
+		if err := configurations.Activate("office"); err == nil {
 			t.Fatal("Activate() succeeded when the active path was a directory")
+		}
+		if _, err := configurations.Active(); err == nil {
+			t.Fatal("failed activation populated the cache")
 		}
 	})
 }

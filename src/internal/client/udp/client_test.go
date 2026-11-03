@@ -73,7 +73,7 @@ func TestClientRun_ContinuesAfterHealthyLivenessTick(t *testing.T) {
 		cancel()
 		synctest.Wait()
 		select {
-		case <-done:
+		case <-done: //nolint: errcheck
 		default:
 			t.Fatal("Run did not stop after context cancellation")
 		}

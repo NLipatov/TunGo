@@ -3,8 +3,12 @@
 package client
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -105,6 +109,7 @@ func darwinSettings(v4, v6 bool) settings.Settings {
 
 func newDarwinTestTUN(t *testing.T, active settings.Settings) (*TUN, *darwinIfconfigMock, *darwinIfconfigMock, *darwinRouteMock, *darwinRouteMock) {
 	t.Helper()
+	stubDarwinDNSCommands(t)
 	ifconfig4 := &darwinIfconfigMock{}
 	ifconfig6 := &darwinIfconfigMock{}
 	route4 := &darwinRouteMock{}
@@ -121,6 +126,85 @@ func newDarwinTestTUN(t *testing.T, active settings.Settings) (*TUN, *darwinIfco
 	tunnel.ifconfig4, tunnel.ifconfig6 = ifconfig4, ifconfig6
 	tunnel.route4, tunnel.route6 = route4, route6
 	return tunnel, ifconfig4, ifconfig6, route4, route6
+}
+
+func stubDarwinDNSCommands(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	t.Setenv("PATH", directory)
+	for name, script := range map[string]string{
+		"scutil":      "#!/bin/sh\nwhile IFS= read -r line; do :; done\nprintf 'No such key\\n'\n",
+		"dscacheutil": "#!/bin/sh\nexit 0\n",
+	} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return directory
+}
+
+func TestDarwinTUNNewRestoresDNSBeforeOpen(t *testing.T) {
+	for _, restoreFails := range []bool{false, true} {
+		name := "restored"
+		if restoreFails {
+			name = "restore failure is nonfatal"
+		}
+		t.Run(name, func(t *testing.T) {
+			directory := stubDarwinDNSCommands(t)
+			callsPath := filepath.Join(directory, "scutil.calls")
+			t.Setenv("TUNGO_TEST_DNS_CALLS", callsPath)
+			failure := "0"
+			if restoreFails {
+				failure = "1"
+			}
+			t.Setenv("TUNGO_TEST_DNS_RESTORE_FAIL", failure)
+			script := `#!/bin/sh
+while IFS= read -r line; do
+    printf '%s\n' "$line" >> "$TUNGO_TEST_DNS_CALLS"
+    case "$line" in
+        'show State:/Network/TunGo/DNSBackup')
+            printf '%s\n' '<dictionary> {' '  TunGoService : test-service' '  TunGoHadSetupInitially : false' '}'
+            ;;
+        'remove Setup:/Network/Service/test-service/DNS')
+            if [ "$TUNGO_TEST_DNS_RESTORE_FAIL" = 1 ]; then
+                printf 'restore failed\n'
+                exit 1
+            fi
+            ;;
+    esac
+done
+`
+			if err := os.WriteFile(filepath.Join(directory, "scutil"), []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var logs bytes.Buffer
+			originalLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+			tunnel, err := New(&clientconfig.Configuration{
+				ClientID: 1, Protocol: settings.UDP, UDPSettings: darwinSettings(true, false),
+			})
+			if err != nil || tunnel == nil {
+				t.Fatalf("New() = %v, %v; want a manager even if DNS restore fails", tunnel, err)
+			}
+			calls, err := os.ReadFile(callsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "show State:/Network/TunGo/DNSBackup\nremove Setup:/Network/Service/test-service/DNS\n"
+			if !restoreFails {
+				want += "remove State:/Network/TunGo/DNSBackup\n"
+			}
+			if string(calls) != want {
+				t.Fatalf("DNS commands before Open() = %q, want %q", calls, want)
+			}
+			if restoreFails && (!strings.Contains(logs.String(), "stale dns cleanup failed") ||
+				!strings.Contains(logs.String(), "restore failed")) {
+				t.Fatalf("DNS restore failure was not logged: %s", logs.String())
+			}
+		})
+	}
 }
 
 func TestDarwinTUNConfiguresDNSForEnabledFamilies(t *testing.T) {
@@ -174,6 +258,7 @@ func TestDarwinTUNReturnsDNSConfigurationError(t *testing.T) {
 }
 
 func TestDarwinTUNAppliesTunnelRoutes(t *testing.T) {
+	stubDarwinDNSCommands(t)
 	for _, test := range []struct {
 		name   string
 		v4     []string

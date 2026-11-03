@@ -63,9 +63,13 @@ func New(configuration *client.Configuration) (*TUN, error) {
 		return nil, err
 	}
 	cmd := command.New()
+	dns := dns.New(cmd)
+	if err := dns.Revert(); err != nil {
+		slog.Warn("stale dns cleanup failed", "err", err)
+	}
 	return &TUN{
 		settings:  active,
-		dns:       dns.New(cmd),
+		dns:       dns,
 		ifconfig4: ifconfig.NewV4(cmd),
 		ifconfig6: ifconfig.NewV6(cmd),
 		route4:    route.NewV4(cmd),

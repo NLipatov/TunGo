@@ -451,7 +451,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		time.Sleep(5 * time.Millisecond)
 	}
 	transportCancel()
-	<-errCh
+	<-errCh //nolint: errcheck
 
 	// Validate derived keys match the ones expected from the ORIGINAL pending priv.
 	gotC2S, gotS2C := ctrl.CurrentKeys()
