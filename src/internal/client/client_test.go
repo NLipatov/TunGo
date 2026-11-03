@@ -27,6 +27,7 @@ import (
 type clientTestTUN struct {
 	closeCalls atomic.Int32
 	closeErr   error
+	manager    tunManager
 }
 
 func TestNewClient(t *testing.T) {
@@ -46,6 +47,9 @@ func (*clientTestTUN) Open(netip.Addr) (io.ReadWriter, error) {
 
 func (m *clientTestTUN) Close() error {
 	m.closeCalls.Add(1)
+	if m.manager != nil {
+		return m.manager.Close()
+	}
 	return m.closeErr
 }
 
@@ -72,6 +76,59 @@ func TestRunTunnelLogsPreflightCleanupFailure(t *testing.T) {
 	if !strings.Contains(logs.String(), "failed to clean stale tunnel state") ||
 		!strings.Contains(logs.String(), cleanupErr.Error()) {
 		t.Fatalf("preflight cleanup log = %q", logs.String())
+	}
+}
+
+func TestRunTunnelRetainsManagerWhenDeferredCleanupFails(t *testing.T) {
+	client := newTestClientWithUnavailableServer(t)
+	commandName := "resolvconf"
+	if runtime.GOOS == "darwin" {
+		commandName = "scutil"
+	}
+	commandPath := filepath.Join(os.Getenv("PATH"), commandName)
+	originalCommand, err := os.ReadFile(commandPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf 'cleanup refused\\n'\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := client.runTunnel(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("runTunnel() error = %v, want the original connection cancellation", err)
+	}
+	if client.tunManager == nil {
+		t.Fatal("failed deferred cleanup discarded the manager")
+	}
+	if client.Ready() {
+		t.Fatal("cancelled connection marked the session ready")
+	}
+	if !strings.Contains(logs.String(), "failed to clean stale tunnel state") ||
+		!strings.Contains(logs.String(), "cleanup refused") {
+		t.Fatalf("deferred cleanup failure was not logged: %s", logs.String())
+	}
+
+	// Recover the command and observe the retained manager's next cleanup attempt.
+	previous := &clientTestTUN{manager: client.tunManager}
+	client.tunManager = previous
+	if err := os.WriteFile(commandPath, originalCommand, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.runTunnel(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("second runTunnel() error = %v, want context cancellation", err)
+	}
+	if got := previous.closeCalls.Load(); got != 1 {
+		t.Fatalf("retained manager Close() calls = %d, want one retry", got)
+	}
+	if client.tunManager != nil {
+		t.Fatal("successful cleanup retained the new manager")
 	}
 }
 
