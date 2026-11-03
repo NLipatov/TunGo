@@ -135,21 +135,6 @@ func (m Configurator) mainTabView() string {
 			[]string{m.daemon.pending},
 			"Tab switch tabs | Esc cancel | ctrl+c exit", m.preferences, styles,
 		)
-	case configuratorScreenDaemonReconfigureConfirm:
-		roleLabel := "selected role"
-		switch m.pendingDaemonMode {
-		case mode.Client:
-			roleLabel = "client"
-		case mode.Server:
-			roleLabel = "server"
-		}
-		return m.renderSelectionScreen(
-			"Daemon is active",
-			fmt.Sprintf("Applying %s daemon setup requires restart. Continue now?", roleLabel),
-			[]string{daemonConfirmReconfigureNowLabel, cancelLabel},
-			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
-		)
 	case configuratorScreenDaemonActiveConfirm:
 		modeLabel := "selected mode"
 		switch m.pendingStartMode {
@@ -158,7 +143,7 @@ func (m Configurator) mainTabView() string {
 		case mode.Server:
 			modeLabel = "server"
 		}
-		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)
+		notice := fmt.Sprintf("The %s daemon is active. Stop it before starting another %s in TUI mode.", modeLabel, modeLabel)
 		if strings.TrimSpace(m.notice) != "" {
 			notice = m.notice + "\n" + notice
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,13 +17,13 @@ import (
 // Control exposes systemd unit management operations.
 type Control interface {
 	Setup(context.Context, mode.Mode) (string, error)
-	RemoveUnit(context.Context) error
-	IsUnitActive(context.Context) (bool, error)
-	StopUnit(context.Context) error
-	StartUnit(context.Context) error
-	EnableUnit(context.Context) error
-	DisableUnit(context.Context) error
-	Status(context.Context) (UnitStatus, error)
+	RemoveUnit(context.Context, mode.Mode) error
+	IsUnitActive(context.Context, mode.Mode) (bool, error)
+	StopUnit(context.Context, mode.Mode) error
+	StartUnit(context.Context, mode.Mode) error
+	EnableUnit(context.Context, mode.Mode) error
+	DisableUnit(context.Context, mode.Mode) error
+	Status(context.Context, mode.Mode) (UnitStatus, error)
 }
 
 type runner interface {
@@ -48,96 +49,81 @@ func (i *UnitInstaller) Available() bool {
 	return available(i.config.RuntimeDir)
 }
 
-// Setup installs the selected runtime unit and preserves its running state.
-func (i *UnitInstaller) Setup(ctx context.Context, runtimeMode mode.Mode) (string, error) {
-	switch runtimeMode {
-	case mode.Client, mode.Server:
-	default:
-		return "", fmt.Errorf("invalid daemon mode: %v", runtimeMode)
-	}
-
-	wasActive, err := i.IsUnitActive(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to check daemon status: %w", err)
-	}
-	if wasActive {
-		if err := i.StopUnit(ctx); err != nil {
-			return "", fmt.Errorf("failed to stop daemon before setup: %w", err)
-		}
-	}
-
-	path, err := i.installRuntimeUnit(ctx, runtimeMode)
-	if err != nil {
-		if wasActive {
-			if startErr := i.StartUnit(ctx); startErr != nil {
-				return "", fmt.Errorf("%w (daemon restart also failed: %v)", err, startErr)
-			}
-		}
-		return "", err
-	}
-	if wasActive {
-		if err := i.StartUnit(ctx); err != nil {
-			return "", fmt.Errorf("failed to restart daemon after setup: %w", err)
-		}
-	}
-	return path, nil
-}
-
-func (i *UnitInstaller) installRuntimeUnit(ctx context.Context, runtimeMode mode.Mode) (string, error) {
+// Setup creates a new unit. Existing services must be explicitly removed first.
+func (i *UnitInstaller) Setup(ctx context.Context, runtimeMode mode.Mode) (path string, err error) {
 	args, err := commandline.RuntimeModeArgs(runtimeMode)
 	if err != nil {
-		return "", err
-	}
-	return i.installUnit(ctx, args)
-}
-
-func (i *UnitInstaller) installUnit(ctx context.Context, args []string) (string, error) {
-	if !i.Available() {
-		return "", fmt.Errorf("systemd is not available")
+		return "", fmt.Errorf("invalid daemon mode: %v", runtimeMode)
 	}
 	if err := validateTungoBinaryForSystemd(i.config.BinaryPath); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(i.config.UnitPath, []byte(UnitFileContent(i.config.BinaryPath, args)), 0644); err != nil {
-		return "", fmt.Errorf("failed to write %s: %w", i.config.UnitPath, err)
+	status, err := i.Status(ctx, runtimeMode)
+	if err != nil {
+		return "", err
+	}
+	if status.Installed {
+		return "", fmt.Errorf("%s is already installed; remove it before installing again", status.Name)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	path = i.unitPath(status.Name)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to create %s: %w", path, err)
+	}
+	// Cleanup only what this installation created, even when the TUI exits.
+	unitPath := path
+	enableAttempted := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		if enableAttempted {
+			_, disableErr := i.run(cleanupCtx, "disable", status.Name)
+			err = errors.Join(err, disableErr)
+		}
+		removeErr := os.Remove(unitPath)
+		_, reloadErr := i.run(cleanupCtx, "daemon-reload")
+		err = errors.Join(err, removeErr, reloadErr)
+	}()
+	_, writeErr := file.WriteString(UnitFileContent(i.config.BinaryPath, args))
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		return "", fmt.Errorf("failed to write %s: %w", path, err)
 	}
 	if _, err := i.run(ctx, "daemon-reload"); err != nil {
-		return "", i.rollbackInstallUnit(ctx, fmt.Errorf("failed to run systemctl daemon-reload: %w", err))
+		return "", err
 	}
-	if _, err := i.run(ctx, "enable", i.config.UnitName); err != nil {
-		return "", i.rollbackInstallUnit(ctx, fmt.Errorf("failed to run systemctl enable %s: %w", i.config.UnitName, err))
+	enableAttempted = true
+	if _, err := i.run(ctx, "enable", status.Name); err != nil {
+		return "", err
 	}
-	return i.config.UnitPath, nil
+	return path, nil
 }
 
-func (i *UnitInstaller) rollbackInstallUnit(ctx context.Context, installErr error) error {
-	rollbackErrs := make([]error, 0, 2)
-	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback %s: %w", i.config.UnitPath, err))
-	}
-	if _, err := i.run(ctx, "daemon-reload"); err != nil {
-		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback systemctl daemon-reload: %w", err))
-	}
-	if len(rollbackErrs) == 0 {
-		return installErr
-	}
-	rollbackErrs = append([]error{installErr}, rollbackErrs...)
-	return errors.Join(rollbackErrs...)
-}
-
-func (i *UnitInstaller) RemoveUnit(ctx context.Context) error {
-	if !i.Available() {
-		return fmt.Errorf("systemd is not available")
+func (i *UnitInstaller) RemoveUnit(ctx context.Context, runtimeMode mode.Mode) error {
+	status, err := i.Status(ctx, runtimeMode)
+	if err != nil {
+		return err
 	}
 
-	if _, err := i.run(ctx, "stop", i.config.UnitName); err != nil && !IsSystemdNotActiveError(err) {
-		return fmt.Errorf("failed to run systemctl stop %s: %w", i.config.UnitName, err)
+	if !status.Installed {
+		return nil
 	}
-	if _, err := i.run(ctx, "disable", i.config.UnitName); err != nil && !IsSystemdDisabledError(err) {
-		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
+	if !status.Managed {
+		return fmt.Errorf("%s is not managed by TunGo", status.Name)
 	}
-	if err := os.Remove(i.config.UnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove %s: %w", i.config.UnitPath, err)
+	if _, err := i.run(ctx, "stop", status.Name); err != nil && !IsSystemdNotActiveError(err) {
+		return fmt.Errorf("failed to run systemctl stop %s: %w", status.Name, err)
+	}
+	if _, err := i.run(ctx, "disable", status.Name); err != nil && !IsSystemdDisabledError(err) {
+		return fmt.Errorf("failed to run systemctl disable %s: %w", status.Name, err)
+	}
+	if err := os.Remove(i.unitPath(status.Name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove %s: %w", i.unitPath(status.Name), err)
 	}
 	if _, err := i.run(ctx, "daemon-reload"); err != nil {
 		return fmt.Errorf("failed to run systemctl daemon-reload: %w", err)
@@ -145,66 +131,103 @@ func (i *UnitInstaller) RemoveUnit(ctx context.Context) error {
 	return nil
 }
 
-func (i *UnitInstaller) IsUnitActive(ctx context.Context) (bool, error) {
-	if !i.Available() {
-		return false, fmt.Errorf("systemd is not available")
-	}
-	activeOutput, err := i.run(ctx, "is-active", i.config.UnitName)
+func (i *UnitInstaller) IsUnitActive(ctx context.Context, runtimeMode mode.Mode) (bool, error) {
+	status, err := i.Status(ctx, runtimeMode)
+	return ActiveStateBlocksRuntimeStart(status.ActiveState), err
+}
+
+func (i *UnitInstaller) StopUnit(ctx context.Context, runtimeMode mode.Mode) error {
+	status, err := i.Status(ctx, runtimeMode)
 	if err != nil {
-		if IsSystemdNotActiveError(err) {
-			return false, nil
+		return err
+	}
+	if _, err := i.run(ctx, "stop", status.Name); err != nil {
+		return fmt.Errorf("failed to run systemctl stop %s: %w", status.Name, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) StartUnit(ctx context.Context, runtimeMode mode.Mode) error {
+	status, err := i.Status(ctx, runtimeMode)
+	if err != nil {
+		return err
+	}
+	if _, err := i.run(ctx, "start", status.Name); err != nil {
+		return fmt.Errorf("failed to run systemctl start %s: %w", status.Name, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) EnableUnit(ctx context.Context, runtimeMode mode.Mode) error {
+	status, err := i.Status(ctx, runtimeMode)
+	if err != nil {
+		return err
+	}
+	if _, err := i.run(ctx, "enable", status.Name); err != nil {
+		return fmt.Errorf("failed to run systemctl enable %s: %w", status.Name, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) DisableUnit(ctx context.Context, runtimeMode mode.Mode) error {
+	status, err := i.Status(ctx, runtimeMode)
+	if err != nil {
+		return err
+	}
+	if _, err := i.run(ctx, "disable", status.Name); err != nil {
+		return fmt.Errorf("failed to run systemctl disable %s: %w", status.Name, err)
+	}
+	return nil
+}
+
+// Status keeps a legacy tungo.service attached to its existing role. It never
+// renames or restarts a service, and rejects ambiguous duplicate installations.
+func (i *UnitInstaller) Status(ctx context.Context, runtimeMode mode.Mode) (UnitStatus, error) {
+	var role UnitRole
+	switch runtimeMode {
+	case mode.Client:
+		role = UnitRoleClient
+	case mode.Server:
+		role = UnitRoleServer
+	default:
+		return UnitStatus{}, fmt.Errorf("invalid daemon mode: %v", runtimeMode)
+	}
+	status, err := i.unitStatus(ctx, "tungo-"+string(role)+".service")
+	if err != nil {
+		return UnitStatus{}, err
+	}
+	legacy, err := i.unitStatus(ctx, "tungo.service")
+	if err != nil {
+		return UnitStatus{}, err
+	}
+	if legacy.Installed {
+		if legacy.Role == UnitRoleUnknown {
+			return UnitStatus{}, fmt.Errorf("cannot determine the role of tungo.service; inspect or remove it with systemctl")
 		}
-		return false, fmt.Errorf("failed to run systemctl is-active %s: %w", i.config.UnitName, err)
+		if legacy.Role == role {
+			if status.Installed {
+				return UnitStatus{}, fmt.Errorf("both %s and tungo.service exist for %s; remove the duplicate with systemctl", status.Name, role)
+			}
+			return legacy, nil
+		}
 	}
-	return ActiveStateBlocksRuntimeStart(ParseUnitActiveState(activeOutput, nil)), nil
+	if status.Installed && status.Role != role {
+		return UnitStatus{}, fmt.Errorf("%s has an unexpected role; inspect it with systemctl", status.Name)
+	}
+	return status, nil
 }
 
-func (i *UnitInstaller) StopUnit(ctx context.Context) error {
-	if !i.Available() {
-		return fmt.Errorf("systemd is not available")
-	}
-	if _, err := i.run(ctx, "stop", i.config.UnitName); err != nil {
-		return fmt.Errorf("failed to run systemctl stop %s: %w", i.config.UnitName, err)
-	}
-	return nil
+func (i *UnitInstaller) unitPath(name string) string {
+	return filepath.Join(i.config.UnitDir, name)
 }
 
-func (i *UnitInstaller) StartUnit(ctx context.Context) error {
-	if !i.Available() {
-		return fmt.Errorf("systemd is not available")
-	}
-	if _, err := i.run(ctx, "start", i.config.UnitName); err != nil {
-		return fmt.Errorf("failed to run systemctl start %s: %w", i.config.UnitName, err)
-	}
-	return nil
-}
-
-func (i *UnitInstaller) EnableUnit(ctx context.Context) error {
-	if !i.Available() {
-		return fmt.Errorf("systemd is not available")
-	}
-	if _, err := i.run(ctx, "enable", i.config.UnitName); err != nil {
-		return fmt.Errorf("failed to run systemctl enable %s: %w", i.config.UnitName, err)
-	}
-	return nil
-}
-
-func (i *UnitInstaller) DisableUnit(ctx context.Context) error {
-	if !i.Available() {
-		return fmt.Errorf("systemd is not available")
-	}
-	if _, err := i.run(ctx, "disable", i.config.UnitName); err != nil {
-		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
-	}
-	return nil
-}
-
-func (i *UnitInstaller) Status(ctx context.Context) (UnitStatus, error) {
+func (i *UnitInstaller) unitStatus(ctx context.Context, unitName string) (UnitStatus, error) {
 	if !i.Available() {
 		return UnitStatus{}, fmt.Errorf("systemd is not available")
 	}
 
 	status := UnitStatus{
+		Name:           unitName,
 		Role:           UnitRoleUnknown,
 		LoadState:      UnitLoadStateUnknown,
 		UnitFileState:  UnitFileStateUnknown,
@@ -216,18 +239,18 @@ func (i *UnitInstaller) Status(ctx context.Context) (UnitStatus, error) {
 		FragmentPath:   "unknown",
 	}
 
-	enabledOutput, err := i.run(ctx, "is-enabled", i.config.UnitName)
+	enabledOutput, err := i.run(ctx, "is-enabled", unitName)
 	if err != nil {
 		if !IsSystemdDisabledError(err) {
-			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-enabled %s: %w", i.config.UnitName, err)
+			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-enabled %s: %w", unitName, err)
 		}
 	}
 	status.UnitFileState = ParseUnitFileState(enabledOutput, err)
 
-	activeOutput, activeErr := i.run(ctx, "is-active", i.config.UnitName)
+	activeOutput, activeErr := i.run(ctx, "is-active", unitName)
 	if activeErr != nil {
 		if !IsSystemdNotActiveError(activeErr) {
-			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-active %s: %w", i.config.UnitName, activeErr)
+			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-active %s: %w", unitName, activeErr)
 		}
 	}
 	status.ActiveState = ParseUnitActiveState(activeOutput, activeErr)
@@ -235,12 +258,12 @@ func (i *UnitInstaller) Status(ctx context.Context) (UnitStatus, error) {
 	showOutput, showErr := i.run(
 		ctx,
 		"show",
-		i.config.UnitName,
+		unitName,
 		"--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecStart,FragmentPath",
 		"--no-page",
 	)
 	if showErr != nil {
-		return UnitStatus{}, fmt.Errorf("failed to run systemctl show %s: %w", i.config.UnitName, showErr)
+		return UnitStatus{}, fmt.Errorf("failed to run systemctl show %s: %w", unitName, showErr)
 	}
 	props := ParseSystemdShowProperties(showOutput)
 	status.LoadState = UnitLoadState(NormalizeSystemdValue(props["LoadState"]))
@@ -252,7 +275,7 @@ func (i *UnitInstaller) Status(ctx context.Context) (UnitStatus, error) {
 	status.ExecMainStatus = NormalizeSystemdValue(props["ExecMainStatus"])
 	status.ExecStart = NormalizeSystemdRawValue(props["ExecStart"])
 	status.FragmentPath = NormalizeSystemdRawValue(props["FragmentPath"])
-	status.Managed = IsInstallerManagedFragmentPath(status.FragmentPath, i.config.UnitPath)
+	status.Managed = IsInstallerManagedFragmentPath(status.FragmentPath, i.unitPath(unitName))
 
 	switch status.LoadState {
 	case UnitLoadStateNotFound:
@@ -271,7 +294,7 @@ func (i *UnitInstaller) Status(ctx context.Context) (UnitStatus, error) {
 
 	status.Role = DetectUnitRoleFromExecStart(status.ExecStart)
 	if status.Role == UnitRoleUnknown && status.Managed {
-		if unitBody, readErr := os.ReadFile(i.config.UnitPath); readErr == nil {
+		if unitBody, readErr := os.ReadFile(i.unitPath(unitName)); readErr == nil {
 			status.Role = DetectUnitRole(string(unitBody))
 		}
 	}

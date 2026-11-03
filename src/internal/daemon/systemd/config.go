@@ -2,16 +2,14 @@ package systemd
 
 type Config struct {
 	RuntimeDir string
-	UnitPath   string
-	UnitName   string
+	UnitDir    string
 	BinaryPath string
 }
 
 func DefaultConfig() Config {
 	return Config{
 		RuntimeDir: "/run/systemd/system",
-		UnitPath:   "/etc/systemd/system/tungo.service",
-		UnitName:   "tungo.service",
+		UnitDir:    "/etc/systemd/system",
 		BinaryPath: "/usr/local/bin/tungo",
 	}
 }

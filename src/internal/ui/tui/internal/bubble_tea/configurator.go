@@ -56,7 +56,6 @@ const (
 	configuratorScreenServerDeleteConfirm
 	configuratorScreenDaemonManage
 	configuratorScreenDaemonChecking
-	configuratorScreenDaemonReconfigureConfirm
 	configuratorScreenDaemonActiveConfirm
 	configuratorScreenDaemonCheckErrorConfirm
 )
@@ -76,16 +75,13 @@ const (
 	serverAddLabel    = "add client"
 	serverManageLabel = "manage clients"
 
-	daemonSetupClientLabel           = "setup client daemon"
-	daemonSetupServerLabel           = "setup server daemon"
-	daemonReconfigureClientLabel     = "reconfigure as client daemon"
-	daemonReconfigureServerLabel     = "reconfigure as server daemon"
-	daemonStartLabel                 = "start daemon"
-	daemonStopLabel                  = "stop daemon"
-	daemonEnableLabel                = "enable on boot"
-	daemonDisableLabel               = "disable on boot"
-	daemonDeleteLabel                = "delete daemon"
-	daemonConfirmReconfigureNowLabel = "stop and restart with new setup"
+	daemonSetupClientLabel = "setup client daemon"
+	daemonSetupServerLabel = "setup server daemon"
+	daemonStartLabel       = "start daemon"
+	daemonStopLabel        = "stop daemon"
+	daemonEnableLabel      = "enable on boot"
+	daemonDisableLabel     = "disable on boot"
+	daemonDeleteLabel      = "delete daemon"
 
 	serverDeleteConfirmLabel = "Delete client"
 	cancelLabel              = "Cancel"
@@ -119,9 +115,8 @@ type serverState struct {
 type daemonState struct {
 	commands    *daemonCommands
 	pending     string
-	status      systemd.UnitStatus
-	statusErr   error
-	menuOptions []string
+	units       map[mode.Mode]daemonUnitStatus
+	menuOptions []daemonMenuOption
 }
 
 type Configurator struct {
@@ -152,7 +147,6 @@ type Configurator struct {
 	pendingStartMode    mode.Mode
 	pendingStartScreen  configuratorScreen
 	pendingClientConfig string
-	pendingDaemonMode   mode.Mode
 
 	resultMode mode.Mode
 	resultErr  error
@@ -388,8 +382,6 @@ func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.cancelPendingDaemonStart("Start cancelled."), nil
 			}
 			return m, nil
-		case configuratorScreenDaemonReconfigureConfirm:
-			return m.updateDaemonReconfigureConfirmScreen(msg)
 		case configuratorScreenDaemonActiveConfirm:
 			return m.updateDaemonActiveConfirmScreen(msg)
 		case configuratorScreenDaemonCheckErrorConfirm:

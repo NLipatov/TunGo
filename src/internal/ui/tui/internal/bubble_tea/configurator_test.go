@@ -2983,7 +2983,7 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 	t.Run("daemon manage dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.Daemon = newDaemonControlStub()
-		opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		opts.testDaemon().status = func(_ mode.Mode) (systemd.UnitStatus, error) {
 			return systemd.UnitStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
 		}
 		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
@@ -2991,26 +2991,11 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonManage
-		model.daemon.menuOptions = []string{"unknown"}
+		model.daemon.menuOptions = daemonTestOptions("unknown")
 		result, _ := model.Update(keyNamed(tea.KeyEnter))
 		updated := result.(Configurator)
 		if updated.screen != configuratorScreenDaemonManage {
 			t.Fatalf("expected daemon manage screen, got %v", updated.screen)
-		}
-	})
-
-	t.Run("daemon reconfigure confirm dispatch", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		model.screen = configuratorScreenDaemonReconfigureConfirm
-		model.pendingDaemonMode = mode.Client
-		result, _ := model.Update(keyNamed(tea.KeyDown))
-		updated := result.(Configurator)
-		if updated.screen != configuratorScreenDaemonReconfigureConfirm {
-			t.Fatalf("expected daemon reconfigure confirm screen, got %v", updated.screen)
 		}
 	})
 
@@ -3050,11 +3035,11 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.Daemon = newDaemonControlStub()
-	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+	opts.testDaemon().status = func(_ mode.Mode) (systemd.UnitStatus, error) {
 		return systemd.UnitStatus{Installed: true, Role: systemd.UnitRoleClient, UnitFileState: "disabled", ActiveState: "inactive"}, nil
 	}
-	opts.testDaemon().start = func() error { return nil }
-	opts.testDaemon().enable = func() error { return nil }
+	opts.testDaemon().start = func(_ mode.Mode) error { return nil }
+	opts.testDaemon().enable = func(_ mode.Mode) error { return nil }
 	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
 	model, err := NewConfigurator(opts, settingsForMode(tuiconfig.ModePreferenceClient))
@@ -3136,8 +3121,8 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemo
 
 	opts := defaultConfiguratorOpts()
 	opts.testControl().clientConfigs = []string{"cfg.json"}
-	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
-	opts.testDaemon().stop = func() error { return nil }
+	opts.testDaemon().isActive = func(_ mode.Mode) (bool, error) { return true, nil }
+	opts.testDaemon().stop = func(_ mode.Mode) error { return nil }
 
 	model, err := NewConfigurator(opts, s)
 	if err != nil {
