@@ -321,7 +321,7 @@ func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
 		})
 		serverDone <- server.HandshakeContext(ctx)
 	}()
-	conn, err := dialTLSForWebSocket(ctx, "tcp", listener.Addr().String())
+	conn, err := dialTLSForWebSocket(ctx, "tcp", listener.Addr().String(), nil, nil)
 	if conn != nil {
 		_ = conn.Close()
 	}
