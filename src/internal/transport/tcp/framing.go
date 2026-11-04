@@ -20,8 +20,8 @@ type framedConn struct {
 	adapter  io.ReadWriteCloser
 	frameCap int
 
-	writeMu           sync.Mutex
-	writeHeaderBuffer [2]byte
+	writeMu     sync.Mutex
+	writeBuffer []byte
 
 	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
 	bufReader *bufio.Reader
@@ -43,14 +43,16 @@ func NewFramedConn(
 		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", frameCap, math.MaxUint16)
 	}
 	return &framedConn{
-		adapter:   adapter,
-		frameCap:  frameCap,
-		bufReader: bufio.NewReader(adapter),
+		adapter:     adapter,
+		frameCap:    frameCap,
+		writeBuffer: make([]byte, 2+frameCap),
+		bufReader:   bufio.NewReader(adapter),
 	}, nil
 }
 
 // Write writes one u16-BE length-prefixed frame. Returns len(data) on success.
-// Header and payload are written without payload copy.
+// Header and payload share one write so message transports do not send the
+// length prefix as a separate message. The frame buffer is reused under writeMu.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *framedConn) Write(data []byte) (int, error) {
 	if len(data) == 0 {
@@ -63,11 +65,10 @@ func (a *framedConn) Write(data []byte) (int, error) {
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
 
-	binary.BigEndian.PutUint16(a.writeHeaderBuffer[:], uint16(len(data)))
-	if err := a.writeFull(a.adapter, a.writeHeaderBuffer[:]); err != nil {
-		return 0, err
-	}
-	if err := a.writeFull(a.adapter, data); err != nil {
+	frame := a.writeBuffer[:2+len(data)]
+	binary.BigEndian.PutUint16(frame, uint16(len(data)))
+	copy(frame[2:], data)
+	if err := a.writeFull(a.adapter, frame); err != nil {
 		return 0, err
 	}
 	return len(data), nil

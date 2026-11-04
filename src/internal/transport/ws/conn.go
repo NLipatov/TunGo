@@ -6,15 +6,19 @@ import (
 	"io"
 	"net"
 	"time"
+	"tungo/internal/config/settings"
 
 	"github.com/coder/websocket"
 )
 
 type socket interface {
 	Reader(context.Context) (websocket.MessageType, io.Reader, error)
-	Writer(context.Context, websocket.MessageType) (io.WriteCloser, error)
+	Write(context.Context, websocket.MessageType, []byte) error
 	Close(websocket.StatusCode, string) error
 }
+
+// Keep messages within the receive limit of existing servers.
+const maxMessagePayload = settings.DefaultEthernetMTU + settings.TCPChacha20Overhead
 
 var _ net.Conn = (*Conn)(nil)
 
@@ -41,7 +45,7 @@ func NewConn(
 	}
 }
 
-func (a *Conn) Write(data []byte) (written int, err error) {
+func (a *Conn) Write(data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, nil
 	}
@@ -55,27 +59,17 @@ func (a *Conn) Write(data []byte) (written int, err error) {
 	}
 	defer cancel()
 
-	writer, err := a.conn.Writer(ctx, websocket.MessageBinary)
-	if err != nil {
-		return 0, a.mapWriteErr(err)
-	}
-
-	defer func() {
-		closeErr := writer.Close()
-		if err == nil && closeErr != nil {
-			err = a.mapWriteErr(closeErr)
-		}
-	}()
-
+	// Balance oversized writes across messages instead of emitting a tiny tail
+	// when the framing prefix takes a full-size payload over the old peer limit.
+	messages := 1 + (len(data)-1)/maxMessagePayload
+	messageSize := 1 + (len(data)-1)/messages
+	written := 0
 	for written < len(data) {
-		n, writeErr := writer.Write(data[written:])
-		written += n
-		if writeErr != nil {
-			return written, a.mapWriteErr(writeErr)
+		end := min(written+messageSize, len(data))
+		if err := a.conn.Write(ctx, websocket.MessageBinary, data[written:end]); err != nil {
+			return written, a.mapWriteErr(err)
 		}
-		if n == 0 {
-			return written, io.ErrNoProgress
-		}
+		written = end
 	}
 
 	return written, nil

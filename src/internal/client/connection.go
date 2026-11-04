@@ -1,13 +1,18 @@
 package client
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -21,8 +26,12 @@ import (
 	"tungo/internal/transport/host"
 	tcptransport "tungo/internal/transport/tcp"
 	"tungo/internal/transport/ws"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/idna"
+	"golang.org/x/net/proxy"
 )
 
 type epochController interface {
@@ -67,7 +76,7 @@ func dial(
 	case settings.UDP, settings.TCP:
 		return dialWithFallback(establishCtx, s)
 	case settings.WS, settings.WSS:
-		return dialWSWithFallback(establishCtx, connCtx, s)
+		return dialWebSocket(establishCtx, connCtx, s)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
 	}
@@ -233,7 +242,7 @@ func dialWithFallback(ctx context.Context, s settings.Settings) (io.ReadWriteClo
 	return dialTCP(ctx, preferredAP)
 }
 
-func dialWSWithFallback(
+func dialWebSocket(
 	establishCtx, connCtx context.Context,
 	s settings.Settings,
 ) (io.ReadWriteCloser, error) {
@@ -253,16 +262,16 @@ func dialWSWithFallback(
 		ipv6Endpoint := net.JoinHostPort(s.Server.IPv6, strconv.Itoa(port))
 		// IPv6-only path: no reason to probe then retry the same endpoint.
 		if ipv6Endpoint == endpoint {
-			return dialWS(establishCtx, connCtx, scheme, endpoint)
+			return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
 		}
 		ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-		adapter, dialErr := dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
+		adapter, dialErr := dialWebSocketEndpoint(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
 		cancel()
 		if dialErr == nil {
 			return adapter, nil
 		}
 	}
-	return dialWS(establishCtx, connCtx, scheme, endpoint)
+	return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
 }
 
 func preferredHost(host settings.Host) string {
@@ -275,17 +284,18 @@ func preferredHost(host settings.Host) string {
 	return host.IPv6
 }
 
-func dialWS(
+func dialWebSocketEndpoint(
 	establishCtx, connCtx context.Context,
 	scheme, endpoint string,
 ) (io.ReadWriteCloser, error) {
-	url := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
+	webSocketURL := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
 	var (
 		remoteMu   sync.Mutex
 		remoteAddr net.Addr
 	)
 	dialer := &net.Dialer{}
 	transport := cloneDefaultTransport()
+	defer transport.CloseIdleConnections()
 	transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
 		conn, err := dialer.DialContext(ctx, network, target)
 		if err != nil {
@@ -296,8 +306,53 @@ func dialWS(
 		remoteMu.Unlock()
 		return conn, nil
 	}
+	if scheme == "wss" {
+		// Own proxy setup so net/http cannot replace destination uTLS after CONNECT.
+		proxyForRequest := transport.Proxy
+		var roots *x509.CertPool
+		if transport.TLSClientConfig != nil {
+			roots = transport.TLSClientConfig.RootCAs
+		}
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		// HTTP redirects still need net/http's forward-proxy handling. Its TLS
+		// dialer connects only to an HTTPS proxy, without another proxy lookup.
+		httpTransport := transport.Clone()
+		defer httpTransport.CloseIdleConnections()
+		httpTransport.DialTLSContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+			conn, err := dialTLSForWebSocket(ctx, network, target, nil, roots)
+			if err != nil {
+				return nil, err
+			}
+			remoteMu.Lock()
+			remoteAddr = conn.RemoteAddr()
+			remoteMu.Unlock()
+			return conn, nil
+		}
+		transport.RegisterProtocol("http", httpTransport)
+		transport.Proxy = nil
+		transport.DialTLSContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+			var proxyURL *url.URL
+			if proxyForRequest != nil {
+				request := (&http.Request{URL: &url.URL{Scheme: "https", Host: target, Path: "/ws"}}).WithContext(ctx)
+				var err error
+				proxyURL, err = proxyForRequest(request)
+				if err != nil {
+					return nil, err
+				}
+			}
+			conn, err := dialTLSForWebSocket(ctx, network, target, proxyURL, roots)
+			if err != nil {
+				return nil, err
+			}
+			remoteMu.Lock()
+			remoteAddr = conn.RemoteAddr()
+			remoteMu.Unlock()
+			return conn, nil
+		}
+	}
 	opts := &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}}
-	conn, resp, err := websocket.Dial(establishCtx, url, opts)
+	conn, resp, err := websocket.Dial(establishCtx, webSocketURL, opts)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
@@ -323,6 +378,154 @@ func dialWS(
 		return tcptransport.WithRemoteAddr(wrapped, remote), nil
 	}
 	return wrapped, nil
+}
+
+func dialTLSForWebSocket(ctx context.Context, network, target string, proxyURL *url.URL, roots *x509.CertPool) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := dialWebSocketTunnel(ctx, network, target, proxyURL, roots)
+	if err != nil {
+		return nil, err
+	}
+	return handshakeWebSocketTLS(ctx, raw, host, roots)
+}
+
+// dialWebSocketTunnel returns a stream to the destination, before its TLS handshake.
+func dialWebSocketTunnel(ctx context.Context, network, target string, proxyURL *url.URL, roots *x509.CertPool) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	if proxyURL == nil {
+		return dialer.DialContext(ctx, network, target)
+	}
+	host := proxyURL.Hostname()
+	// Match net/http's IDNA lookup policy, retaining ASCII names and IP literals.
+	for _, r := range host {
+		if r >= utf8.RuneSelf {
+			var err error
+			host, err = idna.Lookup.ToASCII(host)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proxy hostname: %w", err)
+			}
+			break
+		}
+	}
+	var defaultPort string
+	switch proxyURL.Scheme {
+	case "socks5", "socks5h":
+		socksURL := *proxyURL
+		socksURL.Host = net.JoinHostPort(host, proxyURL.Port())
+		socks, err := proxy.FromURL(&socksURL, dialer)
+		if err != nil {
+			return nil, err
+		}
+		return socks.(proxy.ContextDialer).DialContext(ctx, network, target)
+	case "", "http":
+		defaultPort = "80"
+	case "https":
+		defaultPort = "443"
+	default:
+		return nil, fmt.Errorf("unsupported WebSocket proxy scheme: %q", proxyURL.Scheme)
+	}
+	port := proxyURL.Port()
+	if port == "" {
+		port = defaultPort
+	}
+	conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	if err != nil {
+		return nil, err
+	}
+	if proxyURL.Scheme == "https" {
+		conn, err = handshakeWebSocketTLS(ctx, conn, host, roots)
+		if err != nil {
+			return nil, fmt.Errorf("TLS to HTTPS proxy: %w", err)
+		}
+	}
+	if err := connectWebSocketProxy(ctx, conn, target, proxyURL); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func connectWebSocketProxy(ctx context.Context, conn net.Conn, target string, proxyURL *url.URL) (err error) {
+	// Request.Write and ReadResponse do not observe a request's context. Interrupt
+	// their I/O on cancellation, and join the callback before handing off the conn.
+	cancelled := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.SetDeadline(time.Now())
+		close(cancelled)
+	})
+	defer func() {
+		if !stop() {
+			<-cancelled
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}()
+	request := &http.Request{
+		Method: http.MethodConnect,
+		URL:    &url.URL{Opaque: target},
+		Host:   target,
+		Header: make(http.Header),
+	}
+	if proxyURL.User != nil {
+		password, _ := proxyURL.User.Password()
+		auth := proxyURL.User.Username() + ":" + password
+		request.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(auth)))
+	}
+	if err := request.Write(conn); err != nil {
+		return fmt.Errorf("write proxy CONNECT: %w", err)
+	}
+	// As in net/http, the reader can be discarded: the TLS server cannot send
+	// tunneled data until we send ClientHello. Bound the proxy response headers.
+	response, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 10<<20)), request)
+	if err != nil {
+		return fmt.Errorf("read proxy CONNECT: %w", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("proxy CONNECT: %s", response.Status)
+	}
+	return nil
+}
+
+// handshakeWebSocketTLS takes ownership of raw and closes it on failure.
+func handshakeWebSocketTLS(ctx context.Context, raw net.Conn, host string, roots *x509.CertPool) (net.Conn, error) {
+	conn := utls.UClient(raw, &utls.Config{
+		ServerName: host,
+		RootCAs:    roots,
+	}, utls.HelloChrome_Auto)
+
+	if err := conn.BuildHandshakeState(); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+
+	// WebSocket Upgrade and proxy CONNECT use HTTP/1.1, with no ALPS settings.
+	extensions := conn.Extensions[:0]
+	for _, ext := range conn.Extensions {
+		switch ext := ext.(type) {
+		case *utls.ALPNExtension:
+			ext.AlpnProtocols = []string{"http/1.1"}
+		case *utls.ApplicationSettingsExtension, *utls.ApplicationSettingsExtensionNew:
+			continue
+		}
+		extensions = append(extensions, ext)
+	}
+	conn.Extensions = extensions
+
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+
+	if protocol := conn.ConnectionState().NegotiatedProtocol; protocol != "" && protocol != "http/1.1" {
+		_ = conn.Close()
+		return nil, fmt.Errorf("unexpected negotiated ALPN: %q", protocol)
+	}
+
+	return conn, nil
 }
 
 func ipv6ProbeTimeout(s settings.Settings) time.Duration {

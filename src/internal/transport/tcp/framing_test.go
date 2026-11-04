@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"sync"
 	"testing"
 )
 
@@ -172,6 +173,46 @@ func TestWrite_DoesNotAllocate(t *testing.T) {
 	}
 	if allocs != 0 {
 		t.Fatalf("Write allocations=%v, want 0", allocs)
+	}
+}
+
+func TestWrite_ConcurrentFramesRemainIntact(t *testing.T) {
+	t.Parallel()
+	const count = 32
+	mock := &framedConnMockConn{}
+	conn, err := NewFramedConn(mock, 1500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var writers sync.WaitGroup
+	for id := range count {
+		writers.Go(func() {
+			payload := bytes.Repeat([]byte{byte(id)}, 100+id)
+			if n, err := conn.Write(payload); err != nil || n != len(payload) {
+				t.Errorf("Write(%d) = %d, %v", id, n, err)
+			}
+		})
+	}
+	writers.Wait()
+	seen := make(map[byte]bool, count)
+	for wire := mock.writeBuf.Bytes(); len(wire) > 0; {
+		if len(wire) < 2 {
+			t.Fatal("truncated prefix")
+		}
+		n := int(binary.BigEndian.Uint16(wire))
+		wire = wire[2:]
+		if n == 0 || n > len(wire) {
+			t.Fatalf("invalid frame size %d with %d bytes remaining", n, len(wire))
+		}
+		id := wire[0]
+		if id >= count || seen[id] || n != 100+int(id) || !bytes.Equal(wire[:n], bytes.Repeat([]byte{id}, n)) {
+			t.Fatalf("corrupted or duplicate frame: id=%d size=%d", id, n)
+		}
+		seen[id] = true
+		wire = wire[n:]
+	}
+	if len(seen) != count {
+		t.Fatalf("got %d frames, want %d", len(seen), count)
 	}
 }
 

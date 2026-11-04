@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -246,14 +248,14 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	_ = conn.Close()
 }
 
-func TestDialWS_Success(t *testing.T) {
+func TestDialWebSocketEndpoint_Success(t *testing.T) {
 	t.Parallel()
 	host, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
 	if err != nil {
-		t.Fatalf("dialWS failed: %v", err)
+		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
 	}
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
@@ -264,14 +266,14 @@ func TestDialWS_Success(t *testing.T) {
 	_ = adapter.Close()
 }
 
-func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
+func TestDialWebSocketEndpoint_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 	t.Parallel()
 	_, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
 	if err != nil {
-		t.Fatalf("dialWS failed: %v", err)
+		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
 	}
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
@@ -283,13 +285,75 @@ func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 	_ = adapter.Close()
 }
 
-func TestDialWS_Error_NoServer(t *testing.T) {
+func TestDialWebSocketEndpoint_Error_NoServer(t *testing.T) {
 	t.Parallel()
 	// Use a port with no WS server
-	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error when no WS server is listening")
+	}
+}
+
+func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	hellos := make(chan *tls.ClientHelloInfo, 1)
+	serverDone := make(chan error, 1)
+	go func() {
+		raw, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		defer func() { _ = raw.Close() }()
+		server := tls.Server(raw, &tls.Config{
+			GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+				hellos <- hello
+				return nil, errors.New("stop after inspecting ClientHello")
+			},
+		})
+		serverDone <- server.HandshakeContext(ctx)
+	}()
+	conn, err := dialTLSForWebSocket(ctx, "tcp", listener.Addr().String(), nil, nil)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err == nil {
+		t.Fatal("expected the test server to reject the handshake")
+	}
+	select {
+	case serverErr := <-serverDone:
+		if serverErr == nil {
+			t.Fatal("expected the server handshake to fail")
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the server handshake")
+	}
+	select {
+	case hello := <-hellos:
+		if !slices.Equal(hello.SupportedProtos, []string{"http/1.1"}) {
+			t.Errorf("ALPN = %v, want only http/1.1", hello.SupportedProtos)
+		}
+		for _, extension := range hello.Extensions {
+			if extension == 17513 || extension == 17613 {
+				t.Errorf("HTTP/1.1 ClientHello advertises ALPS extension %d", extension)
+			}
+		}
+		isGREASE := func(value uint16) bool {
+			return value&0x0f0f == 0x0a0a && byte(value>>8) == byte(value)
+		}
+		if !slices.ContainsFunc(hello.CipherSuites, isGREASE) || !slices.ContainsFunc(hello.Extensions, isGREASE) {
+			t.Error("ClientHello lost the browser preset's GREASE")
+		}
+	default:
+		t.Fatal("server did not receive ClientHello")
 	}
 }
 
@@ -633,10 +697,10 @@ func TestDialErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("dialWS error", func(t *testing.T) {
-		_, err := dialWS(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+	t.Run("dialWebSocketEndpoint error", func(t *testing.T) {
+		_, err := dialWebSocketEndpoint(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
 		if err == nil {
-			t.Fatal("expected dialWS error")
+			t.Fatal("expected dialWebSocketEndpoint error")
 		}
 	})
 }
@@ -793,7 +857,7 @@ func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
 	<-done
 }
 
-func TestDialWSWithFallback_IPv6Success(t *testing.T) {
+func TestDialWebSocket_IPv6Success(t *testing.T) {
 	t.Parallel()
 	// Start WS server on IPv6 loopback.
 	ln, err := net.Listen("tcp", "[::1]:0")
@@ -823,7 +887,7 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 		Protocol: settings.WS,
 	}
 
-	adapter, dialErr := dialWSWithFallback(context.Background(), context.Background(), s)
+	adapter, dialErr := dialWebSocket(context.Background(), context.Background(), s)
 	if dialErr != nil {
 		t.Fatalf("unexpected error: %v", dialErr)
 	}
