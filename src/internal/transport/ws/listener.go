@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"tungo/internal/config/settings"
-
 	"github.com/coder/websocket"
 )
 
@@ -164,7 +162,7 @@ func (*Listener) upgrade(w http.ResponseWriter, r *http.Request) (*websocket.Con
 	if err != nil {
 		return nil, err
 	}
-	conn.SetReadLimit(int64(settings.DefaultEthernetMTU + settings.TCPChacha20Overhead))
+	conn.SetReadLimit(maxMessagePayload)
 	return conn, nil
 }
 

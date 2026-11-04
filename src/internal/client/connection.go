@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"math"
@@ -23,6 +24,7 @@ import (
 	"tungo/internal/transport/ws"
 
 	"github.com/coder/websocket"
+	utls "github.com/refraction-networking/utls"
 )
 
 type epochController interface {
@@ -67,7 +69,7 @@ func dial(
 	case settings.UDP, settings.TCP:
 		return dialWithFallback(establishCtx, s)
 	case settings.WS, settings.WSS:
-		return dialWSWithFallback(establishCtx, connCtx, s)
+		return dialWebSocket(establishCtx, connCtx, s)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
 	}
@@ -233,7 +235,7 @@ func dialWithFallback(ctx context.Context, s settings.Settings) (io.ReadWriteClo
 	return dialTCP(ctx, preferredAP)
 }
 
-func dialWSWithFallback(
+func dialWebSocket(
 	establishCtx, connCtx context.Context,
 	s settings.Settings,
 ) (io.ReadWriteCloser, error) {
@@ -253,16 +255,16 @@ func dialWSWithFallback(
 		ipv6Endpoint := net.JoinHostPort(s.Server.IPv6, strconv.Itoa(port))
 		// IPv6-only path: no reason to probe then retry the same endpoint.
 		if ipv6Endpoint == endpoint {
-			return dialWS(establishCtx, connCtx, scheme, endpoint)
+			return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
 		}
 		ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-		adapter, dialErr := dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
+		adapter, dialErr := dialWebSocketEndpoint(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
 		cancel()
 		if dialErr == nil {
 			return adapter, nil
 		}
 	}
-	return dialWS(establishCtx, connCtx, scheme, endpoint)
+	return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
 }
 
 func preferredHost(host settings.Host) string {
@@ -275,7 +277,7 @@ func preferredHost(host settings.Host) string {
 	return host.IPv6
 }
 
-func dialWS(
+func dialWebSocketEndpoint(
 	establishCtx, connCtx context.Context,
 	scheme, endpoint string,
 ) (io.ReadWriteCloser, error) {
@@ -295,6 +297,20 @@ func dialWS(
 		remoteAddr = conn.RemoteAddr()
 		remoteMu.Unlock()
 		return conn, nil
+	}
+	if scheme == "wss" {
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		transport.DialTLSContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+			conn, err := dialTLSForWebSocket(ctx, network, target)
+			if err != nil {
+				return nil, err
+			}
+			remoteMu.Lock()
+			remoteAddr = conn.RemoteAddr()
+			remoteMu.Unlock()
+			return conn, nil
+		}
 	}
 	opts := &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}}
 	conn, resp, err := websocket.Dial(establishCtx, url, opts)
@@ -323,6 +339,54 @@ func dialWS(
 		return tcptransport.WithRemoteAddr(wrapped, remote), nil
 	}
 	return wrapped, nil
+}
+
+func dialTLSForWebSocket(ctx context.Context, network, target string) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	raw, err := dialer.DialContext(ctx, network, target)
+	if err != nil {
+		return nil, err
+	}
+
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+
+	conn := utls.UClient(raw, &utls.Config{
+		ServerName: host,
+	}, utls.HelloChrome_Auto)
+
+	if err := conn.BuildHandshakeState(); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+
+	// Current WebSocket transport requires HTTP/1.1, which has no ALPS settings.
+	extensions := conn.Extensions[:0]
+	for _, ext := range conn.Extensions {
+		switch ext := ext.(type) {
+		case *utls.ALPNExtension:
+			ext.AlpnProtocols = []string{"http/1.1"}
+		case *utls.ApplicationSettingsExtension, *utls.ApplicationSettingsExtensionNew:
+			continue
+		}
+		extensions = append(extensions, ext)
+	}
+	conn.Extensions = extensions
+
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+
+	if protocol := conn.ConnectionState().NegotiatedProtocol; protocol != "" && protocol != "http/1.1" {
+		_ = conn.Close()
+		return nil, fmt.Errorf("unexpected negotiated ALPN: %q", protocol)
+	}
+
+	return conn, nil
 }
 
 func ipv6ProbeTimeout(s settings.Settings) time.Duration {

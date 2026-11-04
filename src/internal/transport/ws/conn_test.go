@@ -18,7 +18,7 @@ type AdapterMockConn struct {
 	mu sync.Mutex
 
 	// scripted factories
-	writerFactory func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error)
+	writeFunc     func(ctx context.Context, mt websocket.MessageType, data []byte) error
 	readerFactory func(ctx context.Context) (websocket.MessageType, io.Reader, error)
 
 	// Close capture
@@ -28,14 +28,14 @@ type AdapterMockConn struct {
 	closeErr    error
 }
 
-func (m *AdapterMockConn) Writer(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
+func (m *AdapterMockConn) Write(ctx context.Context, mt websocket.MessageType, data []byte) error {
 	m.mu.Lock()
-	fn := m.writerFactory
+	fn := m.writeFunc
 	m.mu.Unlock()
 	if fn == nil {
-		return nil, errors.New("writerFactory not set")
+		return errors.New("writeFunc not set")
 	}
-	return fn(ctx, mt)
+	return fn(ctx, mt, data)
 }
 
 func (m *AdapterMockConn) Reader(ctx context.Context) (websocket.MessageType, io.Reader, error) {
@@ -55,59 +55,6 @@ func (m *AdapterMockConn) Close(code websocket.StatusCode, reason string) error 
 	m.closeReason = reason
 	m.closeCalls++
 	return m.closeErr
-}
-
-// AdapterMockWriteCloser simulates writes in chunks and optional errors.
-type AdapterMockWriteCloser struct {
-	mu sync.Mutex
-
-	// chunks defines how many bytes to accept per Write call; if nil -> write all.
-	chunks []int
-
-	// optional write error: if set, error returned starting from write call index >= writeErrAt.
-	writeErrAt *int
-	writeErr   error
-
-	// Close() error
-	closeErr error
-
-	// capture data
-	writes      [][]byte
-	ctxCaptured context.Context
-}
-
-func (w *AdapterMockWriteCloser) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	callIdx := len(w.writes)
-	// determine amount to accept
-	var n int
-	if w.chunks == nil || callIdx >= len(w.chunks) {
-		n = len(p)
-	} else {
-		n = w.chunks[callIdx]
-		if n > len(p) {
-			n = len(p)
-		}
-	}
-	if n > 0 {
-		cp := append([]byte(nil), p[:n]...)
-		w.writes = append(w.writes, cp)
-	} else {
-		// record zero write to make assertions if needed
-		w.writes = append(w.writes, nil)
-	}
-
-	// inject error?
-	if w.writeErrAt != nil && callIdx >= *w.writeErrAt {
-		return n, w.writeErr
-	}
-	return n, nil
-}
-
-func (w *AdapterMockWriteCloser) Close() error {
-	return w.closeErr
 }
 
 // AdapterMockReader returns scripted chunks per Read and optional terminal error.
@@ -180,15 +127,15 @@ func TestConn_Write_ZeroLen(t *testing.T) {
 }
 
 func TestConn_Write_AllAtOnce_NoDeadline(t *testing.T) {
-	wc := &AdapterMockWriteCloser{}
+	var messages [][]byte
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
 			if mt != websocket.MessageBinary {
 				t.Fatalf("expected MessageBinary")
 			}
 			mustNoDeadline(t, ctx)
-			wc.ctxCaptured = ctx
-			return wc, nil
+			messages = append(messages, bytes.Clone(data))
+			return nil
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
@@ -198,58 +145,41 @@ func TestConn_Write_AllAtOnce_NoDeadline(t *testing.T) {
 	if err != nil || n != len(data) {
 		t.Fatalf("write: got (%d,%v), want (%d,nil)", n, err, len(data))
 	}
-	if len(wc.writes) != 1 || !bytes.Equal(wc.writes[0], data) {
-		t.Fatalf("unexpected writes: %#v", wc.writes)
+	if len(messages) != 1 || !bytes.Equal(messages[0], data) {
+		t.Fatalf("unexpected messages: %#v", messages)
 	}
 }
 
 func TestConn_Write_PartialThenError(t *testing.T) {
 	errBoom := errors.New("boom")
-	idx := 1
-	wc := &AdapterMockWriteCloser{
-		chunks:     []int{3, 2}, // write 3 then 2
-		writeErrAt: &idx,        // on 2nd Write call
-		writeErr:   errBoom,
-	}
+	calls := 0
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return wc, nil
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
+			calls++
+			if calls == 2 {
+				return errBoom
+			}
+			return nil
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
 
-	data := []byte("abcdef")
+	data := make([]byte, 2*maxMessagePayload)
 	n, err := a.Write(data)
-	if n != 5 {
-		t.Fatalf("expected written=5, got %d", n)
+	if n != maxMessagePayload {
+		t.Fatalf("expected one complete message, got %d bytes", n)
 	}
-	if err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-}
-
-func TestConn_Write_CloseError(t *testing.T) {
-	wc := &AdapterMockWriteCloser{closeErr: errors.New("close failed")}
-	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return wc, nil
-		},
-	}
-	a := newMockConn(context.Background(), conn, nil, nil)
-
-	n, err := a.Write([]byte("abc"))
-	if n != 3 || err == nil {
-		t.Fatalf("want (3,err), got (%d,%v)", n, err)
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("expected write error, got %v", err)
 	}
 }
 
 func TestConn_Write_RespectsWriteDeadline(t *testing.T) {
-	wc := &AdapterMockWriteCloser{}
 	captured := make(chan context.Context, 1)
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
 			captured <- ctx
-			return wc, nil
+			return nil
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
@@ -262,22 +192,15 @@ func TestConn_Write_RespectsWriteDeadline(t *testing.T) {
 	case ctx := <-captured:
 		mustDeadlineSet(t, ctx)
 	default:
-		t.Fatalf("writerFactory wasn't invoked")
+		t.Fatalf("writeFunc wasn't invoked")
 	}
 }
 
 func TestConn_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
-	// Writer returns CloseError on Write() to trigger mapWriteErr Close branch.
 	closeErr := &websocket.CloseError{Code: websocket.StatusNormalClosure}
-	idx := 0
-	wc := &AdapterMockWriteCloser{
-		chunks:     []int{0}, // write 0, but return error
-		writeErrAt: &idx,
-		writeErr:   closeErr,
-	}
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return wc, nil
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
+			return closeErr
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
@@ -285,22 +208,6 @@ func TestConn_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
 	n, err := a.Write([]byte("abcd"))
 	if n != 0 || !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("expected (0, net.ErrClosed), got (%d, %v)", n, err)
-	}
-}
-
-func TestConn_Write_ErrNoProgressOnZeroNil(t *testing.T) {
-	wc := &AdapterMockWriteCloser{
-		chunks: []int{0}, // first write returns 0, nil
-	}
-	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return wc, nil
-		},
-	}
-	a := newMockConn(context.Background(), conn, nil, nil)
-	n, err := a.Write([]byte("zzz"))
-	if n != 0 || !errors.Is(err, io.ErrNoProgress) {
-		t.Fatalf("expected (0, io.ErrNoProgress), got (%d,%v)", n, err)
 	}
 }
 
@@ -599,11 +506,10 @@ func TestConn_mapWriteErr_Variants(t *testing.T) {
 
 // ---------- Extra tests to reach 100% ----------
 
-func TestConn_Write_WriterFactoryError_Timeout(t *testing.T) {
-	// Writer(...) returns context.DeadlineExceeded -> must be mapped to net.Error timeout.
+func TestConn_Write_Timeout(t *testing.T) {
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return nil, context.DeadlineExceeded
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
+			return context.DeadlineExceeded
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
@@ -619,12 +525,11 @@ func TestConn_Write_WriterFactoryError_Timeout(t *testing.T) {
 	}
 }
 
-func TestConn_Write_WriterFactoryError_Other(t *testing.T) {
-	// Writer(...) returns arbitrary error -> must bubble up unchanged.
+func TestConn_Write_OtherError(t *testing.T) {
 	want := errors.New("boom")
 	conn := &AdapterMockConn{
-		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
-			return nil, want
+		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
+			return want
 		},
 	}
 	a := newMockConn(context.Background(), conn, nil, nil)
