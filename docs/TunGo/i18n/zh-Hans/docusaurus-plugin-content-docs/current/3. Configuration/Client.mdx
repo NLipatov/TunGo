@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "客户端"
+sidebar_position: 2
+---
+
+# 客户端配置
+
+配置文件：
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+修改后请重启客户端。
+
+## 完整示例 {#example}
+
+客户端配置由服务器生成。你可以根据需要进行修改。
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // 服务器分配的客户端 ID
+  "Protocol": "UDP", // 当前使用的传输协议：TCP、UDP、WS 或 WSS
+
+  // TCPSettings — TCP 设置
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.0.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // 服务器地址；也可以用 Domain 或 IPv6 代替 IPv4
+    "Port": 8080, // 要连接的服务器端口
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS 服务器；可省略，此处为默认值
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS 服务器；可省略，此处为默认值
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "TCP", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  // UDPSettings — UDP 设置
+  "UDPSettings": {
+    "TunName": "c_udptun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.1.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00:1::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // 服务器地址；也可以用 Domain 或 IPv6 代替 IPv4
+    "Port": 9090, // 要连接的服务器端口
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS 服务器；可省略，此处为默认值
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS 服务器；可省略，此处为默认值
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "UDP", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  // WSSettings — WS 和 WSS 的 WebSocket 设置
+  "WSSettings": {
+    "TunName": "c_wstun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.2.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00:2::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // 服务器地址；也可以用 Domain 或 IPv6 代替 IPv4
+    "Port": 1010, // 要连接的服务器端口
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS 服务器；可省略，此处为默认值
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS 服务器；可省略，此处为默认值
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "WS", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  "X25519PublicKey": "<server-public-key>", // 生成的配置中的服务器公钥
+  "ClientPublicKey": "<client-public-key>", // 已在服务器上注册的客户端公钥
+  "ClientPrivateKey": "<client-private-key>", // 生成的配置中的客户端私钥
+
+  // 通过 VPN 路由的 IPv4 目标子网；此处为全隧道
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // 通过 VPN 路由的 IPv6 目标子网；此处为全隧道
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

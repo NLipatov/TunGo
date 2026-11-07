@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "VPN cepat dan ringan"
+  },
+  "feature.restrictions.title": {
+    "message": "VPN di jaringan dengan pembatasan"
+  },
+  "feature.restrictions.description": {
+    "message": "Untuk pengguna di Rusia, Tiongkok, Iran, dan negara lain dengan pembatasan internet: TunGo mendukung penyamaran lalu lintas VPN sebagai HTTPS."
   }
 }

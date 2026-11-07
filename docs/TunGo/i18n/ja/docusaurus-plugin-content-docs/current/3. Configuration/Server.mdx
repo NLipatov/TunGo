@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "サーバー"
+sidebar_position: 1
+---
+
+# サーバー設定
+
+設定ファイル：
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+変更後はサーバーを再起動してください。
+
+## コメント付きの設定例 {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — TCP の設定
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.0.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    // IPv4 が IPv6 より優先されるため、サーバーは 127.0.0.1 で接続を待ち受けます。
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // 待ち受けポート
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "TCP", // トランスポートプロトコル
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  // UDPSettings — UDP の設定
+  "UDPSettings": {
+    "TunName": "s_udptun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.1.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00:1::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    // サーバーは IPv6 ループバック（::1）でのみパケットを受信します。
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // 待ち受けポート
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "UDP", // トランスポートプロトコル
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  // WSSettings — WebSocket の設定
+  "WSSettings": {
+    "TunName": "s_wstun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.2.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00:2::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    // Server を省略した場合や {} を指定した場合、サーバーはすべてのネットワークインターフェースで接続を待ち受けます。
+    // アドレスは自動選択されます。IPv6 が利用可能なら "::"、それ以外は "0.0.0.0" です。
+    "Port": 1010, // 待ち受けポート
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "WS", // トランスポートプロトコル
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  "Host": "", // 生成するクライアント用のドメイン/IP。空欄は自動検出
+  "X25519PublicKey": "<server-public-key>", // サーバー公開鍵。未設定の場合、初回起動時に自動生成されます。
+  "X25519PrivateKey": "<server-private-key>", // サーバー秘密鍵。未設定の場合、初回起動時に自動生成されます。
+  "ClientCounter": 1, // 生成済みクライアント数
+
+  "EnableTCP": true, // true でプロトコルを有効化、false で無効化
+  "EnableUDP": true, // true でプロトコルを有効化、false で無効化
+  "EnableWS": true, // true でプロトコルを有効化、false で無効化
+
+  // AllowedPeers — 許可されたクライアント
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // 省略可能なクライアント名
+      "PublicKey": "<client-public-key>", // 自分のクライアント公開鍵
+      "Enabled": true, // このクライアントの接続を許可
+      "ClientID": 1 // トンネルアドレスの割り当てに使うクライアント ID
+    }
+  ]
+}
+```

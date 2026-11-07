@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# النشر باستخدام Caddy
+
+يطبّق هذا الدليل إعداد [TunGo عبر HTTPS](./index.mdx) باستخدام Caddy. جهّز النطاق وDNS وفقاً للنظرة العامة، ثم استبدل `example.com` بنطاقك في الأمثلة التالية.
+
+## قبل البدء
+
+- خادم Linux مع تثبيت TunGo وCaddy مباشرة على المضيف نفسه.
+- تشغيل [Caddy](https://caddyserver.com/docs/install) كخدمة systemd.
+- إتاحة منفذي TCP ‏`80` و`443` لـ Caddy وإمكانية الوصول إليهما من الإنترنت لتقديم HTTPS وإدارة الشهادات.
+
+## 1. إعداد Caddy
+
+احفظ أي صفحة رئيسية باسم `/srv/tungo-site/index.html` وضع مواردها في المجلد نفسه. يمكنك اختيار مجلد آخر، لكن يجب أن يتطابق مساره مع `root` في ملف Caddyfile أدناه.
+
+يجب أن يتمكن مستخدم الخدمة `caddy` من قراءة الملفات والوصول عبر المجلدات التي تحتويها.
+
+احفظ هذا الإعداد الكامل في `/etc/caddy/Caddyfile`:
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+يحافظ `handle` على المسار `/ws` الذي يتوقعه TunGo. لا تستخدم `handle_path` هنا لأنه يزيل بادئة المسار المطابقة. يتولى توجيه [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) في Caddy الترقية إلى WebSocket تلقائياً.
+
+تحقق من صحة الإعداد، ثم أعد تحميل الخدمة قيد التشغيل:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+أعد التحميل فقط إذا نجح التحقق. يقوم Caddy [بالحصول على شهادة TLS وتجديدها تلقائياً](https://caddyserver.com/docs/automatic-https).
+
+## 2. إعداد خادم TunGo
+
+أعدّ [خادم TunGo](../../2.%20Usage/index.mdx) وأنشئ ملف إعدادات للعميل. نوصي بتشغيل الخادم [كخدمة خلفية](../../2.%20Usage/1.%20TUI.mdx#server) ليعمل في الخلفية ويبدأ تلقائياً عند إقلاع النظام.
+
+في `/etc/tungo/server_configuration.json`، عطّل بروتوكولي النقل TCP وUDP، وأبقِ WS وحده مفعّلاً، ثم [اربطه بعنوان الاسترجاع المحلي](../../3.%20Configuration/Server.mdx#example) (`127.0.0.1`). بعد إعادة التشغيل، لن يستمع TunGo إلى واجهات الشبكة الخارجية. لن يكون TunGo متاحاً من الإنترنت إلا عبر Caddy على منفذ HTTPS رقم `443`.
+
+عدّل الحقول أدناه واستبدل الكائن `WSSettings.Server` بالكامل. احتفظ ببقية الإعدادات:
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+أعد تشغيل TunGo لتطبيق التغييرات.
+
+## 3. إعداد العميل
+
+سيتصل العميل باستخدام نطاقك ومنفذ HTTPS القياسي `443`. في [إعدادات العميل](../../3.%20Configuration/Client.mdx#example)، حدّد النطاق والمنفذ في `WSSettings`، واضبط `Protocol` في المستوى الأعلى على `WSS`.
+
+استبدل الكائن `WSSettings.Server` بالكامل، مع إزالة عناوين IP السابقة. احتفظ ببقية الإعدادات:
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+يحتوي `Domain` على اسم المضيف فقط، دون `https://` أو `/ws`؛ يضيف TunGo مسار WebSocket. يستمر الخادم في استخدام `WS` لأن اتصال TLS ينتهي عند Caddy.
+
+احفظ الإعداد وشغّل العميل أو أعد تشغيله وفقاً لقسم [إعداد العميل](../../2.%20Usage/index.mdx).
+
+## 4. فحص الاتصال
+
+1. افتح `https://example.com` في المتصفح. يجب أن تظهر صفحتك الرئيسية بشهادة صالحة.
+2. اتصل باستخدام عميل TunGo وتحقق من مرور حركة البيانات عبر النفق. فتح الموقع وحده لا يتحقق من اتصال VPN.

@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "クライアント"
+sidebar_position: 2
+---
+
+# クライアント設定
+
+設定ファイル：
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+変更後はクライアントを再起動してください。
+
+## 完全な設定例 {#example}
+
+クライアント設定はサーバーが生成します。必要に応じて変更できます。
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // サーバーが割り当てたクライアント ID
+  "Protocol": "UDP", // 使用するトランスポート: TCP、UDP、WS、WSS
+
+  // TCPSettings — TCP の設定
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.0.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    "Server": { "IPv4": "192.0.2.1" }, // サーバーアドレス。IPv4 の代わりに Domain または IPv6 も指定可能
+    "Port": 8080, // 接続先サーバーのポート
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS サーバー。省略可能。既定値を表示
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS サーバー。省略可能。既定値を表示
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "TCP", // プロファイルのトランスポート。使用するものはトップレベルの Protocol で選択
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  // UDPSettings — UDP の設定
+  "UDPSettings": {
+    "TunName": "c_udptun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.1.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00:1::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    "Server": { "IPv4": "192.0.2.1" }, // サーバーアドレス。IPv4 の代わりに Domain または IPv6 も指定可能
+    "Port": 9090, // 接続先サーバーのポート
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS サーバー。省略可能。既定値を表示
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS サーバー。省略可能。既定値を表示
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "UDP", // プロファイルのトランスポート。使用するものはトップレベルの Protocol で選択
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  // WSSettings — WS と WSS の WebSocket 設定
+  "WSSettings": {
+    "TunName": "c_wstun0", // TUN インターフェース名
+    "IPv4Subnet": "10.0.2.0/24", // トンネルの IPv4 サブネット
+    "IPv6Subnet": "fd00:2::/64", // トンネルの IPv6 サブネット。省略するとトンネル内で IPv6 は無効
+    "Server": { "IPv4": "192.0.2.1" }, // サーバーアドレス。IPv4 の代わりに Domain または IPv6 も指定可能
+    "Port": 1010, // 接続先サーバーのポート
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4 DNS サーバー。省略可能。既定値を表示
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6 DNS サーバー。省略可能。既定値を表示
+    "MTU": 1500, // トンネルの MTU（バイト）
+    "Protocol": "WS", // プロファイルのトランスポート。使用するものはトップレベルの Protocol で選択
+    "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
+    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+  },
+
+  "X25519PublicKey": "<server-public-key>", // 生成された設定に含まれるサーバーの公開鍵
+  "ClientPublicKey": "<client-public-key>", // サーバーに登録されたクライアントの公開鍵
+  "ClientPrivateKey": "<client-private-key>", // 生成された設定に含まれるクライアントの秘密鍵
+
+  // VPN 経由でルーティングする IPv4 宛先サブネット。ここではフルトンネル
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // VPN 経由でルーティングする IPv6 宛先サブネット。ここではフルトンネル
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

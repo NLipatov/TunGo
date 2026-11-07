@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# Desplegar con Caddy
+
+Esta guía implementa [TunGo sobre HTTPS](./index.mdx) con Caddy. Prepara el dominio y el DNS según la descripción general y sustituye `example.com` por tu dominio en los ejemplos.
+
+## Antes de empezar
+
+- Un servidor Linux con TunGo y Caddy instalados directamente en el mismo host.
+- [Caddy](https://caddyserver.com/docs/install) ejecutándose como servicio de systemd.
+- Los puertos TCP `80` y `443` disponibles para Caddy y accesibles desde Internet para HTTPS y la gestión de certificados.
+
+## 1. Configurar Caddy
+
+Guarda cualquier página de inicio como `/srv/tungo-site/index.html` y coloca sus recursos en el mismo directorio. Puedes elegir otro directorio, pero su ruta debe coincidir con `root` en el Caddyfile siguiente.
+
+El usuario del servicio `caddy` debe poder leer los archivos y acceder a sus directorios.
+
+Guarda esta configuración completa en `/etc/caddy/Caddyfile`:
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` conserva la ruta `/ws` que espera TunGo. No uses `handle_path` aquí, ya que elimina el prefijo coincidente. La directiva [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) de Caddy gestiona automáticamente el cambio a WebSocket.
+
+Valida la configuración y después recarga el servicio en ejecución:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+Recarga solo si la validación es correcta. Caddy [obtiene y renueva el certificado TLS automáticamente](https://caddyserver.com/docs/automatic-https).
+
+## 2. Configurar el servidor TunGo
+
+Configura el [servidor TunGo](../../2.%20Usage/index.mdx) y genera una configuración de cliente. Recomendamos ejecutar el servidor [como demonio](../../2.%20Usage/1.%20TUI.mdx#server) para que funcione en segundo plano y se inicie automáticamente al arrancar el sistema.
+
+En `/etc/tungo/server_configuration.json`, desactiva los transportes TCP y UDP, deja habilitado solo WS y [vincúlalo a loopback](../../3.%20Configuration/Server.mdx#example) (`127.0.0.1`). Tras reiniciar, TunGo dejará de escuchar en las interfaces de red externas. Desde Internet, TunGo solo estará disponible a través de Caddy en el puerto HTTPS `443`.
+
+Modifica los campos siguientes y reemplaza todo el objeto `WSSettings.Server`. Conserva los demás ajustes:
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+Reinicia TunGo para aplicar los cambios.
+
+## 3. Configurar el cliente
+
+El cliente se conectará usando tu dominio y el puerto HTTPS estándar `443`. En la [configuración del cliente](../../3.%20Configuration/Client.mdx#example), indica el dominio y el puerto en `WSSettings` y establece `Protocol` en el nivel superior en `WSS`.
+
+Reemplaza todo el objeto `WSSettings.Server`, eliminando las direcciones IP anteriores. Conserva los demás ajustes:
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` contiene solo el nombre del host, sin `https://` ni `/ws`; TunGo añade la ruta WebSocket. El servidor sigue usando `WS` porque Caddy termina la conexión TLS.
+
+Guarda la configuración e inicia o reinicia el cliente como se describe en [Configuración del cliente](../../2.%20Usage/index.mdx).
+
+## 4. Comprobar la conexión
+
+1. Abre `https://example.com` en un navegador. Tu página de inicio debería cargarse con un certificado válido.
+2. Conéctate con el cliente TunGo y comprueba que el tráfico pasa por el túnel. Cargar el sitio web por sí solo no verifica la conexión VPN.

@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "Serveur"
+sidebar_position: 1
+---
+
+# Configuration du serveur
+
+Fichier de configuration :
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+Redémarrez le serveur après les modifications.
+
+## Exemple commenté {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — Paramètres TCP
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.0.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    // IPv4 est prioritaire sur IPv6 : le serveur écoute sur 127.0.0.1 pour recevoir les connexions entrantes.
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // Port d’écoute
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "TCP", // Protocole de transport
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  // UDPSettings — Paramètres UDP
+  "UDPSettings": {
+    "TunName": "s_udptun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.1.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00:1::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    // Le serveur reçoit les paquets entrants uniquement sur l’adresse de bouclage IPv6 (::1).
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // Port d’écoute
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "UDP", // Protocole de transport
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  // WSSettings — Paramètres WebSocket
+  "WSSettings": {
+    "TunName": "s_wstun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.2.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00:2::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    // Si Server est absent ou défini sur {}, le serveur écoute sur toutes les interfaces réseau pour recevoir les connexions entrantes.
+    // L’adresse est choisie automatiquement : "::" si IPv6 est disponible, sinon "0.0.0.0".
+    "Port": 1010, // Port d’écoute
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "WS", // Protocole de transport
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  "Host": "", // Domaine/IP pour les clients générés ; vide pour la détection automatique
+  "X25519PublicKey": "<server-public-key>", // Clé publique du serveur ; générée automatiquement au premier démarrage si elle n’est pas déjà définie.
+  "X25519PrivateKey": "<server-private-key>", // Clé privée du serveur ; générée automatiquement au premier démarrage si elle n’est pas déjà définie.
+  "ClientCounter": 1, // Nombre de clients générés
+
+  "EnableTCP": true, // true active le protocole ; false le désactive
+  "EnableUDP": true, // true active le protocole ; false le désactive
+  "EnableWS": true, // true active le protocole ; false le désactive
+
+  // AllowedPeers — Clients autorisés
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // Libellé facultatif du client
+      "PublicKey": "<client-public-key>", // Votre clé publique du client
+      "Enabled": true, // Autoriser ce client à se connecter
+      "ClientID": 1 // ID du client pour attribuer ses adresses dans le tunnel
+    }
+  ]
+}
+```

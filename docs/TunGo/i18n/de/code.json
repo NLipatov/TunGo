@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "Schnelles, schlankes VPN"
+  },
+  "feature.restrictions.title": {
+    "message": "VPN in eingeschränkten Netzwerken"
+  },
+  "feature.restrictions.description": {
+    "message": "Für Nutzer in Russland, China, Iran und anderen Ländern mit Internetbeschränkungen: TunGo unterstützt die Tarnung von VPN-Verkehr als HTTPS."
   }
 }

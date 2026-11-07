@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "Uma VPN rápida e leve"
+  },
+  "feature.restrictions.title": {
+    "message": "VPN em redes com restrições"
+  },
+  "feature.restrictions.description": {
+    "message": "Para usuários na Rússia, China, Irã e em outros países com restrições à internet: o TunGo permite disfarçar o tráfego VPN como HTTPS."
   }
 }

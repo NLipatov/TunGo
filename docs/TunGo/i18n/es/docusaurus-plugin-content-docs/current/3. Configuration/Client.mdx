@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "Cliente"
+sidebar_position: 2
+---
+
+# Configuración del cliente
+
+Archivo de configuración:
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+Reinicia el cliente después de hacer cambios.
+
+## Ejemplo completo {#example}
+
+El servidor genera la configuración del cliente. Puedes personalizarla si lo necesitas.
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // ID del cliente asignado por el servidor
+  "Protocol": "UDP", // Transporte activo: TCP, UDP, WS o WSS
+
+  // TCPSettings — Ajustes de TCP
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // Nombre de la interfaz TUN
+    "IPv4Subnet": "10.0.0.0/24", // Subred IPv4 del túnel
+    "IPv6Subnet": "fd00::/64", // Subred IPv6 del túnel; sin este campo, el túnel no usa IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Dirección del servidor; también puedes usar Domain o IPv6 en lugar de IPv4
+    "Port": 8080, // Puerto del servidor al que conectarse
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Servidores DNS IPv4; opcional, se muestran los valores predeterminados
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Servidores DNS IPv6; opcional, se muestran los valores predeterminados
+    "MTU": 1500, // MTU del túnel en bytes
+    "Protocol": "TCP", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
+    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+  },
+
+  // UDPSettings — Ajustes de UDP
+  "UDPSettings": {
+    "TunName": "c_udptun0", // Nombre de la interfaz TUN
+    "IPv4Subnet": "10.0.1.0/24", // Subred IPv4 del túnel
+    "IPv6Subnet": "fd00:1::/64", // Subred IPv6 del túnel; sin este campo, el túnel no usa IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Dirección del servidor; también puedes usar Domain o IPv6 en lugar de IPv4
+    "Port": 9090, // Puerto del servidor al que conectarse
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Servidores DNS IPv4; opcional, se muestran los valores predeterminados
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Servidores DNS IPv6; opcional, se muestran los valores predeterminados
+    "MTU": 1500, // MTU del túnel en bytes
+    "Protocol": "UDP", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
+    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+  },
+
+  // WSSettings — Ajustes de WebSocket para WS y WSS
+  "WSSettings": {
+    "TunName": "c_wstun0", // Nombre de la interfaz TUN
+    "IPv4Subnet": "10.0.2.0/24", // Subred IPv4 del túnel
+    "IPv6Subnet": "fd00:2::/64", // Subred IPv6 del túnel; sin este campo, el túnel no usa IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Dirección del servidor; también puedes usar Domain o IPv6 en lugar de IPv4
+    "Port": 1010, // Puerto del servidor al que conectarse
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Servidores DNS IPv4; opcional, se muestran los valores predeterminados
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Servidores DNS IPv6; opcional, se muestran los valores predeterminados
+    "MTU": 1500, // MTU del túnel en bytes
+    "Protocol": "WS", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
+    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+  },
+
+  "X25519PublicKey": "<server-public-key>", // Clave pública del servidor de la configuración generada
+  "ClientPublicKey": "<client-public-key>", // Clave pública del cliente registrada en el servidor
+  "ClientPrivateKey": "<client-private-key>", // Clave privada del cliente de la configuración generada
+
+  // Subredes IPv4 de destino enrutadas por la VPN; aquí, túnel completo
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // Subredes IPv6 de destino enrutadas por la VPN; aquí, túnel completo
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

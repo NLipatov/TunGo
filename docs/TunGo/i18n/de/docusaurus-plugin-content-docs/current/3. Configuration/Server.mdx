@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "Server"
+sidebar_position: 1
+---
+
+# Serverkonfiguration
+
+Konfigurationsdatei:
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+Starten Sie den Server nach Änderungen neu.
+
+## Beispiel mit Kommentaren {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — TCP-Einstellungen
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.0.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    // IPv4 hat Vorrang vor IPv6: Der Server lauscht auf 127.0.0.1 auf eingehende Verbindungen.
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // Listen-Port
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "TCP", // Transportprotokoll
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  // UDPSettings — UDP-Einstellungen
+  "UDPSettings": {
+    "TunName": "s_udptun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.1.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00:1::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    // Der Server empfängt eingehende Pakete nur über IPv6-Loopback (::1).
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // Listen-Port
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "UDP", // Transportprotokoll
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  // WSSettings — WebSocket-Einstellungen
+  "WSSettings": {
+    "TunName": "s_wstun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.2.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00:2::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    // Fehlt Server oder ist es auf {} gesetzt, lauscht der Server auf allen Netzwerkschnittstellen auf eingehende Verbindungen.
+    // Die Adresse wird automatisch gewählt: "::", wenn IPv6 verfügbar ist, andernfalls "0.0.0.0".
+    "Port": 1010, // Listen-Port
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "WS", // Transportprotokoll
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  "Host": "", // Domain/IP für erzeugte Clients; leer bedeutet automatische Erkennung
+  "X25519PublicKey": "<server-public-key>", // Öffentlicher Serverschlüssel; wird beim ersten Start automatisch erzeugt, falls nicht gesetzt.
+  "X25519PrivateKey": "<server-private-key>", // Privater Serverschlüssel; wird beim ersten Start automatisch erzeugt, falls nicht gesetzt.
+  "ClientCounter": 1, // Anzahl der erzeugten Clients
+
+  "EnableTCP": true, // true aktiviert das Protokoll; false deaktiviert es
+  "EnableUDP": true, // true aktiviert das Protokoll; false deaktiviert es
+  "EnableWS": true, // true aktiviert das Protokoll; false deaktiviert es
+
+  // AllowedPeers — Autorisierte Clients
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // Optionale Client-Bezeichnung
+      "PublicKey": "<client-public-key>", // Ihr öffentlicher Clientschlüssel
+      "Enabled": true, // Verbindungen dieses Clients erlauben
+      "ClientID": 1 // Client-ID für die Zuweisung der Tunneladressen
+    }
+  ]
+}
+```

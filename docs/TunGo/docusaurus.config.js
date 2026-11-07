@@ -28,7 +28,11 @@ const config = {
   projectName: 'TunGo', // Usually your repo name.
 
   onBrokenLinks: 'throw',
+  themes: ['@docusaurus/theme-mermaid'],
+  // Mermaid's flowchart tooltips require D3's transition registration.
+  clientModules: [require.resolve('d3-transition')],
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: 'warn',
     },
@@ -76,6 +80,11 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      mermaid: {
+        options: {
+          flowchart: {padding: 8, rankSpacing: 24},
+        },
+      },
       // Replace with your project's social card
       image: 'img/social-card.png',
       navbar: {

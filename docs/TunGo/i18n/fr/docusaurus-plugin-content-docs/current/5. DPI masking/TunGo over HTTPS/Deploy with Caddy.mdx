@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# Déployer avec Caddy
+
+Ce guide met en œuvre [TunGo via HTTPS](./index.mdx) avec Caddy. Préparez le domaine et le DNS comme indiqué dans la présentation, puis remplacez `example.com` par votre domaine dans les exemples.
+
+## Prérequis
+
+- Un serveur Linux avec TunGo et Caddy installés directement sur le même hôte.
+- [Caddy](https://caddyserver.com/docs/install), exécuté comme service systemd.
+- Les ports TCP `80` et `443` disponibles pour Caddy et accessibles depuis Internet pour HTTPS et la gestion des certificats.
+
+## 1. Configurer Caddy
+
+Enregistrez une page d’accueil de votre choix sous `/srv/tungo-site/index.html` et placez ses ressources dans le même répertoire. Vous pouvez choisir un autre répertoire, mais son chemin doit correspondre à `root` dans le Caddyfile ci-dessous.
+
+L’utilisateur du service `caddy` doit pouvoir lire les fichiers et traverser leurs répertoires.
+
+Enregistrez cette configuration complète dans `/etc/caddy/Caddyfile` :
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` conserve le chemin `/ws` attendu par TunGo. N’utilisez pas `handle_path` ici, car il supprime le préfixe correspondant. La directive [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) de Caddy gère automatiquement le passage à WebSocket.
+
+Validez la configuration, puis rechargez le service en cours d’exécution :
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+Ne rechargez le service que si la validation réussit. Caddy [obtient et renouvelle automatiquement le certificat TLS](https://caddyserver.com/docs/automatic-https).
+
+## 2. Configurer le serveur TunGo
+
+Configurez le [serveur TunGo](../../2.%20Usage/index.mdx) et générez une configuration client. Nous recommandons d’exécuter le serveur [en tant que démon](../../2.%20Usage/1.%20TUI.mdx#server) pour qu’il fonctionne en arrière-plan et démarre automatiquement au démarrage du système.
+
+Dans `/etc/tungo/server_configuration.json`, désactivez les transports TCP et UDP, gardez uniquement WS activé et [limitez son écoute au bouclage](../../3.%20Configuration/Server.mdx#example) (`127.0.0.1`). Après le redémarrage, TunGo n’écoutera plus sur les interfaces réseau externes. Depuis Internet, TunGo sera accessible uniquement via Caddy sur le port HTTPS `443`.
+
+Modifiez les champs ci-dessous et remplacez entièrement l’objet `WSSettings.Server`. Conservez les autres paramètres :
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+Redémarrez TunGo pour appliquer les changements.
+
+## 3. Configurer le client
+
+Le client se connectera via votre domaine sur le port HTTPS standard `443`. Dans la [configuration du client](../../3.%20Configuration/Client.mdx#example), indiquez le domaine et le port dans `WSSettings` et définissez `Protocol` au niveau racine sur `WSS`.
+
+Remplacez entièrement l’objet `WSSettings.Server` en supprimant les anciennes adresses IP. Conservez les autres paramètres :
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` contient uniquement le nom d’hôte, sans `https://` ni `/ws` ; TunGo ajoute le chemin WebSocket. Le serveur continue d’utiliser `WS`, car Caddy termine la connexion TLS.
+
+Enregistrez la configuration, puis démarrez ou redémarrez le client selon la section [Configuration du client](../../2.%20Usage/index.mdx).
+
+## 4. Vérifier la connexion
+
+1. Ouvrez `https://example.com` dans un navigateur. Votre page d’accueil doit se charger avec un certificat valide.
+2. Connectez le client TunGo et vérifiez que le trafic passe par le tunnel. Le chargement du site ne suffit pas à vérifier la connexion VPN.

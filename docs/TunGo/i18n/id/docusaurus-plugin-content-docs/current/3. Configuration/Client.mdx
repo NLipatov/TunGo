@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "Klien"
+sidebar_position: 2
+---
+
+# Konfigurasi klien
+
+File konfigurasi:
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+Mulai ulang klien setelah melakukan perubahan.
+
+## Contoh lengkap {#example}
+
+Konfigurasi klien dibuat oleh server. Anda dapat menyesuaikannya jika diperlukan.
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // ID klien yang ditetapkan oleh server
+  "Protocol": "UDP", // Transport aktif: TCP, UDP, WS, atau WSS
+
+  // TCPSettings — Pengaturan TCP
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.0.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Alamat server; Domain atau IPv6 juga dapat digunakan sebagai pengganti IPv4
+    "Port": 8080, // Port server tujuan koneksi
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Server DNS IPv4; opsional, nilai bawaan ditampilkan
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Server DNS IPv6; opsional, nilai bawaan ditampilkan
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "TCP", // Transport profil; Protocol di tingkat teratas memilih transport aktif
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  // UDPSettings — Pengaturan UDP
+  "UDPSettings": {
+    "TunName": "c_udptun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.1.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00:1::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Alamat server; Domain atau IPv6 juga dapat digunakan sebagai pengganti IPv4
+    "Port": 9090, // Port server tujuan koneksi
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Server DNS IPv4; opsional, nilai bawaan ditampilkan
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Server DNS IPv6; opsional, nilai bawaan ditampilkan
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "UDP", // Transport profil; Protocol di tingkat teratas memilih transport aktif
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  // WSSettings — Pengaturan WebSocket untuk WS dan WSS
+  "WSSettings": {
+    "TunName": "c_wstun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.2.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00:2::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    "Server": { "IPv4": "192.0.2.1" }, // Alamat server; Domain atau IPv6 juga dapat digunakan sebagai pengganti IPv4
+    "Port": 1010, // Port server tujuan koneksi
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Server DNS IPv4; opsional, nilai bawaan ditampilkan
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Server DNS IPv6; opsional, nilai bawaan ditampilkan
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "WS", // Transport profil; Protocol di tingkat teratas memilih transport aktif
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  "X25519PublicKey": "<server-public-key>", // Kunci publik server dari konfigurasi yang dihasilkan
+  "ClientPublicKey": "<client-public-key>", // Kunci publik klien yang terdaftar di server
+  "ClientPrivateKey": "<client-private-key>", // Kunci privat klien dari konfigurasi yang dihasilkan
+
+  // Subnet tujuan IPv4 yang dirutekan melalui VPN; di sini, tunnel penuh
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // Subnet tujuan IPv6 yang dirutekan melalui VPN; di sini, tunnel penuh
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

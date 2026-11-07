@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# Caddy でデプロイ
+
+この手順では、Caddy を使って [HTTPS 経由の TunGo](./index.mdx) を構成します。概要に従ってドメインと DNS を準備し、以下の例の `example.com` を自分のドメインに置き換えてください。
+
+## 準備
+
+- TunGo と Caddy を同じホストに直接インストールした Linux サーバー。
+- systemd サービスとして実行中の [Caddy](https://caddyserver.com/docs/install)。
+- Caddy が使用でき、HTTPS と証明書管理のためにインターネットから到達できる TCP ポート `80` と `443`。
+
+## 1. Caddy の設定
+
+任意のランディングページを `/srv/tungo-site/index.html` として保存し、そのリソースを同じディレクトリに配置します。別のディレクトリも選べますが、そのパスは以下の Caddyfile の `root` と一致させてください。
+
+サービスユーザー `caddy` がファイルを読み取り、それらを含むディレクトリにアクセスできる必要があります。
+
+以下の完全な設定を `/etc/caddy/Caddyfile` に保存してください。
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` は TunGo が必要とする `/ws` パスを保持します。ここでは、マッチしたプレフィックスを削除する `handle_path` を使わないでください。Caddy の [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) は WebSocket へのアップグレードを自動で処理します。
+
+設定を検証し、実行中のサービスをリロードします：
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+検証が成功した場合にのみリロードしてください。Caddy は [TLS 証明書を自動で取得・更新します](https://caddyserver.com/docs/automatic-https)。
+
+## 2. TunGo サーバーの設定
+
+[TunGo サーバー](../../2.%20Usage/index.mdx)をセットアップし、クライアント設定を生成してください。 バックグラウンドでの動作とシステム起動時の自動起動のため、サーバーを[デーモンとして実行](../../2.%20Usage/1.%20TUI.mdx#server)することを推奨します。
+
+`/etc/tungo/server_configuration.json` で TCP と UDP のトランスポートを無効にし、WS だけを有効にして、[ループバックにバインド](../../3.%20Configuration/Server.mdx#example)（`127.0.0.1`）します。再起動後、TunGo は外部ネットワークインターフェースで待ち受けなくなります。 インターネットから TunGo に接続できるのは、HTTPS ポート `443` の Caddy 経由のみになります。
+
+以下のフィールドを変更し、`WSSettings.Server` オブジェクト全体を置き換えてください。その他の設定は保持します。
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+TunGo を再起動して変更を適用します。
+
+## 3. クライアントの設定
+
+クライアントはドメイン名と標準の HTTPS ポート `443` を使って接続します。[クライアント設定](../../3.%20Configuration/Client.mdx#example)の `WSSettings` にドメイン名とポートを指定し、トップレベルの `Protocol` を `WSS` に設定してください。
+
+以前の IP アドレスが残らないように、`WSSettings.Server` オブジェクト全体を置き換えてください。その他の設定は保持します。
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` にはホスト名のみを指定し、`https://` や `/ws` は含めません。WebSocket のパスは TunGo が追加します。TLS は Caddy で終端するため、サーバーは引き続き `WS` を使います。
+
+設定を保存し、[クライアントの設定](../../2.%20Usage/index.mdx)に従ってクライアントを起動または再起動します。
+
+## 4. 接続の確認
+
+1. ブラウザーで `https://example.com` を開きます。有効な証明書でランディングページが表示されることを確認します。
+2. TunGo クライアントで接続し、トラフィックがトンネルを通ることを確認します。Web サイトの表示だけでは VPN 接続を確認できません。

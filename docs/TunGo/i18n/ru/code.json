@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "Быстрый и лёгкий VPN"
+  },
+  "feature.restrictions.title": {
+    "message": "VPN в условиях интернет-блокировок"
+  },
+  "feature.restrictions.description": {
+    "message": "Для пользователей из России, Китая, Ирана и других стран с ограничениями: TunGo поддерживает маскировку VPN-трафика под HTTPS."
   }
 }
