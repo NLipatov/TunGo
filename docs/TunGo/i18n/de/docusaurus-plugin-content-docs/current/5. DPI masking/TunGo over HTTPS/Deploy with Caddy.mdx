@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# Mit Caddy bereitstellen
+
+Diese Anleitung setzt [TunGo über HTTPS](./index.mdx) mit Caddy um. Bereiten Sie Domain und DNS gemäß der Übersicht vor und ersetzen Sie anschließend `example.com` in den Beispielen durch Ihre Domain.
+
+## Vorbereitung
+
+- Ein Linux-Server, auf dem TunGo und Caddy direkt auf demselben Host installiert sind.
+- [Caddy](https://caddyserver.com/docs/install), ausgeführt als systemd-Dienst.
+- Die TCP-Ports `80` und `443` müssen für Caddy verfügbar und für HTTPS und die Zertifikatsverwaltung aus dem Internet erreichbar sein.
+
+## 1. Caddy konfigurieren
+
+Speichern Sie eine beliebige Landingpage als `/srv/tungo-site/index.html` und legen Sie ihre Ressourcen im selben Verzeichnis ab. Sie können ein anderes Verzeichnis wählen, dessen Pfad jedoch mit `root` im folgenden Caddyfile übereinstimmen muss.
+
+Der Dienstbenutzer `caddy` muss die Dateien lesen und die zugehörigen Verzeichnisse durchlaufen können.
+
+Speichern Sie diese vollständige Konfiguration in `/etc/caddy/Caddyfile`:
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` erhält den von TunGo erwarteten Pfad `/ws`. Verwenden Sie hier nicht `handle_path`, da es das passende Präfix entfernt. Caddys [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) führt das WebSocket-Upgrade automatisch durch.
+
+Prüfen Sie die Konfiguration und laden Sie anschließend den laufenden Dienst neu:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+Laden Sie nur nach erfolgreicher Prüfung neu. Caddy [bezieht und erneuert das TLS-Zertifikat automatisch](https://caddyserver.com/docs/automatic-https).
+
+## 2. TunGo-Server konfigurieren
+
+Richten Sie den [TunGo-Server](../../2.%20Usage/index.mdx) ein und erzeugen Sie eine Client-Konfiguration. Wir empfehlen, den Server [als Daemon](../../2.%20Usage/1.%20TUI.mdx#server) auszuführen, damit er im Hintergrund läuft und beim Systemstart automatisch startet.
+
+Deaktivieren Sie in `/etc/tungo/server_configuration.json` die Transporte TCP und UDP, lassen Sie nur WS aktiviert und [binden Sie ihn an Loopback](../../3.%20Configuration/Server.mdx#example) (`127.0.0.1`). Nach dem Neustart lauscht TunGo nicht mehr auf externen Netzwerkschnittstellen. Aus dem Internet ist TunGo dann ausschließlich über Caddy auf HTTPS-Port `443` erreichbar.
+
+Ändern Sie die folgenden Felder und ersetzen Sie das gesamte Objekt `WSSettings.Server`. Behalten Sie die übrigen Einstellungen bei:
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+Starten Sie TunGo neu, um die Änderungen anzuwenden.
+
+## 3. Client konfigurieren
+
+Der Client verbindet sich über Ihre Domain und den HTTPS-Standardport `443`. Tragen Sie in der [Client-Konfiguration](../../3.%20Configuration/Client.mdx#example) die Domain und den Port unter `WSSettings` ein und setzen Sie `Protocol` auf oberster Ebene auf `WSS`.
+
+Ersetzen Sie das gesamte Objekt `WSSettings.Server` und entfernen Sie dabei die bisherigen IP-Adressen. Behalten Sie die übrigen Einstellungen bei:
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` enthält nur den Hostnamen, ohne `https://` oder `/ws`; TunGo ergänzt den WebSocket-Pfad. Der Server verwendet weiterhin `WS`, da Caddy TLS terminiert.
+
+Speichern Sie die Konfiguration und starten Sie den Client gemäß [Client-Einrichtung](../../2.%20Usage/index.mdx) neu.
+
+## 4. Verbindung prüfen
+
+1. Öffnen Sie `https://example.com` im Browser. Ihre Landingpage sollte mit einem gültigen Zertifikat geladen werden.
+2. Verbinden Sie sich mit dem TunGo-Client und prüfen Sie, ob Daten durch den Tunnel übertragen werden. Das Laden der Website allein prüft die VPN-Verbindung nicht.

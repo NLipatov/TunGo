@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# 使用 Caddy 部署
+
+本教程使用 Caddy 实现[通过 HTTPS 运行 TunGo](./index.mdx)的方案。请先按照概述准备域名和 DNS，再将示例中的 `example.com` 替换为你的域名。
+
+## 准备工作
+
+- 一台 Linux 服务器，TunGo 和 Caddy 直接安装在同一台主机上。
+- 以 systemd 服务运行的 [Caddy](https://caddyserver.com/docs/install)。
+- TCP 端口 `80` 和 `443` 可供 Caddy 使用，并可从互联网访问，以提供 HTTPS 和管理证书。
+
+## 1. 配置 Caddy
+
+将任意网站首页保存为 `/srv/tungo-site/index.html`，并将其资源放在同一目录中。也可以选择其他目录，但路径必须与下方 Caddyfile 中的 `root` 一致。
+
+服务用户 `caddy` 必须有权读取文件并访问其所在的各级目录。
+
+将以下完整配置保存到 `/etc/caddy/Caddyfile`：
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` 会保留 TunGo 所需的 `/ws` 路径。此处不要使用 `handle_path`，因为它会移除匹配的路径前缀。Caddy 的 [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) 会自动处理 WebSocket 协议升级。
+
+验证配置，然后重新加载正在运行的服务：
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+仅在验证成功后重新加载。Caddy 会[自动获取和续期 TLS 证书](https://caddyserver.com/docs/automatic-https)。
+
+## 2. 配置 TunGo 服务器
+
+设置 [TunGo 服务器](../../2.%20Usage/index.mdx)并生成客户端配置。 建议[以守护进程运行服务器](../../2.%20Usage/1.%20TUI.mdx#server)，使其在后台运行并随系统自动启动。
+
+在 `/etc/tungo/server_configuration.json` 中禁用 TCP 和 UDP 传输，仅保留 WS，并[将其绑定到回环地址](../../3.%20Configuration/Server.mdx#example)（`127.0.0.1`）。重启后，TunGo 将不再监听外部网络接口。 从互联网只能通过 Caddy 的 HTTPS 端口 `443` 访问 TunGo。
+
+修改以下字段，并完整替换 `WSSettings.Server` 对象。保留其他设置：
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+重启 TunGo 以应用更改。
+
+## 3. 配置客户端
+
+客户端将通过你的域名和标准 HTTPS 端口 `443` 连接。在[客户端配置](../../3.%20Configuration/Client.mdx#example)的 `WSSettings` 中填写域名和端口，并将顶层 `Protocol` 设置为 `WSS`。
+
+完整替换 `WSSettings.Server` 对象，移除之前的 IP 地址。保留其他设置：
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` 只填写主机名，不包含 `https://` 或 `/ws`；TunGo 会添加 WebSocket 路径。由于 TLS 连接在 Caddy 处终止，服务器继续使用 `WS`。
+
+保存配置，并按照[客户端配置](../../2.%20Usage/index.mdx)中的说明启动或重启客户端。
+
+## 4. 检查连接
+
+1. 在浏览器中打开 `https://example.com`。网站首页应能正常加载，且证书有效。
+2. 使用 TunGo 客户端连接，检查流量是否通过隧道。仅能打开网站并不能证明 VPN 连接正常。

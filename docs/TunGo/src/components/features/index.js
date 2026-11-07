@@ -1,4 +1,3 @@
-import Clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import Heading from '@theme/Heading';
 import Translate from '@docusaurus/Translate';
@@ -8,25 +7,26 @@ function Feature({Svg, title, description, to, external = false}) {
     const card = (
         <article className={Styles.featureCard}>
             <div className={Styles.featureVisual}>
-                <Svg className={Styles.featureSvg} role="img"/>
+                <Svg className={Styles.featureSvg} role="img" />
             </div>
             <div className={Styles.featureBody}>
-                <Heading as="h3" className={Styles.featureTitle}>{title}</Heading>
+                <Heading as="h3" className={Styles.featureTitle}>
+                    {title}
+                </Heading>
                 {description && <div className={Styles.featureDescription}>{description}</div>}
             </div>
         </article>
     );
 
     return (
-        <div className={Clsx('col col--4', Styles.featureColumn)}>
+        <div className={Styles.featureColumn}>
             {to ? (
-                <Link
-                    className={Styles.featureCardLink}
-                    to={to}
-                    {...(external ? {target: '_blank', rel: 'noreferrer'} : {})}>
+                <Link className={Styles.featureCardLink} to={to} {...(external ? {target: '_blank', rel: 'noreferrer'} : {})}>
                     {card}
                 </Link>
-            ) : card}
+            ) : (
+                card
+            )}
         </div>
     );
 }
@@ -35,15 +35,9 @@ export default function Features() {
     return (
         <section className={Styles.features}>
             <div className="container">
-                <div className="row">
-                    <Feature
-                        Svg={require('@site/static/svg/racing-car.svg').default}
-                        title={<Translate id="feature.cpuFast.title">Low CPU usage</Translate>}
-                    />
-                    <Feature
-                        Svg={require('@site/static/svg/raspberry-pi.svg').default}
-                        title={<Translate id="feature.ramEfficient.title">Low RAM usage</Translate>}
-                    />
+                <div className={Styles.featureList}>
+                    <Feature Svg={require('@site/static/svg/racing-car.svg').default} title={<Translate id="feature.cpuFast.title">Low CPU usage</Translate>} />
+                    <Feature Svg={require('@site/static/svg/raspberry-pi.svg').default} title={<Translate id="feature.ramEfficient.title">Low RAM usage</Translate>} />
                     <Feature
                         Svg={require('@site/static/svg/key.svg').default}
                         title={<Translate id="feature.secure.title">Modern cryptography</Translate>}
@@ -68,6 +62,16 @@ export default function Features() {
                         description={<Translate id="feature.openSource.description">Source code available under the AGPLv3 license.</Translate>}
                         to="https://github.com/NLipatov/TunGo"
                         external
+                    />
+                    <Feature
+                        Svg={require('@site/static/svg/globe.svg').default}
+                        title={<Translate id="feature.restrictions.title">VPN in restricted networks</Translate>}
+                        description={
+                            <Translate id="feature.restrictions.description">
+                                For users in Russia, China, Iran and other countries with internet restrictions: TunGo supports disguising VPN traffic as HTTPS.
+                            </Translate>
+                        }
+                        to="/docs/DPIMasking"
                     />
                 </div>
             </div>

@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "服务器"
+sidebar_position: 1
+---
+
+# 服务器配置
+
+配置文件：
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+修改后请重启服务器。
+
+## 带注释的示例 {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — TCP 设置
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.0.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    // IPv4 优先于 IPv6：服务器监听 127.0.0.1 以接收入站连接。
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // 监听端口
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "TCP", // 传输协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  // UDPSettings — UDP 设置
+  "UDPSettings": {
+    "TunName": "s_udptun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.1.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00:1::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    // 服务器仅在 IPv6 回环地址（::1）上接收入站数据包。
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // 监听端口
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "UDP", // 传输协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  // WSSettings — WebSocket 设置
+  "WSSettings": {
+    "TunName": "s_wstun0", // TUN 接口名称
+    "IPv4Subnet": "10.0.2.0/24", // 隧道的 IPv4 子网
+    "IPv6Subnet": "fd00:2::/64", // 隧道的 IPv6 子网；省略则隧道不使用 IPv6
+    // 省略 Server 或将其设为 {} 时，服务器会监听所有网络接口以接收入站连接。
+    // 自动选择监听地址：IPv6 可用时为 "::"，否则为 "0.0.0.0"。
+    "Port": 1010, // 监听端口
+    "MTU": 1500, // 隧道 MTU，单位为字节
+    "Protocol": "WS", // 传输协议
+    "Encryption": "ChaCha20Poly1305", // 加密算法
+    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+  },
+
+  "Host": "", // 生成客户端配置时使用的域名/IP；留空则自动检测
+  "X25519PublicKey": "<server-public-key>", // 服务器公钥；若尚未设置，会在首次启动时自动生成。
+  "X25519PrivateKey": "<server-private-key>", // 服务器私钥；若尚未设置，会在首次启动时自动生成。
+  "ClientCounter": 1, // 已生成的客户端数量
+
+  "EnableTCP": true, // true 启用协议，false 禁用协议
+  "EnableUDP": true, // true 启用协议，false 禁用协议
+  "EnableWS": true, // true 启用协议，false 禁用协议
+
+  // AllowedPeers — 已授权的客户端
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // 可选的客户端标签
+      "PublicKey": "<client-public-key>", // 你自己的客户端公钥
+      "Enabled": true, // 允许此客户端连接
+      "ClientID": 1 // 用于分配隧道地址的客户端 ID
+    }
+  ]
+}
+```

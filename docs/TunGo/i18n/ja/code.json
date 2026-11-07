@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "高速で軽量な VPN"
+  },
+  "feature.restrictions.title": {
+    "message": "インターネット制限下での VPN"
+  },
+  "feature.restrictions.description": {
+    "message": "ロシア、中国、イランなど、インターネットに制限がある国のユーザー向けに、TunGo は VPN トラフィックを HTTPS に偽装する機能を提供します。"
   }
 }

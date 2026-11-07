@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "Client"
+sidebar_position: 2
+---
+
+# Client-Konfiguration
+
+Konfigurationsdatei:
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+Starte den Client nach Änderungen neu.
+
+## Vollständiges Beispiel {#example}
+
+Die Client-Konfiguration wird vom Server erzeugt. Du kannst sie bei Bedarf anpassen.
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // Vom Server zugewiesene Client-ID
+  "Protocol": "UDP", // Aktiver Transport: TCP, UDP, WS oder WSS
+
+  // TCPSettings — TCP-Einstellungen
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.0.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Serveradresse; statt IPv4 kann auch Domain oder IPv6 verwendet werden
+    "Port": 8080, // Serverport für die Verbindung
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4-DNS-Server; optional, Standardwerte abgebildet
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6-DNS-Server; optional, Standardwerte abgebildet
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "TCP", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  // UDPSettings — UDP-Einstellungen
+  "UDPSettings": {
+    "TunName": "c_udptun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.1.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00:1::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Serveradresse; statt IPv4 kann auch Domain oder IPv6 verwendet werden
+    "Port": 9090, // Serverport für die Verbindung
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4-DNS-Server; optional, Standardwerte abgebildet
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6-DNS-Server; optional, Standardwerte abgebildet
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "UDP", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  // WSSettings — WebSocket-Einstellungen für WS und WSS
+  "WSSettings": {
+    "TunName": "c_wstun0", // Name der TUN-Schnittstelle
+    "IPv4Subnet": "10.0.2.0/24", // IPv4-Tunnelsubnetz
+    "IPv6Subnet": "fd00:2::/64", // IPv6-Tunnelsubnetz; ohne dieses Feld kein IPv6 im Tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Serveradresse; statt IPv4 kann auch Domain oder IPv6 verwendet werden
+    "Port": 1010, // Serverport für die Verbindung
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // IPv4-DNS-Server; optional, Standardwerte abgebildet
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // IPv6-DNS-Server; optional, Standardwerte abgebildet
+    "MTU": 1500, // Tunnel-MTU in Bytes
+    "Protocol": "WS", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
+    "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
+    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+  },
+
+  "X25519PublicKey": "<server-public-key>", // Öffentlicher Serverschlüssel aus der erzeugten Konfiguration
+  "ClientPublicKey": "<client-public-key>", // Auf dem Server registrierter öffentlicher Clientschlüssel
+  "ClientPrivateKey": "<client-private-key>", // Privater Clientschlüssel aus der erzeugten Konfiguration
+
+  // IPv4-Zielsubnetze über das VPN; hier ein vollständiger Tunnel
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // IPv6-Zielsubnetze über das VPN; hier ein vollständiger Tunnel
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

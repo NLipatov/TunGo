@@ -1,0 +1,99 @@
+---
+id: DeployWithCaddy
+slug: /DPIMasking/HTTPS/Caddy
+sidebar_position: 1
+---
+
+# Deploy dengan Caddy
+
+Panduan ini menerapkan [TunGo melalui HTTPS](./index.mdx) menggunakan Caddy. Siapkan domain dan DNS sesuai gambaran umum, lalu ganti `example.com` dengan domain Anda pada contoh berikut.
+
+## Sebelum memulai
+
+- Server Linux dengan TunGo dan Caddy terpasang langsung pada host yang sama.
+- [Caddy](https://caddyserver.com/docs/install) berjalan sebagai layanan systemd.
+- Port TCP `80` dan `443` tersedia untuk Caddy dan dapat diakses dari internet untuk HTTPS serta pengelolaan sertifikat.
+
+## 1. Konfigurasi Caddy
+
+Simpan halaman utama pilihan Anda sebagai `/srv/tungo-site/index.html` dan letakkan asetnya di direktori yang sama. Anda dapat memilih direktori lain, tetapi jalurnya harus sama dengan `root` dalam Caddyfile di bawah ini.
+
+Pengguna layanan `caddy` harus dapat membaca berkas dan mengakses direktori yang memuatnya.
+
+Simpan konfigurasi lengkap ini di `/etc/caddy/Caddyfile`:
+
+```text title="/etc/caddy/Caddyfile"
+example.com {
+	handle /ws {
+		reverse_proxy 127.0.0.1:1010
+	}
+
+	handle {
+		root * /srv/tungo-site
+		file_server
+	}
+}
+```
+
+`handle` mempertahankan jalur `/ws` yang diharapkan TunGo. Jangan gunakan `handle_path` di sini karena akan menghapus prefiks yang cocok. Direktif [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) Caddy menangani upgrade WebSocket secara otomatis.
+
+Validasi konfigurasi, lalu muat ulang layanan yang sedang berjalan:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+```
+
+Muat ulang hanya jika validasi berhasil. Caddy [memperoleh dan memperbarui sertifikat TLS secara otomatis](https://caddyserver.com/docs/automatic-https).
+
+## 2. Konfigurasi server TunGo
+
+Siapkan [server TunGo](../../2.%20Usage/index.mdx) dan buat konfigurasi klien. Kami menyarankan menjalankan server [sebagai daemon](../../2.%20Usage/1.%20TUI.mdx#server) agar berjalan di latar belakang dan dimulai otomatis saat sistem menyala.
+
+Di `/etc/tungo/server_configuration.json`, nonaktifkan transport TCP dan UDP, aktifkan hanya WS, lalu [ikat ke loopback](../../3.%20Configuration/Server.mdx#example) (`127.0.0.1`). Setelah dimulai ulang, TunGo tidak lagi mendengarkan pada antarmuka jaringan eksternal. Dari internet, TunGo hanya dapat diakses melalui Caddy pada port HTTPS `443`.
+
+Ubah kolom di bawah ini dan ganti seluruh objek `WSSettings.Server`. Pertahankan pengaturan lainnya:
+
+```json
+{
+  "EnableTCP": false,
+  "EnableUDP": false,
+  "EnableWS": true,
+  "WSSettings": {
+    "Protocol": "WS",
+    "Server": {
+      "IPv4": "127.0.0.1"
+    },
+    "Port": 1010
+  }
+}
+```
+
+Mulai ulang TunGo untuk menerapkan perubahan.
+
+## 3. Konfigurasi klien
+
+Klien akan terhubung menggunakan domain Anda dan port HTTPS standar `443`. Dalam [konfigurasi klien](../../3.%20Configuration/Client.mdx#example), tentukan domain dan port di `WSSettings`, lalu atur `Protocol` di tingkat teratas ke `WSS`.
+
+Ganti seluruh objek `WSSettings.Server` dengan menghapus alamat IP sebelumnya. Pertahankan pengaturan lainnya:
+
+```json
+{
+  "WSSettings": {
+    "Server": {
+      "Domain": "example.com"
+    },
+    "Port": 443
+  },
+  "Protocol": "WSS"
+}
+```
+
+`Domain` hanya berisi nama host, tanpa `https://` atau `/ws`; TunGo menambahkan jalur WebSocket. Server tetap menggunakan `WS` karena koneksi TLS berakhir di Caddy.
+
+Simpan konfigurasi dan jalankan atau mulai ulang klien sesuai [Pengaturan klien](../../2.%20Usage/index.mdx).
+
+## 4. Periksa koneksi
+
+1. Buka `https://example.com` di browser. Halaman utama Anda harus dimuat dengan sertifikat yang valid.
+2. Hubungkan klien TunGo dan periksa apakah lalu lintas melewati tunnel. Memuat situs web saja tidak memverifikasi koneksi VPN.

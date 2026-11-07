@@ -1,0 +1,80 @@
+---
+id: ClientConfiguration
+slug: /ClientConfiguration
+sidebar_label: "Client"
+sidebar_position: 2
+---
+
+# Configuration du client
+
+Fichier de configuration :
+
+- **Linux/macOS:** `/etc/tungo/client_configuration.json`
+- **Windows:** `%ProgramData%\TunGo\client_configuration.json`
+
+Redémarrez le client après les modifications.
+
+## Exemple complet {#example}
+
+La configuration du client est générée par le serveur. Vous pouvez la personnaliser si nécessaire.
+
+```json title="client_configuration.json"
+{
+  "ClientID": 1, // Identifiant du client attribué par le serveur
+  "Protocol": "UDP", // Transport actif : TCP, UDP, WS ou WSS
+
+  // TCPSettings — Paramètres TCP
+  "TCPSettings": {
+    "TunName": "c_tcptun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.0.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Adresse du serveur ; Domain ou IPv6 peuvent remplacer IPv4
+    "Port": 8080, // Port du serveur auquel se connecter
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Serveurs DNS IPv4 ; facultatif, valeurs par défaut affichées
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Serveurs DNS IPv6 ; facultatif, valeurs par défaut affichées
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "TCP", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  // UDPSettings — Paramètres UDP
+  "UDPSettings": {
+    "TunName": "c_udptun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.1.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00:1::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Adresse du serveur ; Domain ou IPv6 peuvent remplacer IPv4
+    "Port": 9090, // Port du serveur auquel se connecter
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Serveurs DNS IPv4 ; facultatif, valeurs par défaut affichées
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Serveurs DNS IPv6 ; facultatif, valeurs par défaut affichées
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "UDP", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  // WSSettings — Paramètres WebSocket pour WS et WSS
+  "WSSettings": {
+    "TunName": "c_wstun0", // Nom de l’interface TUN
+    "IPv4Subnet": "10.0.2.0/24", // Sous-réseau IPv4 du tunnel
+    "IPv6Subnet": "fd00:2::/64", // Sous-réseau IPv6 du tunnel ; sans ce champ, pas d’IPv6 dans le tunnel
+    "Server": { "IPv4": "192.0.2.1" }, // Adresse du serveur ; Domain ou IPv6 peuvent remplacer IPv4
+    "Port": 1010, // Port du serveur auquel se connecter
+    "DNSv4": ["1.1.1.1", "8.8.8.8"], // Serveurs DNS IPv4 ; facultatif, valeurs par défaut affichées
+    "DNSv6": ["2606:4700:4700::1111", "2001:4860:4860::8888"], // Serveurs DNS IPv6 ; facultatif, valeurs par défaut affichées
+    "MTU": 1500, // MTU du tunnel en octets
+    "Protocol": "WS", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
+    "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
+    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+  },
+
+  "X25519PublicKey": "<server-public-key>", // Clé publique du serveur issue de la configuration générée
+  "ClientPublicKey": "<client-public-key>", // Clé publique du client enregistrée sur le serveur
+  "ClientPrivateKey": "<client-private-key>", // Clé privée du client issue de la configuration générée
+
+  // Sous-réseaux IPv4 de destination routés via le VPN ; ici, tunnel complet
+  "TunnelRoutesV4": ["0.0.0.0/1", "128.0.0.0/1"],
+  // Sous-réseaux IPv6 de destination routés via le VPN ; ici, tunnel complet
+  "TunnelRoutesV6": ["::/1", "8000::/1"]
+}
+```

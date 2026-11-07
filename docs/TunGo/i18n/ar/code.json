@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "شبكة VPN سريعة وخفيفة"
+  },
+  "feature.restrictions.title": {
+    "message": "VPN في الشبكات المقيّدة"
+  },
+  "feature.restrictions.description": {
+    "message": "للمستخدمين في روسيا والصين وإيران وغيرها من البلدان التي تفرض قيوداً على الإنترنت: يدعم TunGo تمويه حركة VPN لتبدو كحركة HTTPS."
   }
 }

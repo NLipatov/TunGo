@@ -1,0 +1,24 @@
+---
+id: DPIMasking
+slug: /DPIMasking
+---
+
+# TunGo عبر HTTPS
+
+تنشئ حركة الويب المعتادة عبر HTTPS اتصالاً آمناً من خلال مصافحة TLS. يمكن تمويه حركة TunGo لتبدو مثل هذه الحركة وفق المخطط التالي:
+
+```mermaid
+flowchart LR
+    client["عميل TunGo"] -->|HTTPS| proxy["الوكيل العكسي"]
+    proxy -->|WS| server["خادم TunGo"]
+```
+
+يمكن استخدام أي وكيل عكسي يدعم إنهاء TLS وWebSocket. يتوفر [دليل إعداد Caddy](./Deploy%20with%20Caddy.mdx).
+
+إذا كان الوكيل العكسي يعمل على المضيف نفسه، [اربط جميع وسائل نقل TunGo المفعّلة بعناوين الاسترجاع المحلي](../../3.%20Configuration/Server.mdx#example) وعطّل ما لا تستخدمه. وإلا فقد تصبح منافذ TunGo متاحة من الإنترنت إذا سمح جدار الحماية بالوصول. قد يمنح المنفذ الإضافي المتاح جهة الرقابة قرينة أخرى أثناء [الفحص النشط](https://gfw.report/publications/imc20/en/).
+
+لاختيار شبكات الوجهة الفرعية التي تمر عبر VPN، اضبط `TunnelRoutesV4` و`TunnelRoutesV6` في [إعدادات العميل](../../3.%20Configuration/Client.mdx#example).
+
+## المتطلبات المسبقة
+
+نطاق يشير إلى خادم TunGo عبر سجلات DNS من نوع `A` و/أو `AAAA`.

@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "Servidor"
+sidebar_position: 1
+---
+
+# Configuração do servidor
+
+Arquivo de configuração:
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+Reinicie o servidor após fazer alterações.
+
+## Exemplo com comentários {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — Configurações de TCP
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // Nome da interface TUN
+    "IPv4Subnet": "10.0.0.0/24", // Sub-rede IPv4 do túnel
+    "IPv6Subnet": "fd00::/64", // Sub-rede IPv6 do túnel; sem este campo, o túnel não usa IPv6
+    // IPv4 tem prioridade sobre IPv6: o servidor escuta em 127.0.0.1 para receber conexões de entrada.
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // Porta de escuta
+    "MTU": 1500, // MTU do túnel em bytes
+    "Protocol": "TCP", // Protocolo de transporte
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
+    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+  },
+
+  // UDPSettings — Configurações de UDP
+  "UDPSettings": {
+    "TunName": "s_udptun0", // Nome da interface TUN
+    "IPv4Subnet": "10.0.1.0/24", // Sub-rede IPv4 do túnel
+    "IPv6Subnet": "fd00:1::/64", // Sub-rede IPv6 do túnel; sem este campo, o túnel não usa IPv6
+    // O servidor recebe pacotes de entrada somente em loopback IPv6 (::1).
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // Porta de escuta
+    "MTU": 1500, // MTU do túnel em bytes
+    "Protocol": "UDP", // Protocolo de transporte
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
+    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+  },
+
+  // WSSettings — Configurações de WebSocket
+  "WSSettings": {
+    "TunName": "s_wstun0", // Nome da interface TUN
+    "IPv4Subnet": "10.0.2.0/24", // Sub-rede IPv4 do túnel
+    "IPv6Subnet": "fd00:2::/64", // Sub-rede IPv6 do túnel; sem este campo, o túnel não usa IPv6
+    // Se Server for omitido ou definido como {}, o servidor escuta em todas as interfaces de rede para receber conexões de entrada.
+    // O endereço é escolhido automaticamente: "::" se IPv6 estiver disponível; caso contrário, "0.0.0.0".
+    "Port": 1010, // Porta de escuta
+    "MTU": 1500, // MTU do túnel em bytes
+    "Protocol": "WS", // Protocolo de transporte
+    "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
+    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+  },
+
+  "Host": "", // Domínio/IP para clientes gerados; vazio para detecção automática
+  "X25519PublicKey": "<server-public-key>", // Chave pública do servidor; gerada automaticamente na primeira inicialização se não estiver definida.
+  "X25519PrivateKey": "<server-private-key>", // Chave privada do servidor; gerada automaticamente na primeira inicialização se não estiver definida.
+  "ClientCounter": 1, // Número de clientes gerados
+
+  "EnableTCP": true, // true habilita o protocolo; false o desabilita
+  "EnableUDP": true, // true habilita o protocolo; false o desabilita
+  "EnableWS": true, // true habilita o protocolo; false o desabilita
+
+  // AllowedPeers — Clientes autorizados
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // Rótulo opcional do cliente
+      "PublicKey": "<client-public-key>", // Sua chave pública do cliente
+      "Enabled": true, // Permitir que este cliente se conecte
+      "ClientID": 1 // ID do cliente para atribuir seus endereços no túnel
+    }
+  ]
+}
+```

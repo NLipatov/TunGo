@@ -49,5 +49,11 @@
   },
   "homepage.heroTitle": {
     "message": "快速、轻量的 VPN"
+  },
+  "feature.restrictions.title": {
+    "message": "网络受限环境中的 VPN"
+  },
+  "feature.restrictions.description": {
+    "message": "面向俄罗斯、中国、伊朗及其他存在互联网限制的国家的用户：TunGo 支持将 VPN 流量伪装为 HTTPS。"
   }
 }

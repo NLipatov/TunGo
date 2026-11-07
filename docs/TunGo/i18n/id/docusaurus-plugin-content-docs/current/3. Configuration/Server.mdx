@@ -1,0 +1,84 @@
+---
+id: ServerNetworking
+slug: /ServerNetworking
+sidebar_label: "Server"
+sidebar_position: 1
+---
+
+# Konfigurasi server
+
+File konfigurasi:
+
+- **Linux:** `/etc/tungo/server_configuration.json`
+
+Mulai ulang server setelah melakukan perubahan.
+
+## Contoh dengan komentar {#example}
+
+```json title="server_configuration.json"
+{
+  // TCPSettings — Pengaturan TCP
+  "TCPSettings": {
+    "TunName": "s_tcptun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.0.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    // IPv4 diprioritaskan daripada IPv6: server mendengarkan pada 127.0.0.1 untuk menerima koneksi masuk.
+    "Server": {
+      "IPv4": "127.0.0.1",
+      "IPv6": "::1"
+    },
+    "Port": 8080, // Port listen
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "TCP", // Protokol transport
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  // UDPSettings — Pengaturan UDP
+  "UDPSettings": {
+    "TunName": "s_udptun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.1.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00:1::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    // Server menerima paket masuk hanya pada loopback IPv6 (::1).
+    "Server": { "IPv6": "::1" },
+    "Port": 9090, // Port listen
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "UDP", // Protokol transport
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  // WSSettings — Pengaturan WebSocket
+  "WSSettings": {
+    "TunName": "s_wstun0", // Nama antarmuka TUN
+    "IPv4Subnet": "10.0.2.0/24", // Subnet IPv4 tunnel
+    "IPv6Subnet": "fd00:2::/64", // Subnet IPv6 tunnel; tanpa kolom ini, tunnel tidak menggunakan IPv6
+    // Jika Server tidak diisi atau diatur ke {}, server mendengarkan pada semua antarmuka jaringan untuk menerima koneksi masuk.
+    // Alamat dipilih otomatis: "::" jika IPv6 tersedia, atau "0.0.0.0" jika tidak.
+    "Port": 1010, // Port listen
+    "MTU": 1500, // MTU tunnel dalam byte
+    "Protocol": "WS", // Protokol transport
+    "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
+    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+  },
+
+  "Host": "", // Domain/IP untuk klien yang dibuat; kosong untuk deteksi otomatis
+  "X25519PublicKey": "<server-public-key>", // Kunci publik server; dibuat otomatis saat server pertama kali dijalankan jika belum diatur.
+  "X25519PrivateKey": "<server-private-key>", // Kunci privat server; dibuat otomatis saat server pertama kali dijalankan jika belum diatur.
+  "ClientCounter": 1, // Jumlah klien yang telah dibuat
+
+  "EnableTCP": true, // true mengaktifkan protokol; false menonaktifkannya
+  "EnableUDP": true, // true mengaktifkan protokol; false menonaktifkannya
+  "EnableWS": true, // true mengaktifkan protokol; false menonaktifkannya
+
+  // AllowedPeers — Klien yang diizinkan
+  "AllowedPeers": [
+    {
+      "Name": "client-1", // Label klien opsional
+      "PublicKey": "<client-public-key>", // Kunci publik klien Anda
+      "Enabled": true, // Izinkan klien ini terhubung
+      "ClientID": 1 // ID klien untuk mengalokasikan alamat tunnel
+    }
+  ]
+}
+```
