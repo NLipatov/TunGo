@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +20,62 @@ import (
 	"tungo/internal/config/settings"
 	"tungo/internal/transport/tcp"
 )
+
+func TestFramedConn_WebSocketClose(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		code    websocket.StatusCode
+		prefix  []byte
+		wantErr error
+	}{
+		{name: "normal", code: websocket.StatusNormalClosure, wantErr: io.EOF},
+		{name: "going away", code: websocket.StatusGoingAway, wantErr: io.EOF},
+		{name: "partial header", code: websocket.StatusNormalClosure, prefix: []byte{0}, wantErr: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			result := make(chan error, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := websocket.Accept(w, r, nil)
+				if err != nil {
+					result <- err
+					return
+				}
+				defer func() { _ = conn.CloseNow() }()
+				framed, err := tcp.NewFramedConn(NewConn(ctx, conn, nil, nil), settings.DefaultEthernetMTU)
+				if err != nil {
+					result <- err
+					return
+				}
+				_, err = framed.Read(make([]byte, settings.DefaultEthernetMTU))
+				result <- err
+			}))
+			defer server.Close()
+			client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = client.CloseNow() }()
+			if len(tt.prefix) > 0 {
+				if err := client.Write(ctx, websocket.MessageBinary, tt.prefix); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := client.Close(tt.code, ""); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err := <-result:
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Read error = %v, want %v", err, tt.wantErr)
+				}
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		})
+	}
+}
 
 // Capture incoming ciphertext below the test server's TLS connection.
 type recordListener struct {

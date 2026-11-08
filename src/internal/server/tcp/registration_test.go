@@ -74,12 +74,16 @@ func (f *tcpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto,
 type tcpRegConn struct {
 	net.Conn
 	remoteAddr net.Addr
+	reader     io.Reader
 	closed     bool
 }
 
 func (c *tcpRegConn) RemoteAddr() net.Addr { return c.remoteAddr }
 func (c *tcpRegConn) Close() error         { c.closed = true; return nil }
-func (*tcpRegConn) Read(_ []byte) (int, error) {
+func (c *tcpRegConn) Read(b []byte) (int, error) {
+	if c.reader != nil {
+		return c.reader.Read(b)
+	}
 	// Simulate a blocking read for the framing adapter.
 	time.Sleep(time.Millisecond)
 	return 0, errors.New("read error")

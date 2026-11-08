@@ -3,8 +3,12 @@ package tcp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"log/slog"
+	"net"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"tungo/internal/protocol/chacha20/rekey"
@@ -16,6 +20,55 @@ import (
 )
 
 const testRekeyPacketLen = 3 + 32
+
+func TestServer_ServeClientReadError(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		data     []byte
+		wantWarn bool
+	}{
+		{name: "clean close"},
+		{name: "partial header", data: []byte{0}, wantWarn: true},
+		{name: "invalid length", data: []byte{0, 0}, wantWarn: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			originalLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+			hf := &tcpRegHandshakeFactory{handshake: &tcpRegHandshake{clientID: 1}}
+			cf := &tcpRegCryptoFactory{crypto: tcpRegCrypto{}}
+			peers := session.NewRepository()
+			server := &Server{
+				ctx:   t.Context(),
+				peers: peers,
+				registrar: newRegistrar(
+					hf.NewHandshake, cf.FromHandshake, peers,
+					netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{},
+				),
+			}
+			conn := &tcpRegConn{
+				remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 12345},
+				reader:     bytes.NewReader(tt.data),
+			}
+			server.serveClient(conn)
+
+			if got := strings.Contains(logs.String(), "failed to read from client"); got != tt.wantWarn {
+				t.Errorf("read warning = %v, want %v; logs:\n%s", got, tt.wantWarn, &logs)
+			}
+			if !strings.Contains(logs.String(), "client disconnected") {
+				t.Errorf("missing disconnect log:\n%s", &logs)
+			}
+			if !conn.closed {
+				t.Error("connection was not closed")
+			}
+			if _, err := peers.GetByInternalAddrPort(netip.MustParseAddr("10.0.0.2")); !errors.Is(err, session.ErrNotFound) {
+				t.Errorf("peer was not removed: %v", err)
+			}
+		})
+	}
+}
 
 type captureWriter struct {
 	packet []byte

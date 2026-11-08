@@ -111,7 +111,7 @@ func (s *Server) serveClient(conn net.Conn) {
 		}
 		n, err := transport.Read(frame[:])
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				slog.Warn("failed to read from client", "err", err)
 			}
 			return
