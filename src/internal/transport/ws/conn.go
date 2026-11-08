@@ -187,7 +187,7 @@ func (a *Conn) mapReadErr(err error) error {
 		return nil
 	}
 	// Map graceful WS close to io.EOF (as net.Conn Read would do).
-	if ce, ok := errors.AsType[*websocket.CloseError](err); ok {
+	if ce, ok := errors.AsType[websocket.CloseError](err); ok {
 		switch ce.Code {
 		case websocket.StatusNormalClosure, websocket.StatusGoingAway:
 			return io.EOF
@@ -205,7 +205,7 @@ func (a *Conn) mapWriteErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := errors.AsType[*websocket.CloseError](err); ok {
+	if _, ok := errors.AsType[websocket.CloseError](err); ok {
 		// For writes after close, most net.Conn impls return net.ErrClosed.
 		return net.ErrClosed
 	}

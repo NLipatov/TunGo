@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -197,7 +198,7 @@ func TestConn_Write_RespectsWriteDeadline(t *testing.T) {
 }
 
 func TestConn_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
-	closeErr := &websocket.CloseError{Code: websocket.StatusNormalClosure}
+	closeErr := fmt.Errorf("failed to write: %w", websocket.CloseError{Code: websocket.StatusNormalClosure})
 	conn := &AdapterMockConn{
 		writeFunc: func(ctx context.Context, mt websocket.MessageType, data []byte) error {
 			return closeErr
@@ -281,7 +282,7 @@ func TestConn_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 	// Test mapping of CloseError -> io.EOF
 	conn1 := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
-			return 0, nil, &websocket.CloseError{Code: websocket.StatusNormalClosure}
+			return 0, nil, websocket.CloseError{Code: websocket.StatusNormalClosure}
 		},
 	}
 	a1 := newMockConn(context.Background(), conn1, nil, nil)
@@ -293,7 +294,7 @@ func TestConn_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 	// Abnormal closure -> io.ErrUnexpectedEOF
 	conn2 := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
-			return 0, nil, &websocket.CloseError{Code: websocket.StatusAbnormalClosure}
+			return 0, nil, websocket.CloseError{Code: websocket.StatusAbnormalClosure}
 		},
 	}
 	a2 := newMockConn(context.Background(), conn2, nil, nil)
@@ -461,16 +462,16 @@ func TestConn_mapReadErr_Variants(t *testing.T) {
 	if got := a.mapReadErr(nil); got != nil {
 		t.Fatalf("nil -> %v", got)
 	}
-	if !errors.Is(a.mapReadErr(&websocket.CloseError{Code: websocket.StatusNormalClosure}), io.EOF) {
+	if !errors.Is(a.mapReadErr(websocket.CloseError{Code: websocket.StatusNormalClosure}), io.EOF) {
 		t.Fatalf("NormalClosure must map to EOF")
 	}
-	if !errors.Is(a.mapReadErr(&websocket.CloseError{Code: websocket.StatusGoingAway}), io.EOF) {
+	if !errors.Is(a.mapReadErr(websocket.CloseError{Code: websocket.StatusGoingAway}), io.EOF) {
 		t.Fatalf("GoingAway must map to EOF")
 	}
-	if !errors.Is(a.mapReadErr(&websocket.CloseError{Code: websocket.StatusAbnormalClosure}), io.ErrUnexpectedEOF) {
+	if !errors.Is(a.mapReadErr(websocket.CloseError{Code: websocket.StatusAbnormalClosure}), io.ErrUnexpectedEOF) {
 		t.Fatalf("AbnormalClosure must map to UnexpectedEOF")
 	}
-	if !errors.Is(a.mapReadErr(&websocket.CloseError{Code: websocket.StatusNoStatusRcvd}), io.ErrUnexpectedEOF) {
+	if !errors.Is(a.mapReadErr(websocket.CloseError{Code: websocket.StatusNoStatusRcvd}), io.ErrUnexpectedEOF) {
 		t.Fatalf("NoStatusRcvd must map to UnexpectedEOF")
 	}
 	err := a.mapReadErr(context.DeadlineExceeded)
@@ -490,7 +491,7 @@ func TestConn_mapWriteErr_Variants(t *testing.T) {
 	if got := a.mapWriteErr(nil); got != nil {
 		t.Fatalf("nil -> %v", got)
 	}
-	if !errors.Is(a.mapWriteErr(&websocket.CloseError{Code: websocket.StatusNormalClosure}), net.ErrClosed) {
+	if !errors.Is(a.mapWriteErr(websocket.CloseError{Code: websocket.StatusNormalClosure}), net.ErrClosed) {
 		t.Fatalf("CloseError must map to net.ErrClosed")
 	}
 	err := a.mapWriteErr(context.DeadlineExceeded)
@@ -588,7 +589,7 @@ func TestConn_Close_PropagatesUnderlyingError(t *testing.T) {
 
 func TestConn_mapReadErr_OtherCloseCode_BubblesAsIs(t *testing.T) {
 	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
-	orig := &websocket.CloseError{Code: websocket.StatusPolicyViolation}
+	orig := websocket.CloseError{Code: websocket.StatusPolicyViolation}
 	got := a.mapReadErr(orig)
 	// Must return the same error instance (not wrapped/mapped).
 	if !errors.Is(got, orig) {
