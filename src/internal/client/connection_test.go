@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/net/dns/dnsmessage"
 
 	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
@@ -200,7 +201,7 @@ func TestDialTCP_Success(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	adapter, err := dialTCP(ctx, ap)
+	adapter, err := dialTCP(ctx, ap.String())
 	if err != nil {
 		t.Fatalf("dialTCP failed: %v", err)
 	}
@@ -221,7 +222,7 @@ func TestDialTCP_Refused(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	adapter, err := dialTCP(ctx, ap)
+	adapter, err := dialTCP(ctx, ap.String())
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error dialing to closed port")
@@ -235,7 +236,7 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	conn, err := dialUDP(ctx, ap)
+	conn, err := dialUDP(ctx, ap.String())
 	if err != nil {
 		t.Fatalf("dialUDP failed: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestDialWebSocketEndpoint_Success(t *testing.T) {
 	host, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port), "")
 	if err != nil {
 		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
 	}
@@ -271,7 +272,7 @@ func TestDialWebSocketEndpoint_Success_DomainEndpointHasRemoteAddr(t *testing.T)
 	_, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port), "")
 	if err != nil {
 		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
 	}
@@ -288,7 +289,7 @@ func TestDialWebSocketEndpoint_Success_DomainEndpointHasRemoteAddr(t *testing.T)
 func TestDialWebSocketEndpoint_Error_NoServer(t *testing.T) {
 	t.Parallel()
 	// Use a port with no WS server
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error when no WS server is listening")
@@ -321,7 +322,7 @@ func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
 		})
 		serverDone <- server.HandshakeContext(ctx)
 	}()
-	conn, err := dialTLSForWebSocket(ctx, "tcp", listener.Addr().String(), nil, nil)
+	conn, err := dialTLSForWebSocket(ctx, "tcp", listener.Addr().String(), nil, nil, "")
 	if conn != nil {
 		_ = conn.Close()
 	}
@@ -357,12 +358,19 @@ func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
 	}
 }
 
-func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
+func TestEstablishConnection_WSS_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
-	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
 	client := &Client{}
-	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", 0, settings.WSS))
-	_, _, _, err := client.connect(context.Background(), configuration)
+	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", port, settings.WSS))
+	_, _, _, err = client.connect(t.Context(), configuration)
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
 	}
@@ -680,14 +688,14 @@ func TestDialErrorBranches(t *testing.T) {
 	defer cancel()
 
 	t.Run("dialTCP error", func(t *testing.T) {
-		_, err := dialTCP(ctx, netip.MustParseAddrPort("127.0.0.1:1"))
+		_, err := dialTCP(ctx, "127.0.0.1:1")
 		if err == nil {
 			t.Fatal("expected dialTCP error")
 		}
 	})
 
 	t.Run("dialUDP error", func(t *testing.T) {
-		conn, err := dialUDP(ctx, netip.MustParseAddrPort("127.0.0.1:9"))
+		conn, err := dialUDP(ctx, "127.0.0.1:9")
 		// Environment-dependent: some sandboxes deny UDP connect, others allow it.
 		if err == nil {
 			if conn == nil {
@@ -698,7 +706,7 @@ func TestDialErrorBranches(t *testing.T) {
 	})
 
 	t.Run("dialWebSocketEndpoint error", func(t *testing.T) {
-		_, err := dialWebSocketEndpoint(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+		_, err := dialWebSocketEndpoint(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
 		if err == nil {
 			t.Fatal("expected dialWebSocketEndpoint error")
 		}
@@ -789,39 +797,483 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 	}
 }
 
-func TestAddrPort(t *testing.T) {
+func TestResolveAddrPort(t *testing.T) {
 	t.Parallel()
 
-	ap, err := addrPort(netip.MustParseAddr("2001:db8::1"), 443)
+	s := mkTCPSettings(443)
+	s.Server = settings.Host{IPv6: "2001:db8::1"}
+	ap, err := resolveAddrPort(t.Context(), s, 6)
 	if err != nil {
-		t.Fatalf("addrPort: %v", err)
+		t.Fatalf("resolveAddrPort: %v", err)
 	}
 	if got, want := ap.String(), "[2001:db8::1]:443"; got != want {
-		t.Fatalf("addrPort = %q, want %q", got, want)
+		t.Fatalf("resolveAddrPort = %q, want %q", got, want)
 	}
-	if _, err := addrPort(netip.Addr{}, 443); err == nil {
+	if _, err := resolveAddrPort(t.Context(), s, 5); err == nil {
+		t.Fatal("expected unsupported IP version error")
+	}
+	s.Server.IPv6 = "invalid-ipv6"
+	if _, err := resolveAddrPort(t.Context(), s, 6); err == nil {
 		t.Fatal("expected invalid IP error")
 	}
-	if _, err := addrPort(netip.MustParseAddr("192.0.2.1"), 65536); err == nil {
-		t.Fatal("expected invalid port error")
+	s.Server.IPv6 = "2001:db8::1"
+	for _, port := range []int{-1, 65536, 70000} {
+		s.Port = port
+		if ap, err := resolveAddrPort(t.Context(), s, 6); err == nil {
+			t.Fatalf("out-of-range port %d became %v without an error", port, ap)
+		}
 	}
 }
 
-func TestIPv6ProbeTimeout_FromDialTimeout(t *testing.T) {
+func TestDialAttemptTimeout_FromDialTimeout(t *testing.T) {
 	t.Parallel()
 
-	if got := ipv6ProbeTimeout(settings.Settings{}); got != 2500*time.Millisecond {
-		t.Fatalf("unexpected default probe timeout: got %v want %v", got, 2500*time.Millisecond)
+	if got := dialAttemptTimeout(settings.Settings{}); got != 2500*time.Millisecond {
+		t.Fatalf("unexpected default attempt timeout: got %v want %v", got, 2500*time.Millisecond)
 	}
-	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 1000}); got != 2*time.Second {
-		t.Fatalf("unexpected clamped probe timeout for short dial timeout: got %v", got)
+	if got := dialAttemptTimeout(settings.Settings{DialTimeoutMs: 1000}); got != 2*time.Second {
+		t.Fatalf("unexpected clamped attempt timeout for short dial timeout: got %v", got)
 	}
-	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 12000}); got != 6*time.Second {
-		t.Fatalf("unexpected probe timeout: got %v want 6s", got)
+	if got := dialAttemptTimeout(settings.Settings{DialTimeoutMs: 12000}); got != 6*time.Second {
+		t.Fatalf("unexpected attempt timeout: got %v want 6s", got)
 	}
 }
 
-func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
+func TestDialUsesIPv6BeforeIPv4(t *testing.T) {
+	t.Parallel()
+
+	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer func() { _ = ipv6Listener.Close() }()
+	port := ipv6Listener.Addr().(*net.TCPAddr).Port
+	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("listen on IPv4: %v", err)
+	}
+	defer func() { _ = ipv4Listener.Close() }()
+
+	for _, tc := range []struct {
+		name     string
+		protocol settings.Protocol
+		server   settings.Host
+		wantIP   string
+		wantErr  bool
+	}{
+		{
+			name:     "TCP probes IPv6 first",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "UDP starts with IPv6",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "UDP uses IPv6 when IPv4 is invalid",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "UDP uses IPv4 when IPv6 is invalid",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "invalid-ipv6"},
+			wantIP:   "127.0.0.1",
+		},
+		{
+			name:     "UDP uses the only IPv4 address",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "127.0.0.1"},
+			wantIP:   "127.0.0.1",
+		},
+		{
+			name:     "UDP uses the only IPv6 address",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "UDP rejects IPv4 in the IPv6 field",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "127.0.0.1"},
+			wantErr:  true,
+		},
+		{
+			name:     "UDP rejects IPv6 in the IPv4 field",
+			protocol: settings.UDP,
+			server:   settings.Host{IPv4: "::1", IPv6: "invalid-ipv6"},
+			wantErr:  true,
+		},
+		{
+			name:     "TCP uses IPv6 when IPv4 is invalid",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "TCP uses IPv4 when IPv6 is invalid",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "invalid-ipv6"},
+			wantIP:   "127.0.0.1",
+		},
+		{
+			name:     "TCP uses the only IPv6 address",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv6: "::1"},
+			wantIP:   "::1",
+		},
+		{
+			name:     "TCP rejects IPv4 in the IPv6 field",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "127.0.0.1"},
+			wantErr:  true,
+		},
+		{
+			name:     "TCP rejects IPv6 in the IPv4 field",
+			protocol: settings.TCP,
+			server:   settings.Host{IPv4: "::1", IPv6: "invalid-ipv6"},
+			wantErr:  true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := settings.Settings{
+				Network: settings.Network{
+					Server: tc.server,
+					Port:   port,
+				},
+				Protocol: tc.protocol,
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			conn, err := dial(ctx, ctx, s)
+			if tc.wantErr {
+				if conn != nil {
+					_ = conn.Close()
+					t.Fatal("dial unexpectedly returned a connection")
+				}
+				if err == nil {
+					t.Fatal("expected address family error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer func() { _ = conn.Close() }()
+			if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
+				t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
+			}
+		})
+	}
+}
+
+func TestDialTCPUsesIPv4AfterIPv6Refusal(t *testing.T) {
+	t.Parallel()
+
+	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer func() { _ = ipv6Listener.Close() }()
+	port := ipv6Listener.Addr().(*net.TCPAddr).Port
+	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("listen on IPv4: %v", err)
+	}
+	defer func() { _ = ipv4Listener.Close() }()
+	if err := ipv6Listener.Close(); err != nil {
+		t.Fatalf("close IPv6 listener: %v", err)
+	}
+
+	s := mkTCPSettings(port)
+	s.Server.IPv6 = "::1"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	conn, err := dial(ctx, ctx, s)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr("127.0.0.1") {
+		t.Fatalf("remote address = %v, %v; want 127.0.0.1", got, err)
+	}
+}
+
+func TestDialTCPReturnsIPv4DialError(t *testing.T) {
+	t.Parallel()
+
+	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer func() { _ = ipv6Listener.Close() }()
+	port := ipv6Listener.Addr().(*net.TCPAddr).Port
+	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("reserve IPv4 endpoint: %v", err)
+	}
+	defer func() { _ = ipv4Listener.Close() }()
+	if err := ipv6Listener.Close(); err != nil {
+		t.Fatalf("close IPv6 listener: %v", err)
+	}
+	if err := ipv4Listener.Close(); err != nil {
+		t.Fatalf("close IPv4 listener: %v", err)
+	}
+
+	s := mkTCPSettings(port)
+	s.Server.IPv6 = "::1"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	conn, err := dial(ctx, ctx, s)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("dial unexpectedly succeeded")
+	}
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Addr == nil {
+		t.Fatalf("dial error = %v, want an endpoint-specific dial error", err)
+	}
+	want := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port))
+	if got := parseNetAddrPort(opErr.Addr); got != want {
+		t.Fatalf("dial error endpoint = %v, want %v", got, want)
+	}
+}
+
+func TestDialTCPReturnsIPv4ResolutionError(t *testing.T) {
+	t.Parallel()
+
+	s := mkTCPSettings(443)
+	s.Server = settings.Host{IPv4: "invalid-ipv4", IPv6: "invalid-ipv6"}
+	_, wantErr := netip.ParseAddr(s.Server.IPv4)
+	_, err := dial(t.Context(), t.Context(), s)
+	if err == nil || !strings.Contains(err.Error(), wantErr.Error()) {
+		t.Fatalf("dial error = %v, want IPv4 address error %v", err, wantErr)
+	}
+}
+
+func TestDialUDPReturnsIPv4DialError(t *testing.T) {
+	t.Parallel()
+
+	s := mkUDPSettings(9)
+	s.Server.IPv6 = "::1"
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // Make both dial attempts fail without relying on network routing.
+	conn, err := dial(ctx, ctx, s)
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("dial unexpectedly succeeded")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dial error = %v, want context.Canceled", err)
+	}
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Addr == nil {
+		t.Fatalf("dial error = %v, want an endpoint-specific dial error", err)
+	}
+	want := netip.MustParseAddrPort("127.0.0.1:9")
+	if got := parseNetAddrPort(opErr.Addr); got != want {
+		t.Fatalf("dial error endpoint = %v, want %v", got, want)
+	}
+}
+
+func connectionTestDNS(t *testing.T, ipv4, ipv6 string) func() []dnsmessage.Type {
+	t.Helper()
+	dns, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var queries []dnsmessage.Type
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		_ = dns.Close()
+		<-done
+	})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, peer, err := dns.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			var request dnsmessage.Message
+			if err := request.Unpack(buf[:n]); err != nil || len(request.Questions) != 1 {
+				t.Errorf("invalid DNS request: %v", err)
+				return
+			}
+			question := request.Questions[0]
+			mu.Lock()
+			queries = append(queries, question.Type)
+			mu.Unlock()
+			response := dnsmessage.Message{
+				Header: dnsmessage.Header{
+					ID: request.ID, Response: true, RecursionDesired: true, RecursionAvailable: true,
+				},
+				Questions: request.Questions,
+			}
+			var body dnsmessage.ResourceBody
+			switch question.Type {
+			case dnsmessage.TypeAAAA:
+				if ipv6 != "" {
+					body = &dnsmessage.AAAAResource{AAAA: netip.MustParseAddr(ipv6).As16()}
+				}
+			case dnsmessage.TypeA:
+				if ipv4 != "" {
+					body = &dnsmessage.AResource{A: netip.MustParseAddr(ipv4).As4()}
+				}
+			default:
+				t.Errorf("unexpected DNS question: %v", question.Type)
+				return
+			}
+			if body != nil {
+				response.Answers = []dnsmessage.Resource{{
+					Header: dnsmessage.ResourceHeader{Name: question.Name, Type: question.Type, Class: dnsmessage.ClassINET},
+					Body:   body,
+				}}
+			}
+			packet, err := response.Pack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := dns.WriteTo(packet, peer); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	previousResolver := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "udp4", dns.LocalAddr().String())
+	}}
+	t.Cleanup(func() { net.DefaultResolver = previousResolver })
+	return func() []dnsmessage.Type {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(queries)
+	}
+}
+
+func TestDialAddressSourcePriority(t *testing.T) {
+	// These subtests replace DNS and HTTP defaults; keep them sequential.
+	proxyTestTransport(t, nil, nil)
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			for _, tc := range []struct {
+				name    string
+				dnsIPv4 string
+				dnsIPv6 string
+				wantIP  string
+			}{
+				{"domain before explicit addresses", "127.0.0.1", "", "127.0.0.1"},
+				{"IPv6 after DNS failure", "", "", "::1"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+					if err != nil {
+						t.Skipf("IPv6 loopback unavailable: %v", err)
+					}
+					t.Cleanup(func() { _ = ipv6Listener.Close() })
+					port := ipv6Listener.Addr().(*net.TCPAddr).Port
+					ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = ipv4Listener.Close() })
+					for _, listener := range []net.Listener{ipv6Listener, ipv4Listener} {
+						server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							conn, err := websocket.Accept(w, r, nil)
+							if err == nil {
+								_ = conn.CloseNow()
+							}
+						})}
+						go func() { _ = server.Serve(listener) }()
+						t.Cleanup(func() { _ = server.Close() })
+					}
+					queries := connectionTestDNS(t, tc.dnsIPv4, tc.dnsIPv6)
+					s := settings.Settings{
+						Network: settings.Network{
+							Server: settings.Host{Domain: "dial-source.test.", IPv4: "127.0.0.2", IPv6: "::1"},
+							Port:   port,
+						},
+						Protocol: protocol,
+					}
+					ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+					defer cancel()
+					conn, err := dial(ctx, ctx, s)
+					if err != nil {
+						t.Fatalf("dial: %v", err)
+					}
+					defer func() { _ = conn.Close() }()
+					if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
+						t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
+					}
+					gotQueries := queries()
+					slices.Sort(gotQueries)
+					if want := []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA}; !slices.Equal(gotQueries, want) {
+						t.Fatalf("DNS queries = %v, want %v", gotQueries, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDialReservesTimeForIPFallback(t *testing.T) {
+	proxyTestTransport(t, nil, nil)
+	connectionTestDNS(t, "127.0.0.1", "")
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = ipv6Listener.Close() })
+	port := ipv6Listener.Addr().(*net.TCPAddr).Port
+	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ipv4Listener.Close() })
+	domainCancelled := make(chan struct{})
+	domainServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		close(domainCancelled)
+	})}
+	go func() { _ = domainServer.Serve(ipv4Listener) }()
+	t.Cleanup(func() { _ = domainServer.Close() })
+	fallbackServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err == nil {
+			_ = conn.CloseNow()
+		}
+	})}
+	go func() { _ = fallbackServer.Serve(ipv6Listener) }()
+	t.Cleanup(func() { _ = fallbackServer.Close() })
+	s := mkWSSettings("dial-budget.test.", port, settings.WS)
+	s.Server.IPv6 = "::1"
+	conn, err := dial(ctx, ctx, s)
+	if err != nil {
+		t.Fatalf("fallback: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr("::1") {
+		t.Fatalf("fallback address = %v, %v, want ::1", got, err)
+	}
+	select {
+	case <-domainCancelled:
+	case <-ctx.Done():
+		t.Fatal("the stalled domain attempt was not closed before fallback")
+	}
+}
+
+func TestDialTCPDomainSucceeds(t *testing.T) {
 	t.Parallel()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -849,7 +1301,7 @@ func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, dialErr := dialWithFallback(ctx, s)
+	conn, dialErr := dial(ctx, ctx, s)
 	if dialErr != nil {
 		t.Fatalf("expected domain dial success, got %v", dialErr)
 	}
@@ -857,44 +1309,123 @@ func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
 	<-done
 }
 
-func TestDialWebSocket_IPv6Success(t *testing.T) {
+func TestDialWebSocketAddressFallback(t *testing.T) {
 	t.Parallel()
-	// Start WS server on IPv6 loopback.
-	ln, err := net.Listen("tcp", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	_, portStr, _ := strings.Cut(ln.Addr().String(), "]:")
-	portInt, _ := strconv.Atoi(portStr)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		c, acceptErr := websocket.Accept(w, r, nil)
-		if acceptErr != nil {
-			return
-		}
-		_ = c.Close(websocket.StatusNormalClosure, "")
-	})
-	srv := &http.Server{Handler: mux}
-	go func() { _ = srv.Serve(ln) }()
-	defer func() { _ = srv.Shutdown(context.Background()); _ = ln.Close() }()
-
-	s := settings.Settings{
-		Network: settings.Network{
-			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			Port:   portInt,
+	for _, tc := range []struct {
+		name         string
+		server       settings.Host
+		rejectIPv6   bool
+		wantIP       string
+		wantRequests []string
+	}{
+		{
+			name: "IPv6 first", server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			wantIP: "::1", wantRequests: []string{"IPv6"},
 		},
-		Protocol: settings.WS,
+		{
+			name: "IPv4 after IPv6 upgrade rejection", server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			rejectIPv6: true, wantIP: "127.0.0.1", wantRequests: []string{"IPv6", "IPv4"},
+		},
+		{
+			name: "IPv6 only", server: settings.Host{IPv6: "::1"},
+			wantIP: "::1", wantRequests: []string{"IPv6"},
+		},
+		{
+			name: "IPv6 only rejection is not retried", server: settings.Host{IPv6: "::1"},
+			rejectIPv6: true, wantRequests: []string{"IPv6"},
+		},
+		{
+			name: "IPv4 only", server: settings.Host{IPv4: "127.0.0.1"},
+			wantIP: "127.0.0.1", wantRequests: []string{"IPv4"},
+		},
+		{
+			name: "IPv6 field rejects IPv4", server: settings.Host{IPv6: "127.0.0.1"},
+		},
+		{
+			name: "IPv4 field rejects IPv6", server: settings.Host{IPv4: "::1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
+			if err != nil {
+				t.Skipf("IPv6 loopback unavailable: %v", err)
+			}
+			t.Cleanup(func() { _ = ipv6Listener.Close() })
+			port := ipv6Listener.Addr().(*net.TCPAddr).Port
+			ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ipv4Listener.Close() })
+			requests := make(chan string, 4)
+			serve := func(listener net.Listener, family string) {
+				server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests <- family
+					if family == "IPv6" && tc.rejectIPv6 {
+						http.Error(w, "upgrade rejected", http.StatusServiceUnavailable)
+						return
+					}
+					conn, err := websocket.Accept(w, r, nil)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					defer func() { _ = conn.CloseNow() }()
+					kind, payload, err := conn.Read(ctx)
+					if err == nil {
+						_ = conn.Write(ctx, kind, payload)
+					}
+				})}
+				go func() { _ = server.Serve(listener) }()
+				t.Cleanup(func() { _ = server.Close() })
+			}
+			serve(ipv6Listener, "IPv6")
+			serve(ipv4Listener, "IPv4")
+			s := mkWSSettings("", port, settings.WS)
+			s.Server = tc.server
+			establishCtx, cancelEstablish := context.WithCancel(ctx)
+			defer cancelEstablish()
+			conn, err := dial(establishCtx, ctx, s)
+			cancelEstablish()
+			if tc.wantIP == "" {
+				if conn != nil {
+					_ = conn.Close()
+					t.Fatal("dial unexpectedly returned a connection")
+				}
+				if err == nil {
+					t.Fatal("expected WebSocket dial error")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("dial: %v", err)
+				}
+				defer func() { _ = conn.Close() }()
+				if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
+					t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
+				}
+				payload := []byte("connection outlives dial context")
+				if _, err := conn.Write(payload); err != nil {
+					t.Fatal(err)
+				}
+				got := make([]byte, len(payload))
+				if _, err := io.ReadFull(conn, got); err != nil {
+					t.Fatal(err)
+				}
+				if string(got) != string(payload) {
+					t.Fatalf("echo = %q, want %q", got, payload)
+				}
+			}
+			var gotRequests []string
+			for len(requests) > 0 {
+				gotRequests = append(gotRequests, <-requests)
+			}
+			if !slices.Equal(gotRequests, tc.wantRequests) {
+				t.Fatalf("requests = %v, want %v", gotRequests, tc.wantRequests)
+			}
+		})
 	}
-
-	adapter, dialErr := dialWebSocket(context.Background(), context.Background(), s)
-	if dialErr != nil {
-		t.Fatalf("unexpected error: %v", dialErr)
-	}
-	if adapter == nil {
-		t.Fatal("expected non-nil adapter from IPv6 WS dial")
-	}
-	_ = adapter.Close()
 }
 
 func TestCloneDefaultTransport_WhenGlobalDefaultIsCustomRoundTripper(t *testing.T) {

@@ -82,7 +82,7 @@ func TestValidate_FailsWhenActivePortIsInvalid(t *testing.T) {
 	}
 }
 
-func TestValidate_AllowsWSSZeroPort(t *testing.T) {
+func TestValidate_RejectsWSSZeroPort(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.WSS
 	cfg.WSSettings = settings.Settings{
@@ -95,8 +95,8 @@ func TestValidate_AllowsWSSZeroPort(t *testing.T) {
 		MTU: settings.DefaultMTU,
 	}
 
-	if err := validate(cfg); err != nil {
-		t.Fatalf("expected WSS zero-port config to be valid, got %v", err)
+	if err := validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid Port 0") {
+		t.Fatalf("expected port 0 to be rejected for WSS protocol, got %v", err)
 	}
 }
 
@@ -346,8 +346,7 @@ func TestValidate_FailsOnNegativePort(t *testing.T) {
 	}
 }
 
-func TestValidate_WSSZeroPortRejectsNonWSS(t *testing.T) {
-	// Port 0 is only allowed for WSS, not for WS.
+func TestValidate_RejectsWSZeroPort(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.Protocol = settings.WS
 	cfg.WSSettings = settings.Settings{
