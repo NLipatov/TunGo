@@ -80,8 +80,8 @@ func (c *Client) Run(ctx context.Context) error {
 		if errors.Is(err, ErrInvalidConfiguration) {
 			return err
 		}
-		c.attemptFailover(err)
 		slog.Warn("session error, reconnecting", "err", err)
+		c.attemptFailover(err)
 		timer := time.NewTimer(reconnectInterval)
 		select {
 		case <-ctx.Done():
@@ -110,7 +110,6 @@ func (c *Client) attemptFailover(err error) {
 
 func (c *Client) runSession(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
-	defer cancel()
 	done := make(chan error)
 	go func() {
 		done <- c.runTunnel(ctx)
@@ -125,6 +124,7 @@ func (c *Client) runSession(parentCtx context.Context) error {
 		<-done //nolint:errcheck
 		return ErrResumeDetected
 	case err := <-done:
+		cancel()
 		return err
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"time"
 
+	"tungo/internal/client/packetsender"
 	udptransport "tungo/internal/transport/udp"
 )
 
@@ -52,7 +53,7 @@ func New(
 	}
 
 	udpTransport := udptransport.NewClientConn(udpConn, writeDeadline)
-	outbound := newPacketSender(udpTransport, crypto)
+	outbound := packetsender.New(udpTransport, crypto)
 	tunHandler := newTunHandler(ctx, tun, outbound, rekey, allowedSources)
 	transportHandler := newTransportHandler(ctx, udpTransport, tun, crypto, rekey, outbound)
 

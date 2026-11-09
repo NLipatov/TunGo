@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/netip"
+	"tungo/internal/client/packetsender"
 )
 
 type sender interface {
@@ -36,7 +37,7 @@ func New(
 	rekey rekeySession,
 	allowedSources map[netip.Addr]struct{},
 ) *Client {
-	outbound := newPacketSender(transport, crypto)
+	outbound := packetsender.New(transport, crypto)
 	tunHandler := newTunHandler(ctx, tun, outbound, rekey, allowedSources)
 	transportHandler := newTransportHandler(ctx, transport, tun, crypto, rekey, outbound)
 

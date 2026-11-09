@@ -1,4 +1,4 @@
-package tcp
+package packetsender
 
 import (
 	"io"
@@ -13,7 +13,7 @@ type packetSender struct {
 	mu sync.Mutex
 }
 
-func newPacketSender(writer io.Writer, crypto interface {
+func New(writer io.Writer, crypto interface {
 	Encrypt([]byte) ([]byte, error)
 }) *packetSender {
 	return &packetSender{writer: writer, crypto: crypto}
