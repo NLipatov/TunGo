@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -16,14 +17,12 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20/tcp"
 	"tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/rekey"
-	"tungo/internal/transport/host"
 	tcptransport "tungo/internal/transport/tcp"
 	"tungo/internal/transport/ws"
 	"unicode/utf8"
@@ -48,122 +47,149 @@ type rekeyV2Handshake interface {
 	FinishRekeyV2(msg2 []byte) (c2s, s2c []byte, err error)
 }
 
+const (
+	defaultTimeoutMs = 5000
+)
+
 func (c *Client) connect(
 	ctx context.Context,
-	configuration client.Configuration,
 ) (io.ReadWriteCloser, crypto, clientRekey, error) {
-	settings, err := configuration.ActiveSettings()
+	active, err := c.configurations.Active()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	deadline := time.Now().Add(time.Duration(math.Max(float64(settings.DialTimeoutMs), 5000)) * time.Millisecond)
-	connectCtx, establishCancel := context.WithDeadline(ctx, deadline)
-	defer establishCancel()
-
-	adapter, err := dial(connectCtx, ctx, settings)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", settings.Protocol, err)
-	}
-
-	return c.handshake(connectCtx, adapter, settings.Protocol, configuration)
-}
-
-func dial(
-	establishCtx, connCtx context.Context,
-	s settings.Settings,
-) (io.ReadWriteCloser, error) {
-	sources := addressSources(s.Server)
-	lastErr := fmt.Errorf("server host is empty")
-	for i, source := range sources {
-		selected := s
-		selected.Server = source
-		endpoint := net.JoinHostPort(source.Domain, strconv.Itoa(s.Port))
-		if source.Domain == "" {
-			ipVersion := 4
-			if source.IPv6 != "" {
-				ipVersion = 6
-			}
-			ap, err := resolveAddrPort(establishCtx, selected, ipVersion)
+	var errs []error
+	switch active.Protocol {
+	case settings.TCP:
+		var hosts []string
+		if active.TCPSettings.Server.Domain != "" {
+			v4s, v6s, err := c.resolveDomain(ctx, active.TCPSettings)
 			if err != nil {
-				lastErr = err
+				errs = append(errs, err)
+			}
+			for _, addr := range append(v4s, v6s...) {
+				hosts = append(hosts, addr.String())
+			}
+		}
+		hosts = append(hosts, active.TCPSettings.Server.IPv4, active.TCPSettings.Server.IPv6)
+		for _, host := range hosts {
+			if host == "" {
 				continue
 			}
-			endpoint = ap.String()
+			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.TCPSettings))
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.TCPSettings.Port))
+			conn, err := dialTCP(connectCtx, endpoint)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("unable to establish a TCP connection: %w", err))
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
+		}
+		return nil, nil, nil, errors.Join(errs...)
+	case settings.UDP:
+		var hosts []string
+		if active.UDPSettings.Server.Domain != "" {
+			v4s, v6s, err := c.resolveDomain(ctx, active.UDPSettings)
+			if err != nil {
+				errs = append(errs, err)
+			}
+			for _, addr := range append(v4s, v6s...) {
+				hosts = append(hosts, addr.String())
+			}
+		}
+		hosts = append(hosts, active.UDPSettings.Server.IPv4, active.UDPSettings.Server.IPv6)
+		for _, host := range hosts {
+			if host == "" {
+				continue
+			}
+			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.UDPSettings))
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.UDPSettings.Port))
+			conn, err := dialUDP(connectCtx, endpoint)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
+
+		}
+	case settings.WS, settings.WSS:
+		scheme := "ws"
+		if active.Protocol == settings.WSS {
+			scheme = "wss"
+		}
+		hosts := []string{
+			active.WSSettings.Server.Domain,
+			active.WSSettings.Server.IPv4,
+			active.WSSettings.Server.IPv6,
+		}
+		for _, host := range hosts {
+			if host == "" {
+				continue
+			}
+			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.WSSettings))
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.WSSettings.Port))
+			conn, err := dialWS(connectCtx, ctx, scheme, endpoint, active.WSSettings.Server.Domain)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
 		}
 
-		attemptCtx := establishCtx
-		cancel := func() {}
-		if i < len(sources)-1 {
-			timeout := dialAttemptTimeout(s)
-			if deadline, ok := establishCtx.Deadline(); ok {
-				timeout = min(timeout, time.Until(deadline)/time.Duration(len(sources)-i))
-			}
-			attemptCtx, cancel = context.WithTimeout(establishCtx, timeout)
-		}
-		var (
-			transport io.ReadWriteCloser
-			err       error
-		)
-		switch s.Protocol {
-		case settings.TCP:
-			// DialContext handles both DNS families with Happy Eyeballs.
-			transport, err = dialTCP(attemptCtx, endpoint)
-		case settings.UDP:
-			if source.Domain != "" {
-				transport, err = dialUDPDomain(attemptCtx, selected)
-			} else {
-				transport, err = dialUDP(attemptCtx, endpoint)
-			}
-		case settings.WS, settings.WSS:
-			scheme := "ws"
-			if s.Protocol == settings.WSS {
-				scheme = "wss"
-			}
-			transport, err = dialWebSocketEndpoint(attemptCtx, connCtx, scheme, endpoint, s.Server.Domain)
-		default:
-			err = fmt.Errorf("unsupported protocol: %v", s.Protocol)
-		}
-		cancel()
-		if err == nil {
-			return transport, nil
-		}
-		lastErr = err
+	default:
+		return nil, nil, nil, fmt.Errorf("unsupported protocol: %v", active.Protocol)
 	}
-	return nil, lastErr
+	return nil, nil, nil, errors.Join(errs...)
 }
 
-// addressSources orders configured sources without performing DNS queries.
-// The domain is tried with both families before the explicit fallback addresses.
-func addressSources(server settings.Host) []settings.Host {
-	var sources []settings.Host
-	if server.Domain != "" {
-		sources = append(sources, settings.Host{Domain: server.Domain})
+func (c *Client) resolveDomain(ctx context.Context, s settings.Settings) (v4 []netip.Addr, v6 []netip.Addr, err error) {
+	v4, err4 := c.lookupDomainIP(ctx, s, 4)
+	v6, err6 := c.lookupDomainIP(ctx, s, 6)
+	return v4, v6, errors.Join(err4, err6)
+}
+
+func (c *Client) deadline(s settings.Settings) time.Time {
+	return time.Now().Add(time.Duration(math.Max(float64(s.DialTimeoutMs), defaultTimeoutMs)) * time.Millisecond)
+}
+
+func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFamily int) ([]netip.Addr, error) {
+	ctx, cancel := context.WithDeadline(ctx, c.deadline(s))
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, fmt.Sprintf("ip%d", ipFamily), s.Server.Domain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve domain to ip%d %q: %w", ipFamily, s.Server.Domain, err)
 	}
-	if server.IPv6 != "" {
-		sources = append(sources, settings.Host{IPv6: server.IPv6})
-	}
-	if server.IPv4 != "" {
-		sources = append(sources, settings.Host{IPv4: server.IPv4})
-	}
-	return sources
+	return ips, nil
 }
 
 func (c *Client) handshake(
 	ctx context.Context,
 	adapter io.ReadWriteCloser,
 	protocol settings.Protocol,
-	configuration client.Configuration,
 ) (io.ReadWriteCloser, crypto, clientRekey, error) {
-	// IK handshake requires client keys
-	if len(configuration.ClientPublicKey) != 32 || len(configuration.ClientPrivateKey) != 32 {
+	configuration, err := c.configurations.Active()
+	if err != nil {
 		_ = adapter.Close()
-		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
+		return nil, nil, nil, err
 	}
-	if len(configuration.X25519PublicKey) != 32 {
-		_ = adapter.Close()
-		return nil, nil, nil, fmt.Errorf("server public key not configured (required for IK handshake)")
-	}
-
 	handshake := noise.NewIKHandshakeClient(
 		configuration.ClientPublicKey,
 		configuration.ClientPrivateKey,
@@ -176,7 +202,7 @@ func (c *Client) handshake(
 	}
 	cancelCloseOnContextDone := context.AfterFunc(ctx, closeAdapter)
 
-	if err := handshake.ClientSideHandshake(adapter); err != nil {
+	if err = handshake.ClientSideHandshake(adapter); err != nil {
 		cancelCloseOnContextDone()
 		closeAdapter()
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -188,7 +214,6 @@ func (c *Client) handshake(
 	var (
 		cr              crypto
 		epochController epochController
-		err             error
 	)
 	switch protocol {
 	case settings.UDP:
@@ -263,28 +288,7 @@ func dialUDP(
 	return conn, nil
 }
 
-const minimumDialAttemptTimeout = 2 * time.Second
-
-func dialUDPDomain(ctx context.Context, s settings.Settings) (io.ReadWriteCloser, error) {
-	var lastErr error
-	for _, ipVersion := range []int{6, 4} {
-		ap, err := resolveAddrPort(ctx, s, ipVersion)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		// UDP dial does not check server reachability. Only a local error
-		// allows another address to be tried before the protocol handshake.
-		transport, err := dialUDP(ctx, ap.String())
-		if err == nil {
-			return transport, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
-}
-
-func dialWebSocketEndpoint(
+func dialWS(
 	establishCtx, connCtx context.Context,
 	scheme, endpoint, serverName string,
 ) (io.ReadWriteCloser, error) {
@@ -590,18 +594,6 @@ func handshakeWebSocketTLS(ctx context.Context, raw net.Conn, host string, roots
 	return conn, nil
 }
 
-func dialAttemptTimeout(s settings.Settings) time.Duration {
-	timeout := time.Duration(s.DialTimeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	attempt := timeout / 2
-	if attempt < minimumDialAttemptTimeout {
-		return minimumDialAttemptTimeout
-	}
-	return attempt
-}
-
 func cloneDefaultTransport() *http.Transport {
 	if base, ok := http.DefaultTransport.(*http.Transport); ok && base != nil {
 		return base.Clone()
@@ -614,40 +606,6 @@ func cloneDefaultTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-}
-
-func resolveAddrPort(ctx context.Context, s settings.Settings, ipVersion int) (netip.AddrPort, error) {
-	var (
-		raw string
-		err error
-	)
-	switch ipVersion {
-	case 4:
-		raw, err = host.ResolveIPv4(ctx, s.Server)
-	case 6:
-		raw, err = host.ResolveIPv6(ctx, s.Server)
-	default:
-		return netip.AddrPort{}, fmt.Errorf("unsupported IP version: %d", ipVersion)
-	}
-	if err != nil {
-		return netip.AddrPort{}, err
-	}
-
-	ip, parseErr := netip.ParseAddr(raw)
-	if parseErr != nil {
-		return netip.AddrPort{}, parseErr
-	}
-	isIPv4 := ip.Unmap().Is4()
-	if ipVersion == 6 && isIPv4 {
-		return netip.AddrPort{}, fmt.Errorf("resolved IPv4 %q, expected IPv6", raw)
-	}
-	if ipVersion == 4 && !isIPv4 {
-		return netip.AddrPort{}, fmt.Errorf("resolved IPv6 %q, expected IPv4", raw)
-	}
-	if isIPv4 {
-		ip = ip.Unmap()
-	}
-	return netip.ParseAddrPort(net.JoinHostPort(ip.String(), strconv.Itoa(s.Port)))
 }
 
 func parseEndpointAddrPort(endpoint string) netip.AddrPort {

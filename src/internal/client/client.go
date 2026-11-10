@@ -158,7 +158,7 @@ func (c *Client) runTunnel(
 			c.tunManager = nil
 		}
 	}()
-	transport, crypto, rekey, err := c.connect(ctx, *configuration)
+	transport, crypto, rekey, err := c.connect(ctx)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/servicepacket"
 	transport "tungo/internal/transport/tcp"
+	transportws "tungo/internal/transport/ws"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -64,32 +66,8 @@ func mustHost(raw string) settings.Host {
 	return settings.Host{IPv6: ip.String()}
 }
 
-// mkTCPSettings returns minimal TCP settings for a given port.
-func mkTCPSettings(port int) settings.Settings {
-	return settings.Settings{
-		Network: settings.Network{
-			Server: mustHost("127.0.0.1"),
-			Port:   port,
-		},
-		Protocol:      settings.TCP,
-		DialTimeoutMs: 100,
-	}
-}
-
-// mkUDPSettings returns minimal UDP settings for a given port.
-func mkUDPSettings(port int) settings.Settings {
-	return settings.Settings{
-		Network: settings.Network{
-			Server: mustHost("127.0.0.1"),
-			Port:   port,
-		},
-		Protocol:      settings.UDP,
-		DialTimeoutMs: 100,
-	}
-}
-
-// mkWSSettings returns minimal WS/WSS settings.
-func mkWSSettings(host string, port int, proto settings.Protocol) settings.Settings {
+// connectionTestSettings returns endpoint settings; configuration helpers supply the TUN defaults.
+func connectionTestSettings(host string, port int, proto settings.Protocol) settings.Settings {
 	return settings.Settings{
 		Network: settings.Network{
 			Server: mustHost(host),
@@ -101,7 +79,11 @@ func mkWSSettings(host string, port int, proto settings.Protocol) settings.Setti
 }
 
 func testConfigurationWithSettings(selected settings.Settings) clientconfig.Configuration {
-	conf := clientconfig.Configuration{ClientID: 1, Protocol: selected.Protocol}
+	conf := clientTestConfiguration()
+	selected.TunName = conf.TCPSettings.TunName
+	selected.IPv4Subnet = conf.TCPSettings.IPv4Subnet
+	selected.MTU = conf.TCPSettings.MTU
+	conf.Protocol = selected.Protocol
 	switch selected.Protocol {
 	case settings.UDP:
 		conf.UDPSettings = selected
@@ -111,6 +93,175 @@ func testConfigurationWithSettings(selected settings.Settings) clientconfig.Conf
 		conf.WSSettings = selected
 	}
 	return conf
+}
+
+func connectionTestClient(t *testing.T, configuration clientconfig.Configuration) *Client {
+	t.Helper()
+	client := newTestClient(t)
+	importClientConfiguration(t, client.configurations, "connection", configuration)
+	if err := client.configurations.Activate("connection"); err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
+func connectionTestHandshake(t *testing.T, s settings.Settings) (clientconfig.Configuration, *noise.IKHandshake) {
+	t.Helper()
+	deriver := &keys.DefaultKeyDeriver{}
+	serverPublic, serverPrivate, err := deriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPublic, clientPrivate, err := deriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := testConfigurationWithSettings(s)
+	configuration.ClientPublicKey = clientPublic
+	configuration.ClientPrivateKey = clientPrivate[:]
+	configuration.X25519PublicKey = serverPublic
+	server := noise.NewIKHandshakeServer(serverPublic, serverPrivate[:],
+		newTestAllowedPeers([]testPeer{{PublicKey: clientPublic, Enabled: true, ClientID: 1}}), nil, nil)
+	return configuration, server
+}
+
+// The transport stays open for one echo after the handshake. This verifies that
+// connect's deferred cancellation does not close an established connection.
+func connectionTestEcho(t *testing.T, handshake *noise.IKHandshake, conn io.ReadWriteCloser) {
+	t.Helper()
+	if _, err := handshake.ServerSideHandshake(conn); err != nil {
+		t.Errorf("server handshake: %v", err)
+		return
+	}
+	buf := make([]byte, settings.DefaultEthernetMTU)
+	if n, err := conn.Read(buf); err == nil {
+		_, _ = conn.Write(buf[:n])
+	}
+}
+
+func connectionTestWSHandler(t *testing.T, ctx context.Context, handle func(io.ReadWriteCloser)) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		stop := context.AfterFunc(ctx, func() { _ = conn.CloseNow() })
+		defer stop()
+		framed, err := transport.NewFramedConn(transportws.NewConn(ctx, conn, nil, nil),
+			settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		handle(framed)
+	}
+}
+
+// A single peer is sufficient for these local UDP handshake fixtures.
+type connectionTestUDPConn struct {
+	*net.UDPConn
+	peer  *net.UDPAddr
+	first []byte
+}
+
+func (c *connectionTestUDPConn) Read(p []byte) (int, error) {
+	if c.first != nil {
+		n := copy(p, c.first)
+		c.first = nil
+		return n, nil
+	}
+	n, peer, err := c.ReadFromUDP(p)
+	if err == nil {
+		c.peer = peer
+	}
+	return n, err
+}
+
+func (c *connectionTestUDPConn) Write(p []byte) (int, error) {
+	return c.WriteToUDP(p, c.peer)
+}
+
+func connectionTestListen(t *testing.T, protocol settings.Protocol, host string, port int, handle func(io.ReadWriteCloser)) int {
+	t.Helper()
+	endpoint := net.JoinHostPort(host, strconv.Itoa(port))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	if protocol == settings.UDP {
+		addr, err := net.ResolveUDPAddr("udp", endpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			cancel()
+			if host == "::1" {
+				t.Skipf("IPv6 loopback unavailable: %v", err)
+			}
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { cancel(); _ = conn.Close(); <-done })
+		go func() {
+			defer close(done)
+			buf := make([]byte, settings.DefaultEthernetMTU)
+			n, peer, err := conn.ReadFromUDP(buf)
+			if err == nil {
+				handle(&connectionTestUDPConn{UDPConn: conn, peer: peer, first: buf[:n]})
+			}
+		}()
+		return conn.LocalAddr().(*net.UDPAddr).Port
+	}
+	listener, err := net.Listen("tcp", endpoint)
+	if err != nil {
+		cancel()
+		if host == "::1" {
+			t.Skipf("IPv6 loopback unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if protocol == settings.WS {
+		server := httptest.NewUnstartedServer(connectionTestWSHandler(t, ctx, handle))
+		_ = server.Listener.Close()
+		server.Listener = listener
+		server.Start()
+		t.Cleanup(func() { cancel(); server.Close() })
+		return listener.Addr().(*net.TCPAddr).Port
+	}
+	t.Cleanup(func() { cancel(); _ = listener.Close(); <-done })
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+		defer stop()
+		framed, err := transport.NewFramedConn(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		handle(framed)
+	}()
+	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func connectionTestRoundTrip(t *testing.T, conn io.ReadWriteCloser) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping" {
+		t.Fatalf("echo = %q, %v; want ping", buf, err)
+	}
 }
 
 // ConnectionFactoryMockWSServer spins up a barebones WS echo server at /ws.
@@ -155,29 +306,6 @@ func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shut
 }
 
 // ---- tests ----
-
-func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
-	t.Parallel()
-	// Out-of-range port should fail during addr:port parsing.
-	client := &Client{}
-	configuration := testConfigurationWithSettings(mkTCPSettings(70000))
-
-	_, _, _, err := client.connect(context.Background(), configuration)
-	if err == nil {
-		t.Fatalf("expected parse error for bad port")
-	}
-}
-
-func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
-	t.Parallel()
-	client := &Client{}
-	configuration := testConfigurationWithSettings(mkUDPSettings(70000))
-
-	_, _, _, err := client.connect(context.Background(), configuration)
-	if err == nil {
-		t.Fatalf("expected parse error for bad UDP port")
-	}
-}
 
 func TestDialTCP_Success(t *testing.T) {
 	t.Parallel()
@@ -249,14 +377,14 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	_ = conn.Close()
 }
 
-func TestDialWebSocketEndpoint_Success(t *testing.T) {
+func TestDialWS_Success(t *testing.T) {
 	t.Parallel()
 	host, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port), "")
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port), "")
 	if err != nil {
-		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
+		t.Fatalf("dialWS failed: %v", err)
 	}
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
@@ -267,14 +395,14 @@ func TestDialWebSocketEndpoint_Success(t *testing.T) {
 	_ = adapter.Close()
 }
 
-func TestDialWebSocketEndpoint_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
+func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 	t.Parallel()
 	_, port, shutdown := ConnectionFactoryMockWSServer(t)
 	defer shutdown()
 
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port), "")
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port), "")
 	if err != nil {
-		t.Fatalf("dialWebSocketEndpoint failed: %v", err)
+		t.Fatalf("dialWS failed: %v", err)
 	}
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
@@ -286,10 +414,10 @@ func TestDialWebSocketEndpoint_Success_DomainEndpointHasRemoteAddr(t *testing.T)
 	_ = adapter.Close()
 }
 
-func TestDialWebSocketEndpoint_Error_NoServer(t *testing.T) {
+func TestDialWS_Error_NoServer(t *testing.T) {
 	t.Parallel()
 	// Use a port with no WS server
-	adapter, err := dialWebSocketEndpoint(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
+	adapter, err := dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
 	if err == nil {
 		_ = adapter.Close()
 		t.Fatalf("expected error when no WS server is listening")
@@ -355,60 +483,6 @@ func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
 		}
 	default:
 		t.Fatal("server did not receive ClientHello")
-	}
-}
-
-func TestEstablishConnection_WSS_DialError_IsWrapped(t *testing.T) {
-	t.Parallel()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	client := &Client{}
-	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", port, settings.WSS))
-	_, _, _, err = client.connect(t.Context(), configuration)
-	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
-		t.Fatalf("expected wrapped WS connect error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
-	t.Parallel()
-	client := &Client{}
-	configuration := testConfigurationWithSettings(settings.Settings{Protocol: 999})
-	_, _, _, err := client.connect(context.Background(), configuration)
-	if err == nil {
-		t.Fatalf("expected error for unsupported protocol")
-	}
-}
-
-// Verifies the error wrapping path for TCP.
-func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
-	t.Parallel()
-	client := &Client{}
-	configuration := testConfigurationWithSettings(mkTCPSettings(1)) // likely closed → Dial error
-
-	_, _, _, err := client.connect(context.Background(), configuration)
-	if err == nil {
-		t.Fatalf("expected dial error")
-	}
-	if !strings.Contains(err.Error(), "unable to establish TCP connection") {
-		t.Fatalf("expected wrapped TCP dial error, got: %v", err)
-	}
-}
-
-// Verifies the error wrapping path for WS with provided Host fallback.
-func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
-	t.Parallel()
-	client := &Client{}
-	configuration := testConfigurationWithSettings(mkWSSettings("127.0.0.1", 9, settings.WS))
-	_, _, _, err := client.connect(context.Background(), configuration)
-	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
-		t.Fatalf("expected wrapped WS dial error, got: %v", err)
 	}
 }
 
@@ -509,100 +583,45 @@ func (t *cfUnitNoDeadlineTransport) Close() error {
 	return nil
 }
 
-func TestEstablishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T) {
-	client := &Client{}
-	configuration := clientconfig.Configuration{
-		ClientPublicKey:  []byte{1, 2, 3}, // invalid length
-		ClientPrivateKey: []byte{4, 5, 6}, // invalid length
-	}
+func TestHandshake_ConfigurationErrorClosesAdapter(t *testing.T) {
+	client := newTestClient(t)
 	tr := &cfUnitTransport{}
-
-	_, _, _, err := client.handshake(
-		context.Background(),
-		tr,
-		settings.TCP,
-		configuration,
-	)
-	if err == nil || !strings.Contains(err.Error(), "client keys not configured") {
-		t.Fatalf("expected client keys error, got %v", err)
+	conn, crypto, rekey, err := client.handshake(t.Context(), tr, settings.TCP)
+	if err == nil || conn != nil || crypto != nil || rekey != nil {
+		t.Fatalf("handshake with no configuration: conn=%v crypto=%v rekey=%v err=%v", conn, crypto, rekey, err)
 	}
 	if !tr.closed {
-		t.Fatal("expected adapter to be closed on missing keys")
+		t.Fatal("configuration error did not close the adapter")
 	}
 }
 
-func TestEstablishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *testing.T) {
-	clientPub := make([]byte, 32)
-	clientPriv := make([]byte, 32)
-
-	client := &Client{}
-	configuration := clientconfig.Configuration{
-		ClientPublicKey:  clientPub,
-		ClientPrivateKey: clientPriv,
-		X25519PublicKey:  []byte{7, 8, 9}, // invalid length
-	}
-	tr := &cfUnitTransport{}
-
-	_, _, _, err := client.handshake(
-		context.Background(),
-		tr,
-		settings.TCP,
-		configuration,
-	)
-	if err == nil || !strings.Contains(err.Error(), "server public key not configured") {
-		t.Fatalf("expected server public key error, got %v", err)
-	}
-	if !tr.closed {
-		t.Fatal("expected adapter to be closed on missing server public key")
-	}
-}
-
-func TestEstablishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
-	clientPub := make([]byte, 32)
-	clientPriv := make([]byte, 32)
-	serverPub := make([]byte, 32)
-	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
-
-	client := &Client{}
-	configuration := clientconfig.Configuration{
-		ClientPublicKey:  clientPub,
-		ClientPrivateKey: clientPriv,
-		X25519PublicKey:  serverPub,
-	}
+func TestHandshake_HandshakeError_ClosesAdapter(t *testing.T) {
+	configuration, _ := connectionTestHandshake(t, connectionTestSettings("127.0.0.1", 8080, settings.TCP))
+	client := connectionTestClient(t, configuration)
 	tr := &cfUnitTransport{readErr: io.ErrUnexpectedEOF}
 
 	_, _, _, err := client.handshake(
 		context.Background(),
 		tr,
 		settings.TCP,
-		configuration,
 	)
-	if err == nil {
-		t.Fatal("expected handshake error")
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("handshake error = %v, want underlying read error", err)
 	}
 	if !tr.closed {
 		t.Fatal("expected adapter to be closed on handshake error")
 	}
 }
 
-func TestEstablishSecuredConnection_CancelClosesAdapter(t *testing.T) {
-	clientPub := make([]byte, 32)
-	clientPriv := make([]byte, 32)
-	serverPub := make([]byte, 32)
-	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
-
-	client := &Client{}
-	configuration := clientconfig.Configuration{
-		ClientPublicKey:  clientPub,
-		ClientPrivateKey: clientPriv,
-		X25519PublicKey:  serverPub,
-	}
+func TestHandshake_CancelClosesAdapter(t *testing.T) {
+	configuration, _ := connectionTestHandshake(t, connectionTestSettings("127.0.0.1", 8080, settings.TCP))
+	client := connectionTestClient(t, configuration)
 	transport := newCFBlockingTransport()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, _, err := client.handshake(ctx, transport, settings.TCP, configuration)
+		_, _, _, err := client.handshake(ctx, transport, settings.TCP)
 		errCh <- err
 	}()
 
@@ -653,36 +672,6 @@ func TestConnectionFactoryUnit_WithReadDeadline_WithDeadlineSupport_WrapsAndSets
 	}
 }
 
-func TestEstablishConnection_ErrorBranches(t *testing.T) {
-	t.Run("unsupported protocol", func(t *testing.T) {
-		client := &Client{}
-		configuration := testConfigurationWithSettings(settings.Settings{Protocol: settings.UNKNOWN})
-		_, _, _, err := client.connect(context.Background(), configuration)
-		if err == nil {
-			t.Fatal("expected unsupported protocol error")
-		}
-	})
-
-	t.Run("tcp parse addr error", func(t *testing.T) {
-		client := &Client{}
-		configuration := testConfigurationWithSettings(mkTCPSettings(70000))
-		_, _, _, err := client.connect(context.Background(), configuration)
-		if err == nil {
-			t.Fatal("expected parse error")
-		}
-	})
-
-	t.Run("udp parse addr error", func(t *testing.T) {
-		client := &Client{}
-		configuration := testConfigurationWithSettings(mkUDPSettings(70000))
-		_, _, _, err := client.connect(context.Background(), configuration)
-		if err == nil {
-			t.Fatal("expected parse error")
-		}
-	})
-
-}
-
 func TestDialErrorBranches(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -705,32 +694,17 @@ func TestDialErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("dialWebSocketEndpoint error", func(t *testing.T) {
-		_, err := dialWebSocketEndpoint(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
+	t.Run("dialWS error", func(t *testing.T) {
+		_, err := dialWS(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"), "")
 		if err == nil {
-			t.Fatal("expected dialWebSocketEndpoint error")
+			t.Fatal("expected dialWS error")
 		}
 	})
 }
 
-func TestEstablishSecuredConnection_Success(t *testing.T) {
-	deriver := &keys.DefaultKeyDeriver{}
-
-	serverPub, serverPrivArr, err := deriver.GenerateX25519KeyPair()
-	if err != nil {
-		t.Fatalf("server keygen failed: %v", err)
-	}
-	clientPub, clientPrivArr, err := deriver.GenerateX25519KeyPair()
-	if err != nil {
-		t.Fatalf("client keygen failed: %v", err)
-	}
-
-	client := &Client{}
-	configuration := clientconfig.Configuration{
-		ClientPublicKey:  clientPub,
-		ClientPrivateKey: clientPrivArr[:],
-		X25519PublicKey:  serverPub,
-	}
+func TestHandshake_Success(t *testing.T) {
+	configuration, serverHS := connectionTestHandshake(t, connectionTestSettings("127.0.0.1", 8080, settings.TCP))
+	client := connectionTestClient(t, configuration)
 
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
@@ -745,25 +719,6 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 		t.Fatalf("server framing adapter failed: %v", err)
 	}
 
-	cookieManager, err := noise.NewCookieManager()
-	if err != nil {
-		t.Fatalf("cookie manager failed: %v", err)
-	}
-	allowedPeers := []testPeer{
-		{
-			PublicKey: clientPub,
-			Enabled:   true,
-			ClientID:  1,
-		},
-	}
-	serverHS := noise.NewIKHandshakeServer(
-		serverPub,
-		serverPrivArr[:],
-		newTestAllowedPeers(allowedPeers),
-		cookieManager,
-		noise.NewLoadMonitor(10000),
-	)
-
 	serverErrCh := make(chan error, 1)
 	go func() {
 		_, serr := serverHS.ServerSideHandshake(serverAdapter)
@@ -774,7 +729,6 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 		context.Background(),
 		clientAdapter,
 		settings.TCP,
-		configuration,
 	)
 	if err != nil {
 		t.Fatalf("establishSecuredConnection failed: %v", err)
@@ -797,291 +751,7 @@ func TestEstablishSecuredConnection_Success(t *testing.T) {
 	}
 }
 
-func TestResolveAddrPort(t *testing.T) {
-	t.Parallel()
-
-	s := mkTCPSettings(443)
-	s.Server = settings.Host{IPv6: "2001:db8::1"}
-	ap, err := resolveAddrPort(t.Context(), s, 6)
-	if err != nil {
-		t.Fatalf("resolveAddrPort: %v", err)
-	}
-	if got, want := ap.String(), "[2001:db8::1]:443"; got != want {
-		t.Fatalf("resolveAddrPort = %q, want %q", got, want)
-	}
-	if _, err := resolveAddrPort(t.Context(), s, 5); err == nil {
-		t.Fatal("expected unsupported IP version error")
-	}
-	s.Server.IPv6 = "invalid-ipv6"
-	if _, err := resolveAddrPort(t.Context(), s, 6); err == nil {
-		t.Fatal("expected invalid IP error")
-	}
-	s.Server.IPv6 = "2001:db8::1"
-	for _, port := range []int{-1, 65536, 70000} {
-		s.Port = port
-		if ap, err := resolveAddrPort(t.Context(), s, 6); err == nil {
-			t.Fatalf("out-of-range port %d became %v without an error", port, ap)
-		}
-	}
-}
-
-func TestDialAttemptTimeout_FromDialTimeout(t *testing.T) {
-	t.Parallel()
-
-	if got := dialAttemptTimeout(settings.Settings{}); got != 2500*time.Millisecond {
-		t.Fatalf("unexpected default attempt timeout: got %v want %v", got, 2500*time.Millisecond)
-	}
-	if got := dialAttemptTimeout(settings.Settings{DialTimeoutMs: 1000}); got != 2*time.Second {
-		t.Fatalf("unexpected clamped attempt timeout for short dial timeout: got %v", got)
-	}
-	if got := dialAttemptTimeout(settings.Settings{DialTimeoutMs: 12000}); got != 6*time.Second {
-		t.Fatalf("unexpected attempt timeout: got %v want 6s", got)
-	}
-}
-
-func TestDialUsesIPv6BeforeIPv4(t *testing.T) {
-	t.Parallel()
-
-	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	defer func() { _ = ipv6Listener.Close() }()
-	port := ipv6Listener.Addr().(*net.TCPAddr).Port
-	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatalf("listen on IPv4: %v", err)
-	}
-	defer func() { _ = ipv4Listener.Close() }()
-
-	for _, tc := range []struct {
-		name     string
-		protocol settings.Protocol
-		server   settings.Host
-		wantIP   string
-		wantErr  bool
-	}{
-		{
-			name:     "TCP probes IPv6 first",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "UDP starts with IPv6",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "UDP uses IPv6 when IPv4 is invalid",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "UDP uses IPv4 when IPv6 is invalid",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "invalid-ipv6"},
-			wantIP:   "127.0.0.1",
-		},
-		{
-			name:     "UDP uses the only IPv4 address",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "127.0.0.1"},
-			wantIP:   "127.0.0.1",
-		},
-		{
-			name:     "UDP uses the only IPv6 address",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "UDP rejects IPv4 in the IPv6 field",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "127.0.0.1"},
-			wantErr:  true,
-		},
-		{
-			name:     "UDP rejects IPv6 in the IPv4 field",
-			protocol: settings.UDP,
-			server:   settings.Host{IPv4: "::1", IPv6: "invalid-ipv6"},
-			wantErr:  true,
-		},
-		{
-			name:     "TCP uses IPv6 when IPv4 is invalid",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "TCP uses IPv4 when IPv6 is invalid",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv4: "127.0.0.1", IPv6: "invalid-ipv6"},
-			wantIP:   "127.0.0.1",
-		},
-		{
-			name:     "TCP uses the only IPv6 address",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv6: "::1"},
-			wantIP:   "::1",
-		},
-		{
-			name:     "TCP rejects IPv4 in the IPv6 field",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv4: "invalid-ipv4", IPv6: "127.0.0.1"},
-			wantErr:  true,
-		},
-		{
-			name:     "TCP rejects IPv6 in the IPv4 field",
-			protocol: settings.TCP,
-			server:   settings.Host{IPv4: "::1", IPv6: "invalid-ipv6"},
-			wantErr:  true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s := settings.Settings{
-				Network: settings.Network{
-					Server: tc.server,
-					Port:   port,
-				},
-				Protocol: tc.protocol,
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-			defer cancel()
-			conn, err := dial(ctx, ctx, s)
-			if tc.wantErr {
-				if conn != nil {
-					_ = conn.Close()
-					t.Fatal("dial unexpectedly returned a connection")
-				}
-				if err == nil {
-					t.Fatal("expected address family error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("dial: %v", err)
-			}
-			defer func() { _ = conn.Close() }()
-			if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
-				t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
-			}
-		})
-	}
-}
-
-func TestDialTCPUsesIPv4AfterIPv6Refusal(t *testing.T) {
-	t.Parallel()
-
-	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	defer func() { _ = ipv6Listener.Close() }()
-	port := ipv6Listener.Addr().(*net.TCPAddr).Port
-	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatalf("listen on IPv4: %v", err)
-	}
-	defer func() { _ = ipv4Listener.Close() }()
-	if err := ipv6Listener.Close(); err != nil {
-		t.Fatalf("close IPv6 listener: %v", err)
-	}
-
-	s := mkTCPSettings(port)
-	s.Server.IPv6 = "::1"
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	conn, err := dial(ctx, ctx, s)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr("127.0.0.1") {
-		t.Fatalf("remote address = %v, %v; want 127.0.0.1", got, err)
-	}
-}
-
-func TestDialTCPReturnsIPv4DialError(t *testing.T) {
-	t.Parallel()
-
-	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	defer func() { _ = ipv6Listener.Close() }()
-	port := ipv6Listener.Addr().(*net.TCPAddr).Port
-	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatalf("reserve IPv4 endpoint: %v", err)
-	}
-	defer func() { _ = ipv4Listener.Close() }()
-	if err := ipv6Listener.Close(); err != nil {
-		t.Fatalf("close IPv6 listener: %v", err)
-	}
-	if err := ipv4Listener.Close(); err != nil {
-		t.Fatalf("close IPv4 listener: %v", err)
-	}
-
-	s := mkTCPSettings(port)
-	s.Server.IPv6 = "::1"
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	conn, err := dial(ctx, ctx, s)
-	if conn != nil {
-		_ = conn.Close()
-		t.Fatal("dial unexpectedly succeeded")
-	}
-	var opErr *net.OpError
-	if !errors.As(err, &opErr) || opErr.Addr == nil {
-		t.Fatalf("dial error = %v, want an endpoint-specific dial error", err)
-	}
-	want := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(port))
-	if got := parseNetAddrPort(opErr.Addr); got != want {
-		t.Fatalf("dial error endpoint = %v, want %v", got, want)
-	}
-}
-
-func TestDialTCPReturnsIPv4ResolutionError(t *testing.T) {
-	t.Parallel()
-
-	s := mkTCPSettings(443)
-	s.Server = settings.Host{IPv4: "invalid-ipv4", IPv6: "invalid-ipv6"}
-	_, wantErr := netip.ParseAddr(s.Server.IPv4)
-	_, err := dial(t.Context(), t.Context(), s)
-	if err == nil || !strings.Contains(err.Error(), wantErr.Error()) {
-		t.Fatalf("dial error = %v, want IPv4 address error %v", err, wantErr)
-	}
-}
-
-func TestDialUDPReturnsIPv4DialError(t *testing.T) {
-	t.Parallel()
-
-	s := mkUDPSettings(9)
-	s.Server.IPv6 = "::1"
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel() // Make both dial attempts fail without relying on network routing.
-	conn, err := dial(ctx, ctx, s)
-	if conn != nil {
-		_ = conn.Close()
-		t.Fatal("dial unexpectedly succeeded")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("dial error = %v, want context.Canceled", err)
-	}
-	var opErr *net.OpError
-	if !errors.As(err, &opErr) || opErr.Addr == nil {
-		t.Fatalf("dial error = %v, want an endpoint-specific dial error", err)
-	}
-	want := netip.MustParseAddrPort("127.0.0.1:9")
-	if got := parseNetAddrPort(opErr.Addr); got != want {
-		t.Fatalf("dial error endpoint = %v, want %v", got, want)
-	}
-}
-
-func connectionTestDNS(t *testing.T, ipv4, ipv6 string) func() []dnsmessage.Type {
+func connectionTestDNS(t *testing.T, addresses ...string) func() []dnsmessage.Type {
 	t.Helper()
 	dns, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
@@ -1117,25 +787,21 @@ func connectionTestDNS(t *testing.T, ipv4, ipv6 string) func() []dnsmessage.Type
 				},
 				Questions: request.Questions,
 			}
-			var body dnsmessage.ResourceBody
-			switch question.Type {
-			case dnsmessage.TypeAAAA:
-				if ipv6 != "" {
-					body = &dnsmessage.AAAAResource{AAAA: netip.MustParseAddr(ipv6).As16()}
+			for _, raw := range addresses {
+				addr := netip.MustParseAddr(raw)
+				var body dnsmessage.ResourceBody
+				switch {
+				case question.Type == dnsmessage.TypeA && addr.Is4():
+					body = &dnsmessage.AResource{A: addr.As4()}
+				case question.Type == dnsmessage.TypeAAAA && addr.Is6():
+					body = &dnsmessage.AAAAResource{AAAA: addr.As16()}
 				}
-			case dnsmessage.TypeA:
-				if ipv4 != "" {
-					body = &dnsmessage.AResource{A: netip.MustParseAddr(ipv4).As4()}
+				if body != nil {
+					response.Answers = append(response.Answers, dnsmessage.Resource{
+						Header: dnsmessage.ResourceHeader{Name: question.Name, Type: question.Type, Class: dnsmessage.ClassINET},
+						Body:   body,
+					})
 				}
-			default:
-				t.Errorf("unexpected DNS question: %v", question.Type)
-				return
-			}
-			if body != nil {
-				response.Answers = []dnsmessage.Resource{{
-					Header: dnsmessage.ResourceHeader{Name: question.Name, Type: question.Type, Class: dnsmessage.ClassINET},
-					Body:   body,
-				}}
 			}
 			packet, err := response.Pack()
 			if err != nil {
@@ -1160,271 +826,320 @@ func connectionTestDNS(t *testing.T, ipv4, ipv6 string) func() []dnsmessage.Type
 	}
 }
 
-func TestDialAddressSourcePriority(t *testing.T) {
-	// These subtests replace DNS and HTTP defaults; keep them sequential.
+func TestConnect_ConfigurationError(t *testing.T) {
+	client := newTestClient(t)
+	conn, crypto, rekey, err := client.connect(t.Context())
+	if err == nil || conn != nil || crypto != nil || rekey != nil {
+		t.Fatalf("connect with no configuration: conn=%v crypto=%v rekey=%v err=%v", conn, crypto, rekey, err)
+	}
+}
+
+func TestConnect_DialErrorsPreserveCause(t *testing.T) {
 	proxyTestTransport(t, nil, nil)
-	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.WS, settings.WSS} {
 		t.Run(protocol.String(), func(t *testing.T) {
-			for _, tc := range []struct {
-				name    string
-				dnsIPv4 string
-				dnsIPv6 string
-				wantIP  string
-			}{
-				{"domain before explicit addresses", "127.0.0.1", "", "127.0.0.1"},
-				{"IPv6 after DNS failure", "", "", "::1"},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-					if err != nil {
-						t.Skipf("IPv6 loopback unavailable: %v", err)
-					}
-					t.Cleanup(func() { _ = ipv6Listener.Close() })
-					port := ipv6Listener.Addr().(*net.TCPAddr).Port
-					ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-					if err != nil {
-						t.Fatal(err)
-					}
-					t.Cleanup(func() { _ = ipv4Listener.Close() })
-					for _, listener := range []net.Listener{ipv6Listener, ipv4Listener} {
-						server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-							conn, err := websocket.Accept(w, r, nil)
-							if err == nil {
-								_ = conn.CloseNow()
-							}
-						})}
-						go func() { _ = server.Serve(listener) }()
-						t.Cleanup(func() { _ = server.Close() })
-					}
-					queries := connectionTestDNS(t, tc.dnsIPv4, tc.dnsIPv6)
-					s := settings.Settings{
-						Network: settings.Network{
-							Server: settings.Host{Domain: "dial-source.test.", IPv4: "127.0.0.2", IPv6: "::1"},
-							Port:   port,
-						},
-						Protocol: protocol,
-					}
-					ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-					defer cancel()
-					conn, err := dial(ctx, ctx, s)
-					if err != nil {
-						t.Fatalf("dial: %v", err)
-					}
-					defer func() { _ = conn.Close() }()
-					if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
-						t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
-					}
-					gotQueries := queries()
-					slices.Sort(gotQueries)
-					if want := []dnsmessage.Type{dnsmessage.TypeA, dnsmessage.TypeAAAA}; !slices.Equal(gotQueries, want) {
-						t.Fatalf("DNS queries = %v, want %v", gotQueries, want)
-					}
-				})
-			}
-		})
-	}
-}
-
-func TestDialReservesTimeForIPFallback(t *testing.T) {
-	proxyTestTransport(t, nil, nil)
-	connectionTestDNS(t, "127.0.0.1", "")
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-	if err != nil {
-		t.Skipf("IPv6 loopback unavailable: %v", err)
-	}
-	t.Cleanup(func() { _ = ipv6Listener.Close() })
-	port := ipv6Listener.Addr().(*net.TCPAddr).Port
-	ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ipv4Listener.Close() })
-	domainCancelled := make(chan struct{})
-	domainServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-		close(domainCancelled)
-	})}
-	go func() { _ = domainServer.Serve(ipv4Listener) }()
-	t.Cleanup(func() { _ = domainServer.Close() })
-	fallbackServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err == nil {
-			_ = conn.CloseNow()
-		}
-	})}
-	go func() { _ = fallbackServer.Serve(ipv6Listener) }()
-	t.Cleanup(func() { _ = fallbackServer.Close() })
-	s := mkWSSettings("dial-budget.test.", port, settings.WS)
-	s.Server.IPv6 = "::1"
-	conn, err := dial(ctx, ctx, s)
-	if err != nil {
-		t.Fatalf("fallback: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr("::1") {
-		t.Fatalf("fallback address = %v, %v, want ::1", got, err)
-	}
-	select {
-	case <-domainCancelled:
-	case <-ctx.Done():
-		t.Fatal("the stalled domain attempt was not closed before fallback")
-	}
-}
-
-func TestDialTCPDomainSucceeds(t *testing.T) {
-	t.Parallel()
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen tcp: %v", err)
-	}
-	defer func() { _ = ln.Close() }()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if conn, acceptErr := ln.Accept(); acceptErr == nil {
-			_ = conn.Close()
-		}
-	}()
-
-	port := ln.Addr().(*net.TCPAddr).Port
-	s := settings.Settings{
-		Network: settings.Network{
-			Server: mustHost("localhost"),
-			Port:   port,
-		},
-		Protocol: settings.TCP,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	conn, dialErr := dial(ctx, ctx, s)
-	if dialErr != nil {
-		t.Fatalf("expected domain dial success, got %v", dialErr)
-	}
-	_ = conn.Close()
-	<-done
-}
-
-func TestDialWebSocketAddressFallback(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name         string
-		server       settings.Host
-		rejectIPv6   bool
-		wantIP       string
-		wantRequests []string
-	}{
-		{
-			name: "IPv6 first", server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			wantIP: "::1", wantRequests: []string{"IPv6"},
-		},
-		{
-			name: "IPv4 after IPv6 upgrade rejection", server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
-			rejectIPv6: true, wantIP: "127.0.0.1", wantRequests: []string{"IPv6", "IPv4"},
-		},
-		{
-			name: "IPv6 only", server: settings.Host{IPv6: "::1"},
-			wantIP: "::1", wantRequests: []string{"IPv6"},
-		},
-		{
-			name: "IPv6 only rejection is not retried", server: settings.Host{IPv6: "::1"},
-			rejectIPv6: true, wantRequests: []string{"IPv6"},
-		},
-		{
-			name: "IPv4 only", server: settings.Host{IPv4: "127.0.0.1"},
-			wantIP: "127.0.0.1", wantRequests: []string{"IPv4"},
-		},
-		{
-			name: "IPv6 field rejects IPv4", server: settings.Host{IPv6: "127.0.0.1"},
-		},
-		{
-			name: "IPv4 field rejects IPv6", server: settings.Host{IPv4: "::1"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-			defer cancel()
-			ipv6Listener, err := net.Listen("tcp6", "[::1]:0")
-			if err != nil {
-				t.Skipf("IPv6 loopback unavailable: %v", err)
-			}
-			t.Cleanup(func() { _ = ipv6Listener.Close() })
-			port := ipv6Listener.Addr().(*net.TCPAddr).Port
-			ipv4Listener, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = ipv4Listener.Close() })
-			requests := make(chan string, 4)
-			serve := func(listener net.Listener, family string) {
-				server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					requests <- family
-					if family == "IPv6" && tc.rejectIPv6 {
-						http.Error(w, "upgrade rejected", http.StatusServiceUnavailable)
-						return
-					}
-					conn, err := websocket.Accept(w, r, nil)
-					if err != nil {
-						t.Error(err)
-						return
-					}
-					defer func() { _ = conn.CloseNow() }()
-					kind, payload, err := conn.Read(ctx)
-					if err == nil {
-						_ = conn.Write(ctx, kind, payload)
-					}
-				})}
-				go func() { _ = server.Serve(listener) }()
-				t.Cleanup(func() { _ = server.Close() })
+			port := listener.Addr().(*net.TCPAddr).Port
+			_ = listener.Close()
+			s := connectionTestSettings("127.0.0.1", port, protocol)
+			client := connectionTestClient(t, testConfigurationWithSettings(s))
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			conn, crypto, rekey, err := client.connect(ctx)
+			var dialErr *net.OpError
+			if !errors.As(err, &dialErr) || dialErr.Op != "dial" {
+				t.Fatalf("connect error = %v, want underlying dial error", err)
 			}
-			serve(ipv6Listener, "IPv6")
-			serve(ipv4Listener, "IPv4")
-			s := mkWSSettings("", port, settings.WS)
-			s.Server = tc.server
-			establishCtx, cancelEstablish := context.WithCancel(ctx)
-			defer cancelEstablish()
-			conn, err := dial(establishCtx, ctx, s)
-			cancelEstablish()
-			if tc.wantIP == "" {
-				if conn != nil {
-					_ = conn.Close()
-					t.Fatal("dial unexpectedly returned a connection")
-				}
-				if err == nil {
-					t.Fatal("expected WebSocket dial error")
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("dial: %v", err)
-				}
-				defer func() { _ = conn.Close() }()
-				if got, err := transportServerAddr(conn); err != nil || got != netip.MustParseAddr(tc.wantIP) {
-					t.Fatalf("remote address = %v, %v; want %s", got, err, tc.wantIP)
-				}
-				payload := []byte("connection outlives dial context")
-				if _, err := conn.Write(payload); err != nil {
-					t.Fatal(err)
-				}
-				got := make([]byte, len(payload))
-				if _, err := io.ReadFull(conn, got); err != nil {
-					t.Fatal(err)
-				}
-				if string(got) != string(payload) {
-					t.Fatalf("echo = %q, want %q", got, payload)
-				}
-			}
-			var gotRequests []string
-			for len(requests) > 0 {
-				gotRequests = append(gotRequests, <-requests)
-			}
-			if !slices.Equal(gotRequests, tc.wantRequests) {
-				t.Fatalf("requests = %v, want %v", gotRequests, tc.wantRequests)
+			if conn != nil || crypto != nil || rekey != nil {
+				t.Fatal("failed connection returned a transport or session state")
 			}
 		})
+	}
+}
+
+func TestConnect_AddressPriority(t *testing.T) {
+	proxyTestTransport(t, nil, nil)
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+		for _, tc := range []struct {
+			name string
+			host settings.Host
+			dns  []string
+			want string
+		}{
+			{"explicit IPv4 before IPv6", settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}, nil, "127.0.0.1"},
+			{"IPv6 only", settings.Host{IPv6: "::1"}, nil, "::1"},
+			{"domain IPv4 before IPv6", settings.Host{Domain: "connect.test", IPv6: "::1"}, []string{"127.0.0.1", "::1"}, "127.0.0.1"},
+			{"domain IPv6 before explicit IPv4", settings.Host{Domain: "connect.test", IPv4: "127.0.0.1"}, []string{"::1"}, "::1"},
+			{"domain IPv4 without AAAA", settings.Host{Domain: "connect.test", IPv6: "::1"}, []string{"127.0.0.1"}, "127.0.0.1"},
+			{"explicit IPv4 after DNS failure", settings.Host{Domain: "connect.test", IPv4: "127.0.0.1", IPv6: "::1"}, nil, "127.0.0.1"},
+		} {
+			// WS leaves family selection to the HTTP dialer, including proxy DNS.
+			if protocol == settings.WS && tc.name == "domain IPv4 before IPv6" {
+				continue
+			}
+			t.Run(protocol.String()+"/"+tc.name, func(t *testing.T) {
+				queries := connectionTestDNS(t, tc.dns...)
+				s := settings.Settings{Network: settings.Network{Server: tc.host}, Protocol: protocol}
+				configuration, handshake := connectionTestHandshake(t, s)
+				attempts := make(chan string, 2)
+				handle := func(host string) func(io.ReadWriteCloser) {
+					return func(conn io.ReadWriteCloser) {
+						attempts <- host
+						if tc.host.Domain != "" && protocol != settings.WS {
+							got := queries()
+							if !slices.Contains(got, dnsmessage.TypeA) || !slices.Contains(got, dnsmessage.TypeAAAA) {
+								t.Errorf("connection started before both DNS families were resolved: %v", got)
+							}
+						}
+						connectionTestEcho(t, handshake, conn)
+					}
+				}
+				port := connectionTestListen(t, protocol, "::1", 0, handle("::1"))
+				connectionTestListen(t, protocol, "127.0.0.1", port, handle("127.0.0.1"))
+				configuration.TCPSettings.Port = port
+				configuration.UDPSettings.Port = port
+				configuration.WSSettings.Port = port
+				client := connectionTestClient(t, configuration)
+				ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+				defer cancel()
+				conn, crypto, rekey, err := client.connect(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = conn.Close() }()
+				if crypto == nil || rekey == nil {
+					t.Fatal("successful connection has no crypto or rekey state")
+				}
+				if got := <-attempts; got != tc.want {
+					t.Fatalf("first peer = %s, want %s", got, tc.want)
+				}
+				if got, err := transportServerAddr(conn); err != nil || got.String() != tc.want {
+					t.Fatalf("remote address = %v, %v; want %s", got, err, tc.want)
+				}
+				connectionTestRoundTrip(t, conn)
+				if tc.host.Domain == "" && len(queries()) != 0 {
+					t.Fatal("explicit addresses triggered a DNS lookup")
+				}
+			})
+		}
+	}
+}
+
+func TestConnect_TriesAllDomainAddresses(t *testing.T) {
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			// The first address has no listener. The second must still be tried.
+			connectionTestDNS(t, "127.0.0.2", "127.0.0.1")
+			s := settings.Settings{Network: settings.Network{Server: settings.Host{Domain: "connect.test"}}, Protocol: protocol}
+			configuration, handshake := connectionTestHandshake(t, s)
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+				connectionTestEcho(t, handshake, conn)
+			})
+			configuration.TCPSettings.Port = port
+			configuration.UDPSettings.Port = port
+			client := connectionTestClient(t, configuration)
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			resolved, _, _ := client.resolveDomain(ctx, s)
+			want := []netip.Addr{netip.MustParseAddr("127.0.0.2"), netip.MustParseAddr("127.0.0.1")}
+			if !slices.Equal(resolved, want) {
+				t.Fatalf("DNS candidates = %v, want unreachable address before listener: %v", resolved, want)
+			}
+			conn, _, _, err := client.connect(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = conn.Close() }()
+			connectionTestRoundTrip(t, conn)
+		})
+	}
+}
+
+func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
+	proxyTestTransport(t, nil, nil)
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+		for _, failure := range []string{"invalid response", "timeout"} {
+			t.Run(protocol.String()+"/"+failure, func(t *testing.T) {
+				s := settings.Settings{Network: settings.Network{Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}}, Protocol: protocol}
+				if failure == "invalid response" && protocol != settings.WS {
+					connectionTestDNS(t, "127.0.0.1", "::1")
+					s.Server = settings.Host{Domain: "connect.test"}
+				}
+				configuration, handshake := connectionTestHandshake(t, s)
+				port := connectionTestListen(t, protocol, "::1", 0, func(conn io.ReadWriteCloser) {
+					connectionTestEcho(t, handshake, conn)
+				})
+				started := make(chan struct{})
+				closed := make(chan struct{})
+				connectionTestListen(t, protocol, "127.0.0.1", port, func(conn io.ReadWriteCloser) {
+					buf := make([]byte, settings.DefaultEthernetMTU)
+					if _, err := conn.Read(buf); err != nil {
+						t.Errorf("first handshake request: %v", err)
+						return
+					}
+					close(started)
+					if failure == "invalid response" {
+						if _, err := conn.Write([]byte{0}); err != nil {
+							t.Errorf("reject handshake: %v", err)
+							return
+						}
+					}
+					if _, err := conn.Read(buf); err == nil {
+						t.Error("unexpected packet after failed handshake")
+					}
+					close(closed)
+				})
+				configuration.TCPSettings.Port = port
+				configuration.UDPSettings.Port = port
+				configuration.WSSettings.Port = port
+				client := connectionTestClient(t, configuration)
+				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				defer cancel()
+				conn, _, _, err := client.connect(ctx)
+				if err != nil {
+					t.Fatalf("fallback after %s: %v", failure, err)
+				}
+				defer func() { _ = conn.Close() }()
+				select {
+				case <-started:
+				default:
+					t.Fatal("skipped the first handshake attempt")
+				}
+				if got, err := transportServerAddr(conn); err != nil || got.String() != "::1" {
+					t.Fatalf("fallback address = %v, %v; want ::1", got, err)
+				}
+				connectionTestRoundTrip(t, conn)
+				// UDP has no remote close notification; stream transports do.
+				if protocol != settings.UDP {
+					select {
+					case <-closed:
+					case <-ctx.Done():
+						t.Fatal("failed transport was not closed")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestConnect_CancellationDuringHandshake(t *testing.T) {
+	proxyTestTransport(t, nil, nil)
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			canceled := make(chan struct{})
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+				if _, err := conn.Read(make([]byte, settings.DefaultEthernetMTU)); err != nil {
+					t.Errorf("handshake request: %v", err)
+					return
+				}
+				cancel()
+				close(canceled)
+				// Keep the peer open until the client closes its side or test cleanup runs.
+				_, _ = conn.Read(make([]byte, settings.DefaultEthernetMTU))
+			})
+			s := settings.Settings{Network: settings.Network{Server: settings.Host{IPv4: "127.0.0.1"}, Port: port}, Protocol: protocol}
+			configuration, _ := connectionTestHandshake(t, s)
+			client := connectionTestClient(t, configuration)
+			done := make(chan struct{})
+			var connectErr error
+			go func() {
+				defer close(done)
+				conn, crypto, rekey, err := client.connect(ctx)
+				connectErr = err
+				if conn != nil || crypto != nil || rekey != nil {
+					t.Error("canceled connect returned session state")
+				}
+				if conn != nil {
+					_ = conn.Close()
+				}
+			}()
+			t.Cleanup(func() { cancel(); <-done })
+			select {
+			case <-canceled:
+			case <-time.After(3 * time.Second):
+				t.Fatal("handshake did not start")
+			}
+			select {
+			case <-done:
+				if !errors.Is(connectErr, context.Canceled) {
+					t.Fatalf("connect error = %v, want cancellation", connectErr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("connect did not stop after cancellation")
+			}
+		})
+	}
+}
+
+func TestConnect_JoinsDNSAndHandshakeErrors(t *testing.T) {
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			connectionTestDNS(t)
+			started := make(chan struct{})
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+				_, _ = conn.Read(make([]byte, settings.DefaultEthernetMTU))
+				close(started)
+				_, _ = conn.Read(make([]byte, settings.DefaultEthernetMTU))
+			})
+			s := settings.Settings{Network: settings.Network{Server: settings.Host{Domain: "connect.test", IPv4: "127.0.0.1"}, Port: port}, Protocol: protocol}
+			configuration, _ := connectionTestHandshake(t, s)
+			client := connectionTestClient(t, configuration)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			conn, crypto, rekey, err := client.connect(ctx)
+			select {
+			case <-started:
+			default:
+				t.Fatal("explicit address handshake did not start after DNS failure")
+			}
+			var dnsErr *net.DNSError
+			if !errors.As(err, &dnsErr) || !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("connect error = %v, want both DNS and handshake errors", err)
+			}
+			if conn != nil || crypto != nil || rekey != nil {
+				t.Fatal("failed attempts returned session state")
+			}
+		})
+	}
+}
+
+func TestResolveDomain_Cancellation(t *testing.T) {
+	previous := net.DefaultResolver
+	started := make(chan struct{}, 1)
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	t.Cleanup(func() { net.DefaultResolver = previous })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := (&Client{}).resolveDomain(ctx, connectionTestSettings("connect.test", 443, settings.TCP))
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("DNS lookup did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("resolveDomain error = %v, want cancellation", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("DNS lookup ignored cancellation")
 	}
 }
 
