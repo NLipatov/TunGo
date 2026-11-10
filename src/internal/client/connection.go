@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -61,21 +62,11 @@ func (c *Client) connect(
 	var errs []error
 	switch active.Protocol {
 	case settings.TCP:
-		var hosts []string
-		if active.TCPSettings.Server.Domain != "" {
-			v4s, v6s, err := c.resolveDomain(ctx, active.TCPSettings)
-			if err != nil {
-				errs = append(errs, err)
-			}
-			for _, addr := range append(v4s, v6s...) {
-				hosts = append(hosts, addr.String())
-			}
+		hosts, err := c.resolveServerAddresses(ctx, active.TCPSettings)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		hosts = append(hosts, active.TCPSettings.Server.IPv4, active.TCPSettings.Server.IPv6)
 		for _, host := range hosts {
-			if host == "" {
-				continue
-			}
 			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.TCPSettings))
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.TCPSettings.Port))
@@ -93,21 +84,11 @@ func (c *Client) connect(
 		}
 		return nil, nil, nil, errors.Join(errs...)
 	case settings.UDP:
-		var hosts []string
-		if active.UDPSettings.Server.Domain != "" {
-			v4s, v6s, err := c.resolveDomain(ctx, active.UDPSettings)
-			if err != nil {
-				errs = append(errs, err)
-			}
-			for _, addr := range append(v4s, v6s...) {
-				hosts = append(hosts, addr.String())
-			}
+		hosts, err := c.resolveServerAddresses(ctx, active.UDPSettings)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		hosts = append(hosts, active.UDPSettings.Server.IPv4, active.UDPSettings.Server.IPv6)
 		for _, host := range hosts {
-			if host == "" {
-				continue
-			}
 			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.UDPSettings))
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.UDPSettings.Port))
@@ -129,15 +110,17 @@ func (c *Client) connect(
 		if active.Protocol == settings.WSS {
 			scheme = "wss"
 		}
-		hosts := []string{
+		var hosts []string
+		for _, host := range []string{
 			active.WSSettings.Server.Domain,
 			active.WSSettings.Server.IPv4,
 			active.WSSettings.Server.IPv6,
+		} {
+			if len(host) > 0 {
+				hosts = append(hosts, host)
+			}
 		}
 		for _, host := range hosts {
-			if host == "" {
-				continue
-			}
 			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.WSSettings))
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.WSSettings.Port))
@@ -160,10 +143,34 @@ func (c *Client) connect(
 	return nil, nil, nil, errors.Join(errs...)
 }
 
-func (c *Client) resolveDomain(ctx context.Context, s settings.Settings) (v4 []netip.Addr, v6 []netip.Addr, err error) {
-	v4, err4 := c.lookupDomainIP(ctx, s, 4)
-	v6, err6 := c.lookupDomainIP(ctx, s, 6)
-	return v4, v6, errors.Join(err4, err6)
+func (c *Client) resolveServerAddresses(ctx context.Context, s settings.Settings) ([]string, error) {
+	var hosts []string
+	if len(s.Server.Domain) > 0 {
+		v4s, err4 := c.lookupDomainIP(ctx, s, 4)
+		if err4 != nil {
+			slog.Warn("domain lookup", "err", err4)
+		}
+		v6s, err6 := c.lookupDomainIP(ctx, s, 6)
+		if err6 != nil {
+			slog.Warn("domain lookup", "err", err6)
+		}
+		for _, addr := range append(v4s, v6s...) {
+			hosts = append(hosts, addr.String())
+		}
+	}
+	if len(s.Server.IPv4) > 0 {
+		hosts = append(hosts, s.Server.IPv4)
+	}
+	if len(s.Server.IPv6) > 0 {
+		hosts = append(hosts, s.Server.IPv6)
+	}
+	if err := ctx.Err(); err != nil {
+		return hosts, err
+	}
+	if len(hosts) == 0 {
+		return hosts, fmt.Errorf("could not resolve hosts list from configuration's Server subsection: %v", s.Server)
+	}
+	return hosts, nil
 }
 
 func (c *Client) deadline(s settings.Settings) time.Time {
@@ -174,10 +181,10 @@ func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFami
 	ctx, cancel := context.WithDeadline(ctx, c.deadline(s))
 	defer cancel()
 	ips, err := net.DefaultResolver.LookupNetIP(ctx, fmt.Sprintf("ip%d", ipFamily), s.Server.Domain)
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		return nil, fmt.Errorf("failed to resolve domain to ip%d %q: %w", ipFamily, s.Server.Domain, err)
 	}
-	return ips, nil
+	return ips, ctx.Err()
 }
 
 func (c *Client) handshake(

@@ -943,8 +943,11 @@ func TestConnect_TriesAllDomainAddresses(t *testing.T) {
 			client := connectionTestClient(t, configuration)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
-			resolved, _, _ := client.resolveDomain(ctx, s)
-			want := []netip.Addr{netip.MustParseAddr("127.0.0.2"), netip.MustParseAddr("127.0.0.1")}
+			resolved, err := client.resolveServerAddresses(ctx, s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"127.0.0.2", "127.0.0.1"}
 			if !slices.Equal(resolved, want) {
 				t.Fatalf("DNS candidates = %v, want unreachable address before listener: %v", resolved, want)
 			}
@@ -1076,13 +1079,16 @@ func TestConnect_CancellationDuringHandshake(t *testing.T) {
 	}
 }
 
-func TestConnect_JoinsDNSAndHandshakeErrors(t *testing.T) {
+func TestConnect_DNSFailureStillTriesExplicitAddress(t *testing.T) {
 	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP} {
 		t.Run(protocol.String(), func(t *testing.T) {
 			connectionTestDNS(t)
 			started := make(chan struct{})
 			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
-				_, _ = conn.Read(make([]byte, settings.DefaultEthernetMTU))
+				if _, err := conn.Read(make([]byte, settings.DefaultEthernetMTU)); err != nil {
+					t.Errorf("handshake request: %v", err)
+					return
+				}
 				close(started)
 				_, _ = conn.Read(make([]byte, settings.DefaultEthernetMTU))
 			})
@@ -1097,9 +1103,8 @@ func TestConnect_JoinsDNSAndHandshakeErrors(t *testing.T) {
 			default:
 				t.Fatal("explicit address handshake did not start after DNS failure")
 			}
-			var dnsErr *net.DNSError
-			if !errors.As(err, &dnsErr) || !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("connect error = %v, want both DNS and handshake errors", err)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("connect error = %v, want handshake timeout", err)
 			}
 			if conn != nil || crypto != nil || rekey != nil {
 				t.Fatal("failed attempts returned session state")
@@ -1108,38 +1113,90 @@ func TestConnect_JoinsDNSAndHandshakeErrors(t *testing.T) {
 	}
 }
 
-func TestResolveDomain_Cancellation(t *testing.T) {
-	previous := net.DefaultResolver
-	started := make(chan struct{}, 1)
-	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		select {
-		case started <- struct{}{}:
-		default:
-		}
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}}
-	t.Cleanup(func() { net.DefaultResolver = previous })
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		_, _, err := (&Client{}).resolveDomain(ctx, connectionTestSettings("connect.test", 443, settings.TCP))
-		done <- err
-	}()
-	select {
-	case <-started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("DNS lookup did not start")
+func TestConnect_DNSFailureWithoutFallback(t *testing.T) {
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			connectionTestDNS(t)
+			s := connectionTestSettings("missing.test", 443, protocol)
+			client := connectionTestClient(t, testConfigurationWithSettings(s))
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			addresses, err := client.resolveServerAddresses(ctx, s)
+			if err == nil || len(addresses) != 0 {
+				t.Fatalf("resolveServerAddresses = %v, %v; want no addresses and an error", addresses, err)
+			}
+			conn, crypto, rekey, err := client.connect(ctx)
+			if conn != nil {
+				defer func() { _ = conn.Close() }()
+			}
+			if err == nil || conn != nil || crypto != nil || rekey != nil {
+				t.Fatalf("DNS failure without fallback: conn=%v crypto=%v rekey=%v err=%v", conn, crypto, rekey, err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("connect waited for the context instead of rejecting an empty address list: %v", err)
+			}
+		})
 	}
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("resolveDomain error = %v, want cancellation", err)
+}
+
+func TestConnect_ContextEndsDuringDNS(t *testing.T) {
+	// These tests replace the default resolver; keep them sequential.
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP} {
+		for _, tc := range []struct {
+			name string
+			want error
+		}{
+			{"cancel", context.Canceled},
+			{"deadline", context.DeadlineExceeded},
+		} {
+			t.Run(protocol.String()+"/"+tc.name, func(t *testing.T) {
+				previous := net.DefaultResolver
+				started := make(chan struct{}, 1)
+				net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					select {
+					case started <- struct{}{}:
+					default:
+					}
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}}
+				t.Cleanup(func() { net.DefaultResolver = previous })
+				s := connectionTestSettings("connect.test", 443, protocol)
+				client := connectionTestClient(t, testConfigurationWithSettings(s))
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				done := make(chan struct{})
+				var connectErr error
+				go func() {
+					defer close(done)
+					conn, crypto, rekey, err := client.connect(ctx)
+					connectErr = err
+					if conn != nil || crypto != nil || rekey != nil {
+						t.Error("interrupted DNS lookup returned session state")
+					}
+					if conn != nil {
+						_ = conn.Close()
+					}
+				}()
+				t.Cleanup(func() { cancel(); <-done })
+				select {
+				case <-started:
+				case <-time.After(3 * time.Second):
+					t.Fatal("DNS lookup did not start")
+				}
+				if tc.want == context.Canceled {
+					cancel()
+				}
+				select {
+				case <-done:
+					if !errors.Is(connectErr, tc.want) {
+						t.Fatalf("connect error = %v, want %v", connectErr, tc.want)
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("DNS lookup ignored the parent context")
+				}
+			})
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("DNS lookup ignored cancellation")
 	}
 }
 
