@@ -54,7 +54,7 @@ const (
 
 func (c *Client) connect(
 	ctx context.Context,
-) (io.ReadWriteCloser, crypto, clientRekey, error) {
+) (net.Conn, crypto, clientRekey, error) {
 	active, err := c.configurations.Active()
 	if err != nil {
 		return nil, nil, nil, err
@@ -189,12 +189,12 @@ func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFami
 
 func (c *Client) handshake(
 	ctx context.Context,
-	adapter io.ReadWriteCloser,
+	conn net.Conn,
 	protocol settings.Protocol,
-) (io.ReadWriteCloser, crypto, clientRekey, error) {
+) (net.Conn, crypto, clientRekey, error) {
 	configuration, err := c.configurations.Active()
 	if err != nil {
-		_ = adapter.Close()
+		_ = conn.Close()
 		return nil, nil, nil, err
 	}
 	handshake := noise.NewIKHandshakeClient(
@@ -205,11 +205,11 @@ func (c *Client) handshake(
 
 	var closeOnce sync.Once
 	closeAdapter := func() {
-		closeOnce.Do(func() { _ = adapter.Close() })
+		closeOnce.Do(func() { _ = conn.Close() })
 	}
 	cancelCloseOnContextDone := context.AfterFunc(ctx, closeAdapter)
 
-	if err = handshake.ClientSideHandshake(adapter); err != nil {
+	if err = handshake.ClientSideHandshake(conn); err != nil {
 		cancelCloseOnContextDone()
 		closeAdapter()
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -250,13 +250,13 @@ func (c *Client) handshake(
 		settings.DefaultRekeyInterval,
 		time.Now().UTC(),
 	)
-	return adapter, cr, coordinator, nil
+	return conn, cr, coordinator, nil
 }
 
 func dialTCP(
 	ctx context.Context,
 	endpoint string,
-) (io.ReadWriteCloser, error) {
+) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", endpoint)
 	if err != nil {
@@ -269,13 +269,9 @@ func dialTCP(
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	transport := tcptransport.WithReadDeadline(conn, settings.PingRestartTimeout)
-	if remote := parseNetAddrPort(conn.RemoteAddr()); remote.IsValid() {
-		transport = tcptransport.WithRemoteAddr(transport, remote)
-	}
-
+	conn = tcptransport.WithReadDeadline(conn, settings.PingRestartTimeout)
 	return tcptransport.NewFramedConn(
-		transport,
+		conn,
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 }
@@ -283,14 +279,11 @@ func dialTCP(
 func dialUDP(
 	ctx context.Context,
 	endpoint string,
-) (io.ReadWriteCloser, error) {
+) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", endpoint)
 	if err != nil {
 		return nil, err
-	}
-	if remote := parseNetAddrPort(conn.RemoteAddr()); remote.IsValid() {
-		return tcptransport.WithRemoteAddr(conn, remote), nil
 	}
 	return conn, nil
 }
@@ -298,7 +291,7 @@ func dialUDP(
 func dialWS(
 	establishCtx, connCtx context.Context,
 	scheme, endpoint, serverName string,
-) (io.ReadWriteCloser, error) {
+) (net.Conn, error) {
 	webSocketURL := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
 	identityEndpoint := endpoint
 	if serverName != "" {
@@ -431,21 +424,12 @@ func dialWS(
 	}
 
 	wrapped, wrapErr := tcptransport.NewFramedConn(
-		tcptransport.WithReadDeadline(ws.NewConn(connCtx, conn, nil, nil), settings.PingRestartTimeout),
+		tcptransport.WithReadDeadline(ws.NewConn(connCtx, conn, nil, remoteAddr), settings.PingRestartTimeout),
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 	if wrapErr != nil {
 		_ = conn.Close(websocket.StatusInternalError, "adapter wrap failed")
 		return nil, wrapErr
-	}
-	remoteMu.Lock()
-	remote := parseNetAddrPort(remoteAddr)
-	remoteMu.Unlock()
-	if remote.IsValid() {
-		return tcptransport.WithRemoteAddr(wrapped, remote), nil
-	}
-	if remote := parseEndpointAddrPort(endpoint); remote.IsValid() {
-		return tcptransport.WithRemoteAddr(wrapped, remote), nil
 	}
 	return wrapped, nil
 }
@@ -613,58 +597,4 @@ func cloneDefaultTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-}
-
-func parseEndpointAddrPort(endpoint string) netip.AddrPort {
-	ap, err := netip.ParseAddrPort(endpoint)
-	if err == nil {
-		return ap
-	}
-
-	host, portStr, splitErr := net.SplitHostPort(endpoint)
-	if splitErr != nil {
-		return netip.AddrPort{}
-	}
-	ip, ipErr := netip.ParseAddr(host)
-	if ipErr != nil {
-		return netip.AddrPort{}
-	}
-	port, portErr := net.LookupPort("tcp", portStr)
-	if portErr != nil || port < 1 || port > 65535 {
-		return netip.AddrPort{}
-	}
-	if ip.Unmap().Is4() {
-		ip = ip.Unmap()
-	}
-	return netip.AddrPortFrom(ip, uint16(port))
-}
-
-func parseNetAddrPort(addr net.Addr) netip.AddrPort {
-	if addr == nil {
-		return netip.AddrPort{}
-	}
-	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
-		ip, ok := netip.AddrFromSlice(tcpAddr.IP)
-		if !ok {
-			return netip.AddrPort{}
-		}
-		if ip.Unmap().Is4() {
-			ip = ip.Unmap()
-		}
-		return netip.AddrPortFrom(ip, uint16(tcpAddr.Port))
-	}
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		ip, ok := netip.AddrFromSlice(udpAddr.IP)
-		if !ok {
-			return netip.AddrPort{}
-		}
-		if ip.Unmap().Is4() {
-			ip = ip.Unmap()
-		}
-		return netip.AddrPortFrom(ip, uint16(udpAddr.Port))
-	}
-	if ap, err := netip.ParseAddrPort(addr.String()); err == nil {
-		return ap
-	}
-	return netip.AddrPort{}
 }

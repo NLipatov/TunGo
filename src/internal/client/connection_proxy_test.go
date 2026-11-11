@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -128,8 +127,8 @@ func TestDialWebSocket_ProxyTLS(t *testing.T) {
 			}
 			defer func() { _ = conn.Close() }()
 			establishCancel() // The established tunnel must outlive the dial context.
-			remote, ok := conn.(interface{ RemoteAddrPort() netip.AddrPort })
-			if !ok || !remote.RemoteAddrPort().Addr().IsLoopback() || strconv.Itoa(int(remote.RemoteAddrPort().Port())) != proxyURL.Port() {
+			remote, ok := conn.RemoteAddr().(*net.TCPAddr)
+			if !ok || !remote.IP.IsLoopback() || strconv.Itoa(remote.Port) != proxyURL.Port() {
 				t.Fatalf("remote address must identify the proxy, got %v", remote)
 			}
 			payload := []byte("framed WebSocket through a proxy")
@@ -540,7 +539,7 @@ func TestConnect_WSSFallbackPreservesDomainIdentity(t *testing.T) {
 				t.Cleanup(func() { _ = listener.Close() })
 				port := listener.Addr().(*net.TCPAddr).Port
 				configuration, handshake := connectionTestHandshake(t, connectionTestSettings(tc.domain, port, settings.WSS))
-				echo := connectionTestWSHandler(t, ctx, func(conn io.ReadWriteCloser) { connectionTestEcho(t, handshake, conn) })
+				echo := connectionTestWSHandler(t, ctx, func(conn net.Conn) { connectionTestEcho(t, handshake, conn) })
 				identity := net.JoinHostPort(tc.identity, strconv.Itoa(port))
 				cert, root := proxyTestCertificate(t, tc.certificate)
 				hellos := make(chan *tls.ClientHelloInfo, 1)
@@ -619,7 +618,7 @@ func TestConnect_WebSocketIPFallbackThroughProxy(t *testing.T) {
 			t.Cleanup(func() { _ = listener.Close() })
 			port := listener.Addr().(*net.TCPAddr).Port
 			configuration, handshake := connectionTestHandshake(t, connectionTestSettings("origin.test", port, protocol))
-			echo := connectionTestWSHandler(t, ctx, func(conn io.ReadWriteCloser) { connectionTestEcho(t, handshake, conn) })
+			echo := connectionTestWSHandler(t, ctx, func(conn net.Conn) { connectionTestEcho(t, handshake, conn) })
 			identity := net.JoinHostPort("origin.test", strconv.Itoa(port))
 			endpoint := listener.Addr().String()
 			origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

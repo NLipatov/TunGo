@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net"
 	"net/netip"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 )
 
 type queueTransport struct {
+	net.Conn
 	reads    [][]byte
 	writes   [][]byte
 	readErr  error
@@ -42,18 +44,20 @@ func (t *queueTransport) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (t *queueTransport) Close() error { return nil }
+func (t *queueTransport) Close() error         { return nil }
+func (t *queueTransport) RemoteAddr() net.Addr { return nil }
 
 type queueRemoteTransport struct {
 	queueTransport
 	addr netip.AddrPort
 }
 
-func (t *queueRemoteTransport) RemoteAddrPort() netip.AddrPort {
-	return t.addr
+func (t *queueRemoteTransport) RemoteAddr() net.Addr {
+	return net.TCPAddrFromAddrPort(t.addr)
 }
 
 type cookieRetryTransport struct {
+	net.Conn
 	t                  *testing.T
 	serverPub          []byte
 	serverPriv         []byte
@@ -236,9 +240,13 @@ func TestIKHandshake_Server_UnderLoadCookieRequiredBranches(t *testing.T) {
 			lm,
 		)
 
-		_, err := h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
-		if !errors.Is(err, ErrCookieRequired) {
-			t.Fatalf("expected ErrCookieRequired, got %v", err)
+		tr := &queueTransport{reads: [][]byte{msg}}
+		_, err := h.ServerSideHandshake(tr)
+		if err == nil || !strings.Contains(err.Error(), "unsupported remote address") {
+			t.Fatalf("expected invalid remote address error, got %v", err)
+		}
+		if len(tr.writes) != 0 {
+			t.Fatal("sent a cookie without a valid peer address")
 		}
 	})
 
@@ -594,6 +602,7 @@ func TestIKHandshake_NewResponderState_SucceedsWithDeferredKeyValidation(t *test
 }
 
 type msg2OnlyTransport struct {
+	net.Conn
 	t          *testing.T
 	serverPub  []byte
 	serverPriv []byte

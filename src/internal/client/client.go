@@ -16,6 +16,7 @@ import (
 	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/trafficstats"
+	transport "tungo/internal/transport"
 	clienttun "tungo/internal/tun/client"
 )
 
@@ -158,12 +159,12 @@ func (c *Client) runTunnel(
 			c.tunManager = nil
 		}
 	}()
-	transport, crypto, rekey, err := c.connect(ctx)
+	conn, crypto, rekey, err := c.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = transport.Close() }()
-	serverAddr, err := transportServerAddr(transport)
+	defer func() { _ = conn.Close() }()
+	serverAddr, err := transport.NetipAddrFrom(conn.RemoteAddr())
 	if err != nil {
 		return err
 	}
@@ -176,7 +177,7 @@ func (c *Client) runTunnel(
 	defer c.ready.Store(false)
 	switch activeSettings.Protocol {
 	case settings.UDP:
-		tunnel, err := udp.New(ctx, transport, tun, crypto, rekey, allowed)
+		tunnel, err := udp.New(ctx, conn, tun, crypto, rekey, allowed)
 		if err != nil {
 			return err
 		}
@@ -185,7 +186,7 @@ func (c *Client) runTunnel(
 		slog.Info("tunneling traffic via TUN device")
 		return tunnel.Run()
 	case settings.TCP, settings.WS, settings.WSS:
-		tunnel := tcp.New(ctx, transport, tun, crypto, rekey, allowed)
+		tunnel := tcp.New(ctx, conn, tun, crypto, rekey, allowed)
 		c.ready.Store(true)
 		c.sessionReadyAt = time.Now()
 		slog.Info("tunneling traffic via TUN device")
@@ -204,16 +205,4 @@ func allowedSources(s settings.Settings) map[netip.Addr]struct{} {
 		allowed[s.IPv6.Unmap()] = struct{}{}
 	}
 	return allowed
-}
-
-func transportServerAddr(transport io.ReadWriteCloser) (netip.Addr, error) {
-	remoteProvider, ok := transport.(interface{ RemoteAddrPort() netip.AddrPort })
-	if !ok {
-		return netip.Addr{}, fmt.Errorf("transport %T does not expose its remote address", transport)
-	}
-	addrPort := remoteProvider.RemoteAddrPort()
-	if !addrPort.IsValid() {
-		return netip.Addr{}, fmt.Errorf("transport %T returned an invalid remote address", transport)
-	}
-	return addrPort.Addr().Unmap(), nil
 }

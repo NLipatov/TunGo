@@ -1,31 +1,25 @@
 package tcp
 
 import (
-	"io"
+	"net"
 	"time"
 )
 
-// readDeadlineConn wraps a Transport and refreshes a read deadline before
-// each Read call. If the underlying transport does not support SetReadDeadline,
-// the wrapper is a no-op pass-through (the original transport is returned).
+// readDeadlineConn refreshes the connection's read deadline before each Read.
 type readDeadlineConn struct {
-	io.ReadWriteCloser
-	ds      interface{ SetReadDeadline(time.Time) error }
+	net.Conn
 	timeout time.Duration
 }
 
-// WithReadDeadline returns a Transport that sets a read deadline of
-// the given timeout before every Read. If t does not support SetReadDeadline,
-// t is returned unchanged.
-func WithReadDeadline(t io.ReadWriteCloser, timeout time.Duration) io.ReadWriteCloser {
-	ds, ok := t.(interface{ SetReadDeadline(time.Time) error })
-	if !ok {
-		return t
+// WithReadDeadline sets a new read deadline of now + timeout before every Read.
+func WithReadDeadline(conn net.Conn, timeout time.Duration) net.Conn {
+	return &readDeadlineConn{
+		Conn:    conn,
+		timeout: timeout,
 	}
-	return &readDeadlineConn{ReadWriteCloser: t, timeout: timeout, ds: ds}
 }
 
-func (d *readDeadlineConn) Read(p []byte) (int, error) {
-	_ = d.ds.SetReadDeadline(time.Now().Add(d.timeout))
-	return d.ReadWriteCloser.Read(p)
+func (r *readDeadlineConn) Read(p []byte) (int, error) {
+	_ = r.SetReadDeadline(time.Now().Add(r.timeout))
+	return r.Conn.Read(p)
 }

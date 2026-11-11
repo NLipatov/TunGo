@@ -1,7 +1,6 @@
 package udp
 
 import (
-	"io"
 	"net"
 	"net/netip"
 	"sync/atomic"
@@ -33,7 +32,7 @@ func NewRegistrationConn(
 	clientAddrPort netip.AddrPort,
 	serverAddr netip.Addr,
 	queue registrationQueue,
-) io.ReadWriteCloser {
+) *registrationConn {
 	a := &registrationConn{
 		conn:  conn,
 		queue: queue,
@@ -61,12 +60,11 @@ func (t *registrationConn) Close() error {
 	return nil
 }
 
-// RemoteAddrPort returns the client's current external address.
-func (t *registrationConn) RemoteAddrPort() netip.AddrPort {
-	return *t.addr.Load()
-}
-
 // SetAddrPort atomically updates the destination address after NAT roaming.
 func (t *registrationConn) SetAddrPort(addr netip.AddrPort) {
 	t.addr.Store(&addr)
+}
+
+func (t *registrationConn) RemoteAddr() net.Addr {
+	return net.UDPAddrFromAddrPort(*t.addr.Load())
 }

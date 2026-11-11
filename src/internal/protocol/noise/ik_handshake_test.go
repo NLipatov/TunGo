@@ -2,7 +2,6 @@ package noise
 
 import (
 	"bytes"
-	"io"
 	"net"
 	"net/netip"
 	"testing"
@@ -17,7 +16,7 @@ func closeTestConn(conn net.Conn) {
 func completeTestHandshake(
 	t *testing.T,
 	server, client *IKHandshake,
-	serverTransport, clientTransport io.ReadWriteCloser,
+	serverTransport, clientTransport net.Conn,
 ) {
 	t.Helper()
 	serverErr := make(chan error, 1)

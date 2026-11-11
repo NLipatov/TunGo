@@ -24,6 +24,7 @@ import (
 	"tungo/internal/protocol/keys"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/servicepacket"
+	transportaddr "tungo/internal/transport"
 	transport "tungo/internal/transport/tcp"
 	transportws "tungo/internal/transport/ws"
 )
@@ -127,7 +128,7 @@ func connectionTestHandshake(t *testing.T, s settings.Settings) (clientconfig.Co
 
 // The transport stays open for one echo after the handshake. This verifies that
 // connect's deferred cancellation does not close an established connection.
-func connectionTestEcho(t *testing.T, handshake *noise.IKHandshake, conn io.ReadWriteCloser) {
+func connectionTestEcho(t *testing.T, handshake *noise.IKHandshake, conn net.Conn) {
 	t.Helper()
 	if _, err := handshake.ServerSideHandshake(conn); err != nil {
 		t.Errorf("server handshake: %v", err)
@@ -139,7 +140,7 @@ func connectionTestEcho(t *testing.T, handshake *noise.IKHandshake, conn io.Read
 	}
 }
 
-func connectionTestWSHandler(t *testing.T, ctx context.Context, handle func(io.ReadWriteCloser)) http.HandlerFunc {
+func connectionTestWSHandler(t *testing.T, ctx context.Context, handle func(net.Conn)) http.HandlerFunc {
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
@@ -180,11 +181,13 @@ func (c *connectionTestUDPConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+func (c *connectionTestUDPConn) RemoteAddr() net.Addr { return c.peer }
+
 func (c *connectionTestUDPConn) Write(p []byte) (int, error) {
 	return c.WriteToUDP(p, c.peer)
 }
 
-func connectionTestListen(t *testing.T, protocol settings.Protocol, host string, port int, handle func(io.ReadWriteCloser)) int {
+func connectionTestListen(t *testing.T, protocol settings.Protocol, host string, port int, handle func(net.Conn)) int {
 	t.Helper()
 	endpoint := net.JoinHostPort(host, strconv.Itoa(port))
 	ctx, cancel := context.WithCancel(t.Context())
@@ -249,7 +252,7 @@ func connectionTestListen(t *testing.T, protocol settings.Protocol, host string,
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func connectionTestRoundTrip(t *testing.T, conn io.ReadWriteCloser) {
+func connectionTestRoundTrip(t *testing.T, conn net.Conn) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -336,8 +339,8 @@ func TestDialTCP_Success(t *testing.T) {
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil on success")
 	}
-	if remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
-		t.Fatalf("expected transport with valid remote address, got %T", adapter)
+	if remote, err := transportaddr.NetipAddrFrom(adapter.RemoteAddr()); err != nil || remote != ap.Addr() {
+		t.Fatalf("remote address = %v, %v; want %v", remote, err, ap.Addr())
 	}
 	_ = adapter.Close()
 	<-done
@@ -371,8 +374,8 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	if conn == nil {
 		t.Fatalf("conn must not be nil")
 	}
-	if remote, ok := conn.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
-		t.Fatalf("expected UDP transport with valid remote address, got %T", conn)
+	if remote, err := transportaddr.NetipAddrFrom(conn.RemoteAddr()); err != nil || remote != ap.Addr() {
+		t.Fatalf("UDP remote address = %v, %v; want %v", remote, err, ap.Addr())
 	}
 	_ = conn.Close()
 }
@@ -389,8 +392,8 @@ func TestDialWS_Success(t *testing.T) {
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
 	}
-	if remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
-		t.Fatalf("expected WS transport with valid remote address, got %T", adapter)
+	if remote, err := transportaddr.NetipAddrFrom(adapter.RemoteAddr()); err != nil || remote.String() != host {
+		t.Fatalf("WS remote address = %v, %v; want %s", remote, err, host)
 	}
 	_ = adapter.Close()
 }
@@ -407,9 +410,8 @@ func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
 	}
-	remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort })
-	if !ok || !remote.RemoteAddrPort().IsValid() {
-		t.Fatalf("expected WS transport with valid remote address for domain endpoint, got %T", adapter)
+	if remote, err := transportaddr.NetipAddrFrom(adapter.RemoteAddr()); err != nil || !remote.IsLoopback() {
+		t.Fatalf("WS domain remote address = %v, %v; want loopback", remote, err)
 	}
 	_ = adapter.Close()
 }
@@ -487,19 +489,12 @@ func TestDialTLSForWebSocket_ClientHelloHTTP11(t *testing.T) {
 }
 
 type cfUnitTransport struct {
-	readErr      error
-	readBuf      []byte
-	writeErr     error
-	closed       bool
-	deadlineHits int
+	net.Conn
+	readErr error
+	closed  bool
 }
 
-func (t *cfUnitTransport) Read(p []byte) (int, error) {
-	if len(t.readBuf) > 0 {
-		n := copy(p, t.readBuf)
-		t.readBuf = t.readBuf[n:]
-		return n, nil
-	}
+func (t *cfUnitTransport) Read([]byte) (int, error) {
 	if t.readErr != nil {
 		return 0, t.readErr
 	}
@@ -507,9 +502,6 @@ func (t *cfUnitTransport) Read(p []byte) (int, error) {
 }
 
 func (t *cfUnitTransport) Write(p []byte) (int, error) {
-	if t.writeErr != nil {
-		return 0, t.writeErr
-	}
 	return len(p), nil
 }
 
@@ -518,19 +510,8 @@ func (t *cfUnitTransport) Close() error {
 	return nil
 }
 
-func (t *cfUnitTransport) SetReadDeadline(time.Time) error {
-	t.deadlineHits++
-	return nil
-}
-
-type cfUnitNoDeadlineTransport struct {
-	readErr  error
-	readBuf  []byte
-	writeErr error
-	closed   bool
-}
-
 type cfBlockingTransport struct {
+	net.Conn
 	readStarted chan struct{}
 	closed      chan struct{}
 	readOnce    sync.Once
@@ -556,30 +537,6 @@ func (*cfBlockingTransport) Write(p []byte) (int, error) {
 
 func (t *cfBlockingTransport) Close() error {
 	t.closeOnce.Do(func() { close(t.closed) })
-	return nil
-}
-
-func (t *cfUnitNoDeadlineTransport) Read(p []byte) (int, error) {
-	if len(t.readBuf) > 0 {
-		n := copy(p, t.readBuf)
-		t.readBuf = t.readBuf[n:]
-		return n, nil
-	}
-	if t.readErr != nil {
-		return 0, t.readErr
-	}
-	return 0, io.EOF
-}
-
-func (t *cfUnitNoDeadlineTransport) Write(p []byte) (int, error) {
-	if t.writeErr != nil {
-		return 0, t.writeErr
-	}
-	return len(p), nil
-}
-
-func (t *cfUnitNoDeadlineTransport) Close() error {
-	t.closed = true
 	return nil
 }
 
@@ -641,34 +598,6 @@ func TestHandshake_CancelClosesAdapter(t *testing.T) {
 	case <-transport.closed:
 	default:
 		t.Fatal("expected adapter to be closed on context cancellation")
-	}
-}
-
-func TestConnectionFactoryUnit_WithReadDeadline_NoDeadlineSupport_ReturnsSame(t *testing.T) {
-	tr := &cfUnitNoDeadlineTransport{}
-	wrapped := transport.WithReadDeadline(tr, time.Second)
-	if wrapped != tr {
-		t.Fatal("expected same transport when SetReadDeadline is not supported")
-	}
-}
-
-func TestConnectionFactoryUnit_WithReadDeadline_WithDeadlineSupport_WrapsAndSetsDeadline(t *testing.T) {
-	tr := &cfUnitTransport{readBuf: []byte("abc")}
-	wrapped := transport.WithReadDeadline(tr, time.Second)
-
-	if wrapped == tr {
-		t.Fatal("expected wrapped transport")
-	}
-	buf := make([]byte, 3)
-	n, err := wrapped.Read(buf)
-	if err != nil {
-		t.Fatalf("unexpected read error: %v", err)
-	}
-	if n != 3 || string(buf) != "abc" {
-		t.Fatalf("unexpected read result n=%d buf=%q", n, string(buf))
-	}
-	if tr.deadlineHits == 0 {
-		t.Fatal("expected SetReadDeadline to be called")
 	}
 }
 
@@ -885,8 +814,8 @@ func TestConnect_AddressPriority(t *testing.T) {
 				s := settings.Settings{Network: settings.Network{Server: tc.host}, Protocol: protocol}
 				configuration, handshake := connectionTestHandshake(t, s)
 				attempts := make(chan string, 2)
-				handle := func(host string) func(io.ReadWriteCloser) {
-					return func(conn io.ReadWriteCloser) {
+				handle := func(host string) func(net.Conn) {
+					return func(conn net.Conn) {
 						attempts <- host
 						if tc.host.Domain != "" && protocol != settings.WS {
 							got := queries()
@@ -916,7 +845,7 @@ func TestConnect_AddressPriority(t *testing.T) {
 				if got := <-attempts; got != tc.want {
 					t.Fatalf("first peer = %s, want %s", got, tc.want)
 				}
-				if got, err := transportServerAddr(conn); err != nil || got.String() != tc.want {
+				if got, err := transportaddr.NetipAddrFrom(conn.RemoteAddr()); err != nil || got.String() != tc.want {
 					t.Fatalf("remote address = %v, %v; want %s", got, err, tc.want)
 				}
 				connectionTestRoundTrip(t, conn)
@@ -935,7 +864,7 @@ func TestConnect_TriesAllDomainAddresses(t *testing.T) {
 			connectionTestDNS(t, "127.0.0.2", "127.0.0.1")
 			s := settings.Settings{Network: settings.Network{Server: settings.Host{Domain: "connect.test"}}, Protocol: protocol}
 			configuration, handshake := connectionTestHandshake(t, s)
-			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn net.Conn) {
 				connectionTestEcho(t, handshake, conn)
 			})
 			configuration.TCPSettings.Port = port
@@ -972,12 +901,12 @@ func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
 					s.Server = settings.Host{Domain: "connect.test"}
 				}
 				configuration, handshake := connectionTestHandshake(t, s)
-				port := connectionTestListen(t, protocol, "::1", 0, func(conn io.ReadWriteCloser) {
+				port := connectionTestListen(t, protocol, "::1", 0, func(conn net.Conn) {
 					connectionTestEcho(t, handshake, conn)
 				})
 				started := make(chan struct{})
 				closed := make(chan struct{})
-				connectionTestListen(t, protocol, "127.0.0.1", port, func(conn io.ReadWriteCloser) {
+				connectionTestListen(t, protocol, "127.0.0.1", port, func(conn net.Conn) {
 					buf := make([]byte, settings.DefaultEthernetMTU)
 					if _, err := conn.Read(buf); err != nil {
 						t.Errorf("first handshake request: %v", err)
@@ -1011,7 +940,7 @@ func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
 				default:
 					t.Fatal("skipped the first handshake attempt")
 				}
-				if got, err := transportServerAddr(conn); err != nil || got.String() != "::1" {
+				if got, err := transportaddr.NetipAddrFrom(conn.RemoteAddr()); err != nil || got.String() != "::1" {
 					t.Fatalf("fallback address = %v, %v; want ::1", got, err)
 				}
 				connectionTestRoundTrip(t, conn)
@@ -1035,7 +964,7 @@ func TestConnect_CancellationDuringHandshake(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			canceled := make(chan struct{})
-			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn net.Conn) {
 				if _, err := conn.Read(make([]byte, settings.DefaultEthernetMTU)); err != nil {
 					t.Errorf("handshake request: %v", err)
 					return
@@ -1084,7 +1013,7 @@ func TestConnect_DNSFailureStillTriesExplicitAddress(t *testing.T) {
 		t.Run(protocol.String(), func(t *testing.T) {
 			connectionTestDNS(t)
 			started := make(chan struct{})
-			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn io.ReadWriteCloser) {
+			port := connectionTestListen(t, protocol, "127.0.0.1", 0, func(conn net.Conn) {
 				if _, err := conn.Read(make([]byte, settings.DefaultEthernetMTU)); err != nil {
 					t.Errorf("handshake request: %v", err)
 					return
