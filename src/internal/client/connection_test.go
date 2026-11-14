@@ -870,6 +870,14 @@ func TestConnect_TriesAllDomainAddresses(t *testing.T) {
 			configuration.TCPSettings.Port = port
 			configuration.UDPSettings.Port = port
 			client := connectionTestClient(t, configuration)
+			active, err := client.configurations.Active()
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, err = active.ActiveSettings()
+			if err != nil {
+				t.Fatal(err)
+			}
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			resolved, err := client.resolveServerAddresses(ctx, s)
@@ -895,7 +903,11 @@ func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
 	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
 		for _, failure := range []string{"invalid response", "timeout"} {
 			t.Run(protocol.String()+"/"+failure, func(t *testing.T) {
-				s := settings.Settings{Network: settings.Network{Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}}, Protocol: protocol}
+				s := settings.Settings{
+					Network:       settings.Network{Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}},
+					Protocol:      protocol,
+					DialTimeoutMs: 200,
+				}
 				if failure == "invalid response" && protocol != settings.WS {
 					connectionTestDNS(t, "127.0.0.1", "::1")
 					s.Server = settings.Host{Domain: "connect.test"}
@@ -928,7 +940,8 @@ func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
 				configuration.UDPSettings.Port = port
 				configuration.WSSettings.Port = port
 				client := connectionTestClient(t, configuration)
-				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				// Both attempts must finish before the old five-second timeout floor.
+				ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 				defer cancel()
 				conn, _, _, err := client.connect(ctx)
 				if err != nil {
@@ -1091,6 +1104,7 @@ func TestConnect_ContextEndsDuringDNS(t *testing.T) {
 				}}
 				t.Cleanup(func() { net.DefaultResolver = previous })
 				s := connectionTestSettings("connect.test", 443, protocol)
+				s.DialTimeoutMs = 2000 // The parent context must expire before the lookup.
 				client := connectionTestClient(t, testConfigurationWithSettings(s))
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				defer cancel()

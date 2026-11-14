@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -48,10 +47,6 @@ type rekeyV2Handshake interface {
 	FinishRekeyV2(msg2 []byte) (c2s, s2c []byte, err error)
 }
 
-const (
-	defaultTimeoutMs = 5000
-)
-
 func (c *Client) connect(
 	ctx context.Context,
 ) (net.Conn, crypto, clientRekey, error) {
@@ -67,7 +62,8 @@ func (c *Client) connect(
 			return nil, nil, nil, err
 		}
 		for _, host := range hosts {
-			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.TCPSettings))
+			deadline := time.Now().Add(active.TCPSettings.DialTimeoutMs.Duration())
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.TCPSettings.Port))
 			conn, err := dialTCP(connectCtx, endpoint)
@@ -89,7 +85,8 @@ func (c *Client) connect(
 			return nil, nil, nil, err
 		}
 		for _, host := range hosts {
-			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.UDPSettings))
+			deadline := time.Now().Add(active.UDPSettings.DialTimeoutMs.Duration())
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.UDPSettings.Port))
 			conn, err := dialUDP(connectCtx, endpoint)
@@ -121,7 +118,8 @@ func (c *Client) connect(
 			}
 		}
 		for _, host := range hosts {
-			connectCtx, cancel := context.WithDeadline(ctx, c.deadline(active.WSSettings))
+			deadline := time.Now().Add(active.WSSettings.DialTimeoutMs.Duration())
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.WSSettings.Port))
 			conn, err := dialWS(connectCtx, ctx, scheme, endpoint, active.WSSettings.Server.Domain)
@@ -173,12 +171,9 @@ func (c *Client) resolveServerAddresses(ctx context.Context, s settings.Settings
 	return hosts, nil
 }
 
-func (c *Client) deadline(s settings.Settings) time.Time {
-	return time.Now().Add(time.Duration(math.Max(float64(s.DialTimeoutMs), defaultTimeoutMs)) * time.Millisecond)
-}
-
 func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFamily int) ([]netip.Addr, error) {
-	ctx, cancel := context.WithDeadline(ctx, c.deadline(s))
+	deadline := time.Now().Add(s.DialTimeoutMs.Duration())
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	ips, err := net.DefaultResolver.LookupNetIP(ctx, fmt.Sprintf("ip%d", ipFamily), s.Server.Domain)
 	if err != nil && ctx.Err() == nil {

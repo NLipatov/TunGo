@@ -212,6 +212,7 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logs.Reset()
 			cfg := Configuration{Protocol: settings.UDP, UDPSettings: tt.s}
+			cfg.UDPSettings.DialTimeoutMs = 200 // Keep this test focused on MTU warnings.
 			cfg.applyDefaults()
 			if cfg.UDPSettings.MTU != tt.want {
 				t.Fatalf("MTU = %d, want %d", cfg.UDPSettings.MTU, tt.want)
@@ -232,6 +233,56 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConfiguration_ApplyDefaultsDialTimeout(t *testing.T) {
+	var logs bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	for _, protocol := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS, settings.WSS} {
+		for _, test := range []struct {
+			name        string
+			configured  settings.DialTimeoutMs
+			want        settings.DialTimeoutMs
+			wantWarning bool
+		}{
+			{name: "zero", configured: 0, want: 5000, wantWarning: true},
+			{name: "negative", configured: -1, want: 5000, wantWarning: true},
+			{name: "short", configured: 200, want: 200},
+			{name: "long", configured: 10000, want: 10000},
+		} {
+			t.Run(protocol.String()+"/"+test.name, func(t *testing.T) {
+				logs.Reset()
+				cfg := Configuration{Protocol: protocol}
+				active, err := cfg.selectedSettings()
+				if err != nil {
+					t.Fatal(err)
+				}
+				active.Protocol = protocol
+				active.DialTimeoutMs = test.configured
+				cfg.applyDefaults()
+				if active.DialTimeoutMs != test.want {
+					t.Fatalf("DialTimeoutMs = %d, want %d", active.DialTimeoutMs, test.want)
+				}
+				if test.wantWarning {
+					wantLog := `level=WARN msg="client dial timeout was changed to a positive default" protocol=` + protocol.String() +
+						" configured=" + strconv.Itoa(int(test.configured)) + " effective=" + strconv.Itoa(int(test.want))
+					if !strings.Contains(logs.String(), wantLog) {
+						t.Errorf("log does not contain %q: %q", wantLog, logs.String())
+					}
+				} else if logs.Len() != 0 {
+					t.Errorf("positive timeout logged changes: %s", &logs)
+				}
+				logs.Reset()
+				cfg.applyDefaults()
+				if active.DialTimeoutMs != test.want || logs.Len() != 0 {
+					t.Errorf("reapplying defaults changed timeout or logged changes: timeout=%d log=%q", active.DialTimeoutMs, logs.String())
+				}
+			})
+		}
 	}
 }
 
@@ -279,7 +330,8 @@ func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
 			cfg := Configuration{
 				Protocol: settings.UDP,
 				UDPSettings: settings.Settings{
-					Network: test.network,
+					Network:       test.network,
+					DialTimeoutMs: 200,
 				},
 			}
 			cfg.applyDefaults()
