@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"tungo/internal/config/settings"
 )
@@ -36,7 +37,7 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 		tcp.MTU != settings.DefaultEthernetMTU ||
 		tcp.Protocol != settings.TCP ||
 		tcp.Encryption != settings.ChaCha20Poly1305 ||
-		tcp.DialTimeoutMs != 5000 {
+		tcp.DialTimeout != settings.HumanReadableDuration(5*time.Second) {
 		t.Fatalf("unexpected default TCP settings: %+v", tcp)
 	}
 	// IPv6 is opt-in — no defaults
@@ -65,7 +66,7 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 			tc.s.Port == 0 ||
 			tc.s.MTU == 0 ||
 			tc.s.Protocol == settings.UNKNOWN ||
-			tc.s.DialTimeoutMs == 0 {
+			tc.s.DialTimeout == 0 {
 			t.Fatalf("applyDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
 		}
 		// IPv6 is opt-in — applyDefaults must NOT populate it
@@ -103,9 +104,9 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 				IPv4:       netip.MustParseAddr("10.9.0.1"),
 				Port:       1234,
 			},
-			MTU:           1400,
-			Protocol:      settings.TCP,
-			DialTimeoutMs: 2500,
+			MTU:         1400,
+			Protocol:    settings.TCP,
+			DialTimeout: settings.HumanReadableDuration(2500 * time.Millisecond),
 		},
 	}
 	c.applyDefaults()
@@ -117,7 +118,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 		c.TCPSettings.Port != 1234 ||
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
-		c.TCPSettings.DialTimeoutMs != 2500 {
+		c.TCPSettings.DialTimeout != settings.HumanReadableDuration(2500*time.Millisecond) {
 		t.Fatalf("applyDefaults should not override explicit fields: %+v", c.TCPSettings)
 	}
 }

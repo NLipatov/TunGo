@@ -74,8 +74,8 @@ func connectionTestSettings(host string, port int, proto settings.Protocol) sett
 			Server: mustHost(host),
 			Port:   port,
 		},
-		Protocol:      proto,
-		DialTimeoutMs: 200,
+		Protocol:    proto,
+		DialTimeout: settings.HumanReadableDuration(200 * time.Millisecond),
 	}
 }
 
@@ -904,9 +904,9 @@ func TestConnect_HandshakeFailureFallsBack(t *testing.T) {
 		for _, failure := range []string{"invalid response", "timeout"} {
 			t.Run(protocol.String()+"/"+failure, func(t *testing.T) {
 				s := settings.Settings{
-					Network:       settings.Network{Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}},
-					Protocol:      protocol,
-					DialTimeoutMs: 200,
+					Network:     settings.Network{Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"}},
+					Protocol:    protocol,
+					DialTimeout: settings.HumanReadableDuration(200 * time.Millisecond),
 				}
 				if failure == "invalid response" && protocol != settings.WS {
 					connectionTestDNS(t, "127.0.0.1", "::1")
@@ -1104,7 +1104,7 @@ func TestConnect_ContextEndsDuringDNS(t *testing.T) {
 				}}
 				t.Cleanup(func() { net.DefaultResolver = previous })
 				s := connectionTestSettings("connect.test", 443, protocol)
-				s.DialTimeoutMs = 2000 // The parent context must expire before the lookup.
+				s.DialTimeout = settings.HumanReadableDuration(2 * time.Second) // The parent context must expire before the lookup.
 				client := connectionTestClient(t, testConfigurationWithSettings(s))
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				defer cancel()

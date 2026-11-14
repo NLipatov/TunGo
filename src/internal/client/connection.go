@@ -62,7 +62,7 @@ func (c *Client) connect(
 			return nil, nil, nil, err
 		}
 		for _, host := range hosts {
-			deadline := time.Now().Add(active.TCPSettings.DialTimeoutMs.Duration())
+			deadline := time.Now().Add(time.Duration(active.TCPSettings.DialTimeout))
 			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.TCPSettings.Port))
@@ -85,7 +85,7 @@ func (c *Client) connect(
 			return nil, nil, nil, err
 		}
 		for _, host := range hosts {
-			deadline := time.Now().Add(active.UDPSettings.DialTimeoutMs.Duration())
+			deadline := time.Now().Add(time.Duration(active.UDPSettings.DialTimeout))
 			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.UDPSettings.Port))
@@ -118,7 +118,7 @@ func (c *Client) connect(
 			}
 		}
 		for _, host := range hosts {
-			deadline := time.Now().Add(active.WSSettings.DialTimeoutMs.Duration())
+			deadline := time.Now().Add(time.Duration(active.WSSettings.DialTimeout))
 			connectCtx, cancel := context.WithDeadline(ctx, deadline)
 			defer cancel()
 			endpoint := net.JoinHostPort(host, strconv.Itoa(active.WSSettings.Port))
@@ -172,7 +172,7 @@ func (c *Client) resolveServerAddresses(ctx context.Context, s settings.Settings
 }
 
 func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFamily int) ([]netip.Addr, error) {
-	deadline := time.Now().Add(s.DialTimeoutMs.Duration())
+	deadline := time.Now().Add(time.Duration(s.DialTimeout))
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	ips, err := net.DefaultResolver.LookupNetIP(ctx, fmt.Sprintf("ip%d", ipFamily), s.Server.Domain)

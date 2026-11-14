@@ -15,6 +15,8 @@ sidebar_position: 1
 
 ## Пример с комментариями {#example}
 
+Сервер переносит `DialTimeout` в генерируемые клиентские конфигурации. Указывайте `DialTimeout` строкой с единицами времени: `"5s"` — 5 секунд, `"500ms"` — 500 миллисекунд, `"1m30s"` — 1 минута 30 секунд. Полный синтаксис описан в документации [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration).
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — Настройки TCP
@@ -31,7 +33,7 @@ sidebar_position: 1
     "MTU": 1500, // MTU туннеля в байтах
     "Protocol": "TCP", // Протокол транспорта
     "Encryption": "ChaCha20Poly1305", // Алгоритм шифрования
-    "DialTimeoutMs": 5000 // Таймаут подключения в миллисекундах
+    "DialTimeout": "5s" // Таймаут подключения: 5 секунд
   },
 
   // UDPSettings — Настройки UDP
@@ -45,7 +47,7 @@ sidebar_position: 1
     "MTU": 1500, // MTU туннеля в байтах
     "Protocol": "UDP", // Протокол транспорта
     "Encryption": "ChaCha20Poly1305", // Алгоритм шифрования
-    "DialTimeoutMs": 5000 // Таймаут подключения в миллисекундах
+    "DialTimeout": "5s" // Таймаут подключения: 5 секунд
   },
 
   // WSSettings — Настройки WebSocket
@@ -59,7 +61,7 @@ sidebar_position: 1
     "MTU": 1500, // MTU туннеля в байтах
     "Protocol": "WS", // Протокол транспорта
     "Encryption": "ChaCha20Poly1305", // Алгоритм шифрования
-    "DialTimeoutMs": 5000 // Таймаут подключения в миллисекундах
+    "DialTimeout": "5s" // Таймаут подключения: 5 секунд
   },
 
   "Host": "", // Домен/IP для клиентских конфигов; пусто — автоопределение

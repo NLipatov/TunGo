@@ -15,6 +15,8 @@ sidebar_position: 1
 
 ## مثال مع تعليقات {#example}
 
+ينسخ الخادم `DialTimeout` إلى إعدادات العميل التي ينشئها. حدّد `DialTimeout` كسلسلة نصية تتضمن وحدة الزمن: `"5s"` تعني 5 ثوانٍ، و`"500ms"` تعني 500 ميلي ثانية، و`"1m30s"` تعني دقيقة واحدة و30 ثانية. راجع [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) للاطلاع على الصيغة الكاملة.
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — إعدادات TCP
@@ -31,7 +33,7 @@ sidebar_position: 1
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "TCP", // بروتوكول النقل
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   // UDPSettings — إعدادات UDP
@@ -45,7 +47,7 @@ sidebar_position: 1
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "UDP", // بروتوكول النقل
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   // WSSettings — إعدادات WebSocket
@@ -59,7 +61,7 @@ sidebar_position: 1
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "WS", // بروتوكول النقل
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   "Host": "", // النطاق/IP لإعدادات العملاء المُنشأة؛ فارغ للاكتشاف التلقائي

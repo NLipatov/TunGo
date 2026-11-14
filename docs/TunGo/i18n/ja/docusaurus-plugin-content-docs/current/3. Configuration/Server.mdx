@@ -15,6 +15,8 @@ sidebar_position: 1
 
 ## コメント付きの設定例 {#example}
 
+サーバーは `DialTimeout` を生成するクライアント設定にコピーします。 `DialTimeout` は単位付きの文字列で指定します。`"5s"` は 5 秒、`"500ms"` は 500 ミリ秒、`"1m30s"` は 1 分 30 秒です。構文の詳細は [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) を参照してください。
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — TCP の設定
@@ -31,7 +33,7 @@ sidebar_position: 1
     "MTU": 1500, // トンネルの MTU（バイト）
     "Protocol": "TCP", // トランスポートプロトコル
     "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
-    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+    "DialTimeout": "5s" // 接続タイムアウト: 5 秒
   },
 
   // UDPSettings — UDP の設定
@@ -45,7 +47,7 @@ sidebar_position: 1
     "MTU": 1500, // トンネルの MTU（バイト）
     "Protocol": "UDP", // トランスポートプロトコル
     "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
-    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+    "DialTimeout": "5s" // 接続タイムアウト: 5 秒
   },
 
   // WSSettings — WebSocket の設定
@@ -59,7 +61,7 @@ sidebar_position: 1
     "MTU": 1500, // トンネルの MTU（バイト）
     "Protocol": "WS", // トランスポートプロトコル
     "Encryption": "ChaCha20Poly1305", // 暗号化アルゴリズム
-    "DialTimeoutMs": 5000 // 接続タイムアウト（ミリ秒）
+    "DialTimeout": "5s" // 接続タイムアウト: 5 秒
   },
 
   "Host": "", // 生成するクライアント用のドメイン/IP。空欄は自動検出

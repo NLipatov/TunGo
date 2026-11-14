@@ -6,13 +6,14 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"time"
 
 	"tungo/internal/config/internal/splits"
 	"tungo/internal/config/settings"
 )
 
 const (
-	defaultTimeoutMs = 5000
+	defaultDialTimeout = settings.HumanReadableDuration(5000 * time.Millisecond)
 )
 
 type Configuration struct {
@@ -48,7 +49,7 @@ func (c *Configuration) applyDefaults() {
 	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
 	c.TunnelRoutesV4, c.TunnelRoutesV6 = routesV4, routesV6
 	activeSettings.MTU = effectiveMTU(*activeSettings, c.Protocol)
-	activeSettings.DialTimeoutMs = effectiveDialTimeout(*activeSettings)
+	activeSettings.DialTimeout = effectiveDialTimeout(*activeSettings)
 }
 
 func effectiveDNS(network settings.Network) ([]string, []string) {
@@ -193,14 +194,14 @@ func effectiveMTU(configured settings.Settings, protocol settings.Protocol) int 
 	return mtu
 }
 
-func effectiveDialTimeout(s settings.Settings) settings.DialTimeoutMs {
-	timeout := s.DialTimeoutMs
+func effectiveDialTimeout(s settings.Settings) settings.HumanReadableDuration {
+	timeout := s.DialTimeout
 	if timeout <= 0 {
-		timeout = defaultTimeoutMs
+		timeout = defaultDialTimeout
 		slog.Warn(
 			"client dial timeout was changed to a positive default",
 			"protocol", s.Protocol.String(),
-			"configured", s.DialTimeoutMs,
+			"configured", s.DialTimeout,
 			"effective", timeout,
 		)
 	}

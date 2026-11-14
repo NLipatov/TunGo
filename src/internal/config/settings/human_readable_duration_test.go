@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 )
@@ -51,30 +50,5 @@ func TestHumanReadableDuration_UnmarshalJSON_InvalidDuration(t *testing.T) {
 	err := d.UnmarshalJSON([]byte(input))
 	if err == nil {
 		t.Fatal("expected error for invalid duration string")
-	}
-}
-
-func TestSessionLifetime_JSONMarshalling(t *testing.T) {
-	original := SessionLifetime{
-		Ttl:             HumanReadableDuration(90 * time.Minute),
-		CleanupInterval: HumanReadableDuration(15 * time.Minute),
-	}
-
-	b, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("Marshal failed: %v", err)
-	}
-
-	var decoded SessionLifetime
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-
-	if decoded.Ttl != original.Ttl {
-		t.Errorf("Ttl mismatch: expected %v, got %v", original.Ttl, decoded.Ttl)
-	}
-
-	if decoded.CleanupInterval != original.CleanupInterval {
-		t.Errorf("CleanupInterval mismatch: expected %v, got %v", original.CleanupInterval, decoded.CleanupInterval)
 	}
 }

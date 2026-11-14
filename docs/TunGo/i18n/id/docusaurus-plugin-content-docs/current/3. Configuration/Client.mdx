@@ -18,6 +18,8 @@ Mulai ulang klien setelah melakukan perubahan.
 
 Konfigurasi klien dibuat oleh server. Anda dapat menyesuaikannya jika diperlukan.
 
+Isi `DialTimeout` dengan string yang menyertakan satuan waktu: `"5s"` berarti 5 detik, `"500ms"` berarti 500 milidetik, dan `"1m30s"` berarti 1 menit 30 detik. Lihat [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) untuk sintaks lengkapnya.
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // ID klien yang ditetapkan oleh server
@@ -35,7 +37,7 @@ Konfigurasi klien dibuat oleh server. Anda dapat menyesuaikannya jika diperlukan
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "TCP", // Transport profil; Protocol di tingkat teratas memilih transport aktif
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   // UDPSettings — Pengaturan UDP
@@ -50,7 +52,7 @@ Konfigurasi klien dibuat oleh server. Anda dapat menyesuaikannya jika diperlukan
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "UDP", // Transport profil; Protocol di tingkat teratas memilih transport aktif
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   // WSSettings — Pengaturan WebSocket untuk WS dan WSS
@@ -65,7 +67,7 @@ Konfigurasi klien dibuat oleh server. Anda dapat menyesuaikannya jika diperlukan
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "WS", // Transport profil; Protocol di tingkat teratas memilih transport aktif
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   "X25519PublicKey": "<server-public-key>", // Kunci publik server dari konfigurasi yang dihasilkan

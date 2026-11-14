@@ -15,6 +15,8 @@ Starten Sie den Server nach Änderungen neu.
 
 ## Beispiel mit Kommentaren {#example}
 
+Der Server übernimmt `DialTimeout` in die erzeugten Client-Konfigurationen. Gib `DialTimeout` als Zeichenfolge mit Zeiteinheit an: `"5s"` bedeutet 5 Sekunden, `"500ms"` bedeutet 500 Millisekunden und `"1m30s"` bedeutet 1 Minute 30 Sekunden. Die vollständige Syntax findest du unter [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration).
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — TCP-Einstellungen
@@ -31,7 +33,7 @@ Starten Sie den Server nach Änderungen neu.
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "TCP", // Transportprotokoll
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   // UDPSettings — UDP-Einstellungen
@@ -45,7 +47,7 @@ Starten Sie den Server nach Änderungen neu.
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "UDP", // Transportprotokoll
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   // WSSettings — WebSocket-Einstellungen
@@ -59,7 +61,7 @@ Starten Sie den Server nach Änderungen neu.
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "WS", // Transportprotokoll
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   "Host": "", // Domain/IP für erzeugte Clients; leer bedeutet automatische Erkennung

@@ -15,6 +15,8 @@ Restart the server after making changes.
 
 ## Example with comments {#example}
 
+The server copies `DialTimeout` to generated client configurations. Use a quoted duration for `DialTimeout`: `"5s"` means 5 seconds, `"500ms"` means 500 milliseconds, and `"1m30s"` means 1 minute 30 seconds. See [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) for the full syntax.
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — TCP settings
@@ -31,7 +33,7 @@ Restart the server after making changes.
     "MTU": 1500, // Tunnel MTU in bytes
     "Protocol": "TCP", // Transport protocol
     "Encryption": "ChaCha20Poly1305", // Encryption algorithm
-    "DialTimeoutMs": 5000 // Connection timeout in milliseconds
+    "DialTimeout": "5s" // Connection timeout: 5 seconds
   },
 
   // UDPSettings — UDP settings
@@ -45,7 +47,7 @@ Restart the server after making changes.
     "MTU": 1500, // Tunnel MTU in bytes
     "Protocol": "UDP", // Transport protocol
     "Encryption": "ChaCha20Poly1305", // Encryption algorithm
-    "DialTimeoutMs": 5000 // Connection timeout in milliseconds
+    "DialTimeout": "5s" // Connection timeout: 5 seconds
   },
 
   // WSSettings — WebSocket settings
@@ -59,7 +61,7 @@ Restart the server after making changes.
     "MTU": 1500, // Tunnel MTU in bytes
     "Protocol": "WS", // Transport protocol
     "Encryption": "ChaCha20Poly1305", // Encryption algorithm
-    "DialTimeoutMs": 5000 // Connection timeout in milliseconds
+    "DialTimeout": "5s" // Connection timeout: 5 seconds
   },
 
   "Host": "", // Domain/IP for generated clients; empty means automatic detection

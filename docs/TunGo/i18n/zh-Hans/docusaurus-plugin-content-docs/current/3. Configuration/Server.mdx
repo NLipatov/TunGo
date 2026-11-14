@@ -15,6 +15,8 @@ sidebar_position: 1
 
 ## 带注释的示例 {#example}
 
+服务器会将 `DialTimeout` 复制到生成的客户端配置中。 将 `DialTimeout` 设置为带单位的字符串：`"5s"` 表示 5 秒，`"500ms"` 表示 500 毫秒，`"1m30s"` 表示 1 分 30 秒。完整语法请参阅 [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration)。
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — TCP 设置
@@ -31,7 +33,7 @@ sidebar_position: 1
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "TCP", // 传输协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   // UDPSettings — UDP 设置
@@ -45,7 +47,7 @@ sidebar_position: 1
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "UDP", // 传输协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   // WSSettings — WebSocket 设置
@@ -59,7 +61,7 @@ sidebar_position: 1
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "WS", // 传输协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   "Host": "", // 生成客户端配置时使用的域名/IP；留空则自动检测

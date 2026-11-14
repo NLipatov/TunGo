@@ -18,6 +18,8 @@ Starte den Client nach Änderungen neu.
 
 Die Client-Konfiguration wird vom Server erzeugt. Du kannst sie bei Bedarf anpassen.
 
+Gib `DialTimeout` als Zeichenfolge mit Zeiteinheit an: `"5s"` bedeutet 5 Sekunden, `"500ms"` bedeutet 500 Millisekunden und `"1m30s"` bedeutet 1 Minute 30 Sekunden. Die vollständige Syntax findest du unter [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration).
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // Vom Server zugewiesene Client-ID
@@ -35,7 +37,7 @@ Die Client-Konfiguration wird vom Server erzeugt. Du kannst sie bei Bedarf anpas
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "TCP", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   // UDPSettings — UDP-Einstellungen
@@ -50,7 +52,7 @@ Die Client-Konfiguration wird vom Server erzeugt. Du kannst sie bei Bedarf anpas
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "UDP", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   // WSSettings — WebSocket-Einstellungen für WS und WSS
@@ -65,7 +67,7 @@ Die Client-Konfiguration wird vom Server erzeugt. Du kannst sie bei Bedarf anpas
     "MTU": 1500, // Tunnel-MTU in Bytes
     "Protocol": "WS", // Transport des Profils; Protocol auf oberster Ebene wählt den aktiven Transport
     "Encryption": "ChaCha20Poly1305", // Verschlüsselungsalgorithmus
-    "DialTimeoutMs": 5000 // Verbindungszeitlimit in Millisekunden
+    "DialTimeout": "5s" // Verbindungszeitlimit: 5 Sekunden
   },
 
   "X25519PublicKey": "<server-public-key>", // Öffentlicher Serverschlüssel aus der erzeugten Konfiguration

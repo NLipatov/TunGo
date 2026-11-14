@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
@@ -195,9 +196,9 @@ func TestDeriveClientSettings(t *testing.T) {
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			Port:       8080,
 		},
-		MTU:           1500,
-		Encryption:    settings.ChaCha20Poly1305,
-		DialTimeoutMs: 2500,
+		MTU:         1500,
+		Encryption:  settings.ChaCha20Poly1305,
+		DialTimeout: settings.HumanReadableDuration(2500 * time.Millisecond),
 	}
 	clientSettings, err := deriveClientSettings(serverSettings, settings.Host{Domain: "vpn.example"}, settings.UDP)
 	if err != nil {
