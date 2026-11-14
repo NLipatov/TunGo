@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/netip"
-	"time"
 
 	"tungo/internal/config/settings"
 )
@@ -134,7 +133,7 @@ func (c *Configuration) defaultSettings(
 		MTU:         settings.DefaultEthernetMTU,
 		Protocol:    protocol,
 		Encryption:  settings.ChaCha20Poly1305,
-		DialTimeout: settings.HumanReadableDuration(5000 * time.Millisecond),
+		DialTimeout: settings.DefaultDialTimeout,
 	}
 }
 

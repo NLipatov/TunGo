@@ -6,14 +6,9 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-	"time"
 
 	"tungo/internal/config/internal/splits"
 	"tungo/internal/config/settings"
-)
-
-const (
-	defaultDialTimeout = settings.HumanReadableDuration(5000 * time.Millisecond)
 )
 
 type Configuration struct {
@@ -197,7 +192,7 @@ func effectiveMTU(configured settings.Settings, protocol settings.Protocol) int 
 func effectiveDialTimeout(s settings.Settings) settings.HumanReadableDuration {
 	timeout := s.DialTimeout
 	if timeout <= 0 {
-		timeout = defaultDialTimeout
+		timeout = settings.DefaultDialTimeout
 		slog.Warn(
 			"client dial timeout was changed to a positive default",
 			"protocol", s.Protocol.String(),
