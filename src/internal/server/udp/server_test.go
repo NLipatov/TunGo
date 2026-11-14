@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net/netip"
 	"testing"
@@ -169,6 +170,53 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	}
 	if string(writer.packet[udpcrypto.PayloadOffset:]) != string(tun.packet) {
 		t.Fatal("sent payload differs from TUN packet")
+	}
+}
+
+type failingEncryptCrypto struct{}
+
+func (failingEncryptCrypto) Encrypt([]byte) ([]byte, error) {
+	return nil, errors.New("nonce exhausted")
+}
+func (failingEncryptCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no buffer space available") }
+
+func TestServer_RunTunSendFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		crypto interface {
+			Encrypt([]byte) ([]byte, error)
+			Decrypt([]byte) ([]byte, error)
+		}
+		writer      io.Writer
+		wantDeleted bool
+	}{
+		{name: "success keeps peer", crypto: &passthroughCrypto{}, writer: &captureWriter{}},
+		{name: "transport write keeps peer", crypto: &passthroughCrypto{}, writer: failingWriter{}},
+		{name: "encryption deletes peer", crypto: failingEncryptCrypto{}, writer: &captureWriter{}, wantDeleted: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			internal := netip.MustParseAddr("10.0.0.2")
+			tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
+			peer := session.NewPeer(tt.crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), tt.writer)
+			peers := session.NewRepository()
+			peers.Add(peer)
+			server := &Server{ctx: context.Background(), tun: tun, peers: peers}
+
+			if err := server.runTun(); err != io.EOF {
+				t.Fatalf("RunTun error = %v, want EOF", err)
+			}
+			if peer.IsClosed() != tt.wantDeleted {
+				t.Fatalf("peer closed = %v, want %v", peer.IsClosed(), tt.wantDeleted)
+			}
+			_, err := peers.GetByInternalAddrPort(internal)
+			if found := err == nil; found == tt.wantDeleted {
+				t.Fatalf("peer found in repository = %v, want %v", found, !tt.wantDeleted)
+			}
+		})
 	}
 }
 

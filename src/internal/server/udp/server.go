@@ -247,11 +247,7 @@ func (s *Server) runTun() error {
 		if err != nil {
 			continue
 		}
-		if err := peer.Send(frame[:udpcrypto.PayloadOffset+n]); err != nil {
-			slog.Warn("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
-			s.peers.Delete(peer)
-			continue
-		}
+		s.peerSend(peer, frame[:udpcrypto.PayloadOffset+n])
 	}
 }
 
@@ -293,14 +289,29 @@ func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, 
 	if err := servicepacket.Encode(kind, payload); err != nil {
 		return err
 	}
-	return peer.Send(frame[:udpcrypto.PayloadOffset+payloadLen])
+	s.peerSend(peer, frame[:udpcrypto.PayloadOffset+payloadLen])
+	return nil
 }
 
-func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
+func (s *Server) sendPlaintext(peer *session.Peer, payload []byte) error {
 	if len(payload) > settings.DefaultEthernetMTU {
 		return io.ErrShortBuffer
 	}
 	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	copy(frame[udpcrypto.PayloadOffset:], payload)
-	return peer.Send(frame[:udpcrypto.PayloadOffset+len(payload)])
+	s.peerSend(peer, frame[:udpcrypto.PayloadOffset+len(payload)])
+	return nil
+}
+
+func (s *Server) peerSend(peer *session.Peer, payload []byte) {
+	err := peer.Send(payload)
+	switch {
+	case err == nil:
+	case errors.Is(err, session.ErrPeerClosed):
+	case errors.Is(err, session.ErrTransportWrite):
+		slog.Debug("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
+	default:
+		slog.Warn("dropping peer after send failure", "peer", peer.ExternalAddrPort(), "err", err)
+		s.peers.Delete(peer)
+	}
 }

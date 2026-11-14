@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"io"
 	"net/netip"
 	"sync"
@@ -26,10 +27,12 @@ func (s *encryptedSender) Send(plaintext []byte) error {
 
 	ciphertext, err := s.crypto.Encrypt(plaintext)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrEncryption, err)
 	}
-	_, err = s.writer.Write(ciphertext)
-	return err
+	if _, err = s.writer.Write(ciphertext); err != nil {
+		return fmt.Errorf("%w: %w", ErrTransportWrite, err)
+	}
+	return nil
 }
 
 func (s *encryptedSender) Close() error {
