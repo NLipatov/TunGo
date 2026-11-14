@@ -18,6 +18,8 @@ Redémarrez le client après les modifications.
 
 La configuration du client est générée par le serveur. Vous pouvez la personnaliser si nécessaire.
 
+Définissez `DialTimeout` comme une chaîne avec des unités de temps : `"5s"` signifie 5 secondes, `"500ms"` signifie 500 millisecondes et `"1m30s"` signifie 1 minute et 30 secondes. Consultez [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) pour la syntaxe complète.
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // Identifiant du client attribué par le serveur
@@ -35,7 +37,7 @@ La configuration du client est générée par le serveur. Vous pouvez la personn
     "MTU": 1500, // MTU du tunnel en octets
     "Protocol": "TCP", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
     "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
-    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+    "DialTimeout": "5s" // Délai de connexion : 5 secondes
   },
 
   // UDPSettings — Paramètres UDP
@@ -50,7 +52,7 @@ La configuration du client est générée par le serveur. Vous pouvez la personn
     "MTU": 1500, // MTU du tunnel en octets
     "Protocol": "UDP", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
     "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
-    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+    "DialTimeout": "5s" // Délai de connexion : 5 secondes
   },
 
   // WSSettings — Paramètres WebSocket pour WS et WSS
@@ -65,7 +67,7 @@ La configuration du client est générée par le serveur. Vous pouvez la personn
     "MTU": 1500, // MTU du tunnel en octets
     "Protocol": "WS", // Transport du profil ; Protocol au premier niveau sélectionne le transport actif
     "Encryption": "ChaCha20Poly1305", // Algorithme de chiffrement
-    "DialTimeoutMs": 5000 // Délai de connexion en millisecondes
+    "DialTimeout": "5s" // Délai de connexion : 5 secondes
   },
 
   "X25519PublicKey": "<server-public-key>", // Clé publique du serveur issue de la configuration générée

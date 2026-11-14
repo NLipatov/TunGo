@@ -163,25 +163,6 @@ func TestRegistrationConn_Read_Error(t *testing.T) {
 	}
 }
 
-// RemoteAddrPort should return the address passed at construction time.
-func TestRegistrationConn_RemoteAddrPort(t *testing.T) {
-	q := &mockQueue{}
-	addr := netip.MustParseAddrPort("10.0.0.1:5555")
-
-	adapter := NewRegistrationConn(nil, addr, netip.MustParseAddr("192.0.2.1"), q)
-
-	type addrPorter interface {
-		RemoteAddrPort() netip.AddrPort
-	}
-	ra, ok := adapter.(addrPorter)
-	if !ok {
-		t.Fatal("adapter does not implement RemoteAddrPort()")
-	}
-	if ra.RemoteAddrPort() != addr {
-		t.Fatalf("expected %v, got %v", addr, ra.RemoteAddrPort())
-	}
-}
-
 // Close should do nothing (no panic, no close of UDP socket).
 func TestRegistrationConn_Close_NoEffect(t *testing.T) {
 	q := &mockQueue{}
@@ -204,11 +185,11 @@ func TestRegistrationConn_SetAddrPort(t *testing.T) {
 	q := &mockQueue{}
 	original := netip.MustParseAddrPort("10.0.0.1:9999")
 	updated := netip.MustParseAddrPort("10.0.0.2:8888")
-	adapter := NewRegistrationConn(nil, original, netip.MustParseAddr("192.0.2.1"), q).(*registrationConn)
+	adapter := NewRegistrationConn(nil, original, netip.MustParseAddr("192.0.2.1"), q)
 
 	adapter.SetAddrPort(updated)
 
-	if got := adapter.RemoteAddrPort(); got != updated {
-		t.Fatalf("RemoteAddrPort() = %v, want %v", got, updated)
+	if got := adapter.RemoteAddr().(*net.UDPAddr).AddrPort(); got != updated {
+		t.Fatalf("RemoteAddr() = %v, want %v", got, updated)
 	}
 }

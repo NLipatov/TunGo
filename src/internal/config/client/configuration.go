@@ -41,11 +41,10 @@ func (c *Configuration) applyDefaults() {
 		dnsV4, dnsV6,
 		activeSettings.IPv4Subnet, activeSettings.IPv6Subnet,
 	)
-	mtu := effectiveMTU(*activeSettings, c.Protocol)
-
 	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
 	c.TunnelRoutesV4, c.TunnelRoutesV6 = routesV4, routesV6
-	activeSettings.MTU = mtu
+	activeSettings.MTU = effectiveMTU(*activeSettings, c.Protocol)
+	activeSettings.DialTimeout = effectiveDialTimeout(*activeSettings)
 }
 
 func effectiveDNS(network settings.Network) ([]string, []string) {
@@ -188,6 +187,20 @@ func effectiveMTU(configured settings.Settings, protocol settings.Protocol) int 
 		)
 	}
 	return mtu
+}
+
+func effectiveDialTimeout(s settings.Settings) settings.HumanReadableDuration {
+	timeout := s.DialTimeout
+	if timeout <= 0 {
+		timeout = settings.DefaultDialTimeout
+		slog.Warn(
+			"client dial timeout was changed to a positive default",
+			"protocol", s.Protocol.String(),
+			"configured", s.DialTimeout,
+			"effective", timeout,
+		)
+	}
+	return timeout
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

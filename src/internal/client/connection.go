@@ -6,9 +6,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
-	"math"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -16,14 +17,12 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"tungo/internal/config/client"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20/tcp"
 	"tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/rekey"
-	"tungo/internal/transport/host"
 	tcptransport "tungo/internal/transport/tcp"
 	"tungo/internal/transport/ws"
 	"unicode/utf8"
@@ -50,54 +49,149 @@ type rekeyV2Handshake interface {
 
 func (c *Client) connect(
 	ctx context.Context,
-	configuration client.Configuration,
-) (io.ReadWriteCloser, crypto, clientRekey, error) {
-	settings, err := configuration.ActiveSettings()
+) (net.Conn, crypto, clientRekey, error) {
+	active, err := c.configurations.Active()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	deadline := time.Now().Add(time.Duration(math.Max(float64(settings.DialTimeoutMs), 5000)) * time.Millisecond)
-	connectCtx, establishCancel := context.WithDeadline(ctx, deadline)
-	defer establishCancel()
+	var errs []error
+	switch active.Protocol {
+	case settings.TCP:
+		hosts, err := c.resolveServerAddresses(ctx, active.TCPSettings)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, host := range hosts {
+			deadline := time.Now().Add(time.Duration(active.TCPSettings.DialTimeout))
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.TCPSettings.Port))
+			conn, err := dialTCP(connectCtx, endpoint)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("unable to establish a TCP connection: %w", err))
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
+		}
+		return nil, nil, nil, errors.Join(errs...)
+	case settings.UDP:
+		hosts, err := c.resolveServerAddresses(ctx, active.UDPSettings)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, host := range hosts {
+			deadline := time.Now().Add(time.Duration(active.UDPSettings.DialTimeout))
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.UDPSettings.Port))
+			conn, err := dialUDP(connectCtx, endpoint)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
 
-	adapter, err := dial(connectCtx, ctx, settings)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", settings.Protocol, err)
+		}
+	case settings.WS, settings.WSS:
+		scheme := "ws"
+		if active.Protocol == settings.WSS {
+			scheme = "wss"
+		}
+		var hosts []string
+		for _, host := range []string{
+			active.WSSettings.Server.Domain,
+			active.WSSettings.Server.IPv4,
+			active.WSSettings.Server.IPv6,
+		} {
+			if len(host) > 0 {
+				hosts = append(hosts, host)
+			}
+		}
+		for _, host := range hosts {
+			deadline := time.Now().Add(time.Duration(active.WSSettings.DialTimeout))
+			connectCtx, cancel := context.WithDeadline(ctx, deadline)
+			defer cancel()
+			endpoint := net.JoinHostPort(host, strconv.Itoa(active.WSSettings.Port))
+			conn, err := dialWS(connectCtx, ctx, scheme, endpoint, active.WSSettings.Server.Domain)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			rwc, crypto, rekey, err := c.handshake(connectCtx, conn, active.Protocol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			return rwc, crypto, rekey, nil
+		}
+
+	default:
+		return nil, nil, nil, fmt.Errorf("unsupported protocol: %v", active.Protocol)
 	}
-
-	return c.handshake(connectCtx, adapter, settings.Protocol, configuration)
+	return nil, nil, nil, errors.Join(errs...)
 }
 
-func dial(
-	establishCtx, connCtx context.Context,
-	s settings.Settings,
-) (io.ReadWriteCloser, error) {
-	switch s.Protocol {
-	case settings.UDP, settings.TCP:
-		return dialWithFallback(establishCtx, s)
-	case settings.WS, settings.WSS:
-		return dialWebSocket(establishCtx, connCtx, s)
-	default:
-		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
+func (c *Client) resolveServerAddresses(ctx context.Context, s settings.Settings) ([]string, error) {
+	var hosts []string
+	if len(s.Server.Domain) > 0 {
+		v4s, err4 := c.lookupDomainIP(ctx, s, 4)
+		if err4 != nil {
+			slog.Warn("domain lookup", "err", err4)
+		}
+		v6s, err6 := c.lookupDomainIP(ctx, s, 6)
+		if err6 != nil {
+			slog.Warn("domain lookup", "err", err6)
+		}
+		for _, addr := range append(v4s, v6s...) {
+			hosts = append(hosts, addr.String())
+		}
 	}
+	if len(s.Server.IPv4) > 0 {
+		hosts = append(hosts, s.Server.IPv4)
+	}
+	if len(s.Server.IPv6) > 0 {
+		hosts = append(hosts, s.Server.IPv6)
+	}
+	if err := ctx.Err(); err != nil {
+		return hosts, err
+	}
+	if len(hosts) == 0 {
+		return hosts, fmt.Errorf("could not resolve hosts list from configuration's Server subsection: %v", s.Server)
+	}
+	return hosts, nil
+}
+
+func (c *Client) lookupDomainIP(ctx context.Context, s settings.Settings, ipFamily int) ([]netip.Addr, error) {
+	deadline := time.Now().Add(time.Duration(s.DialTimeout))
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, fmt.Sprintf("ip%d", ipFamily), s.Server.Domain)
+	if err != nil && ctx.Err() == nil {
+		return nil, fmt.Errorf("failed to resolve domain to ip%d %q: %w", ipFamily, s.Server.Domain, err)
+	}
+	return ips, ctx.Err()
 }
 
 func (c *Client) handshake(
 	ctx context.Context,
-	adapter io.ReadWriteCloser,
+	conn net.Conn,
 	protocol settings.Protocol,
-	configuration client.Configuration,
-) (io.ReadWriteCloser, crypto, clientRekey, error) {
-	// IK handshake requires client keys
-	if len(configuration.ClientPublicKey) != 32 || len(configuration.ClientPrivateKey) != 32 {
-		_ = adapter.Close()
-		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
+) (net.Conn, crypto, clientRekey, error) {
+	configuration, err := c.configurations.Active()
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, nil, err
 	}
-	if len(configuration.X25519PublicKey) != 32 {
-		_ = adapter.Close()
-		return nil, nil, nil, fmt.Errorf("server public key not configured (required for IK handshake)")
-	}
-
 	handshake := noise.NewIKHandshakeClient(
 		configuration.ClientPublicKey,
 		configuration.ClientPrivateKey,
@@ -106,11 +200,11 @@ func (c *Client) handshake(
 
 	var closeOnce sync.Once
 	closeAdapter := func() {
-		closeOnce.Do(func() { _ = adapter.Close() })
+		closeOnce.Do(func() { _ = conn.Close() })
 	}
 	cancelCloseOnContextDone := context.AfterFunc(ctx, closeAdapter)
 
-	if err := handshake.ClientSideHandshake(adapter); err != nil {
+	if err = handshake.ClientSideHandshake(conn); err != nil {
 		cancelCloseOnContextDone()
 		closeAdapter()
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -122,7 +216,6 @@ func (c *Client) handshake(
 	var (
 		cr              crypto
 		epochController epochController
-		err             error
 	)
 	switch protocol {
 	case settings.UDP:
@@ -152,15 +245,15 @@ func (c *Client) handshake(
 		settings.DefaultRekeyInterval,
 		time.Now().UTC(),
 	)
-	return adapter, cr, coordinator, nil
+	return conn, cr, coordinator, nil
 }
 
 func dialTCP(
 	ctx context.Context,
-	ap netip.AddrPort,
-) (io.ReadWriteCloser, error) {
+	endpoint string,
+) (net.Conn, error) {
 	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", ap.String())
+	conn, err := dialer.DialContext(ctx, "tcp", endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -171,124 +264,45 @@ func dialTCP(
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	transport := tcptransport.WithReadDeadline(conn, settings.PingRestartTimeout)
-	if remote := parseNetAddrPort(conn.RemoteAddr()); remote.IsValid() {
-		transport = tcptransport.WithRemoteAddr(transport, remote)
-	}
-
+	conn = tcptransport.WithReadDeadline(conn, settings.PingRestartTimeout)
 	return tcptransport.NewFramedConn(
-		transport,
+		conn,
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 }
 
 func dialUDP(
 	ctx context.Context,
-	ap netip.AddrPort,
-) (io.ReadWriteCloser, error) {
+	endpoint string,
+) (net.Conn, error) {
 	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "udp", ap.String())
+	conn, err := dialer.DialContext(ctx, "udp", endpoint)
 	if err != nil {
 		return nil, err
-	}
-	if remote := parseNetAddrPort(conn.RemoteAddr()); remote.IsValid() {
-		return tcptransport.WithRemoteAddr(conn, remote), nil
 	}
 	return conn, nil
 }
 
-const minimumIPv6ProbeTimeout = 2 * time.Second
-
-func dialWithFallback(ctx context.Context, s settings.Settings) (io.ReadWriteCloser, error) {
-	preferredAP, preferredErr := resolvePreferredAddrPort(ctx, s)
-	if preferredErr != nil {
-		if ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s); ipv6Err == nil {
-			if s.Protocol == settings.UDP {
-				return dialUDP(ctx, ipv6AP)
-			}
-			return dialTCP(ctx, ipv6AP)
-		}
-		return nil, preferredErr
-	}
-	// UDP dial only creates a connected socket; it does not prove endpoint reachability.
-	// Prefer the default address, but still fall back on immediate local dial errors.
-	if s.Protocol == settings.UDP {
-		transport, dialErr := dialUDP(ctx, preferredAP)
-		if dialErr == nil {
-			return transport, nil
-		}
-		if ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s); ipv6Err == nil && ipv6AP != preferredAP {
-			return dialUDP(ctx, ipv6AP)
-		}
-		return nil, dialErr
-	}
-
-	ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s)
-	if ipv6Err != nil {
-		return dialTCP(ctx, preferredAP)
-	}
-
-	// IPv6-only path: avoid probing then retrying the exact same endpoint.
-	if ipv6AP == preferredAP {
-		return dialTCP(ctx, preferredAP)
-	}
-
-	ipv6Ctx, cancel := context.WithTimeout(ctx, ipv6ProbeTimeout(s))
-	transport, dialErr := dialTCP(ipv6Ctx, ipv6AP)
-	cancel()
-	if dialErr == nil {
-		return transport, nil
-	}
-	return dialTCP(ctx, preferredAP)
-}
-
-func dialWebSocket(
+func dialWS(
 	establishCtx, connCtx context.Context,
-	s settings.Settings,
-) (io.ReadWriteCloser, error) {
-	scheme := "ws"
-	if s.Protocol == settings.WSS {
-		scheme = "wss"
-	}
-
-	port := s.Port
-	if scheme == "wss" && port == 0 {
-		port = 443
-	}
-
-	endpoint := net.JoinHostPort(preferredHost(s.Server), strconv.Itoa(port))
-
-	if s.Server.IPv6 != "" {
-		ipv6Endpoint := net.JoinHostPort(s.Server.IPv6, strconv.Itoa(port))
-		// IPv6-only path: no reason to probe then retry the same endpoint.
-		if ipv6Endpoint == endpoint {
-			return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
-		}
-		ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-		adapter, dialErr := dialWebSocketEndpoint(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
-		cancel()
-		if dialErr == nil {
-			return adapter, nil
-		}
-	}
-	return dialWebSocketEndpoint(establishCtx, connCtx, scheme, endpoint)
-}
-
-func preferredHost(host settings.Host) string {
-	if host.Domain != "" {
-		return host.Domain
-	}
-	if host.IPv4 != "" {
-		return host.IPv4
-	}
-	return host.IPv6
-}
-
-func dialWebSocketEndpoint(
-	establishCtx, connCtx context.Context,
-	scheme, endpoint string,
-) (io.ReadWriteCloser, error) {
+	scheme, endpoint, serverName string,
+) (net.Conn, error) {
 	webSocketURL := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
+	identityEndpoint := endpoint
+	if serverName != "" {
+		if _, err := netip.ParseAddr(serverName); err != nil {
+			asciiName, err := idna.Lookup.ToASCII(serverName)
+			if err != nil {
+				return nil, fmt.Errorf("invalid server hostname: %w", err)
+			}
+			serverName = asciiName
+		}
+		_, port, err := net.SplitHostPort(endpoint)
+		if err != nil {
+			return nil, err
+		}
+		identityEndpoint = net.JoinHostPort(serverName, port)
+	}
 	var (
 		remoteMu   sync.Mutex
 		remoteAddr net.Addr
@@ -296,6 +310,18 @@ func dialWebSocketEndpoint(
 	dialer := &net.Dialer{}
 	transport := cloneDefaultTransport()
 	defer transport.CloseIdleConnections()
+	if proxyForRequest := transport.Proxy; proxyForRequest != nil && identityEndpoint != endpoint {
+		// Proxy selection (including NO_PROXY) follows the configured hostname.
+		transport.Proxy = func(request *http.Request) (*url.URL, error) {
+			if request.URL.Host != endpoint {
+				return proxyForRequest(request)
+			}
+			logicalRequest := request.Clone(request.Context())
+			logicalRequest.URL.Host = identityEndpoint
+			logicalRequest.Host = identityEndpoint
+			return proxyForRequest(logicalRequest)
+		}
+	}
 	transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
 		conn, err := dialer.DialContext(ctx, network, target)
 		if err != nil {
@@ -305,6 +331,31 @@ func dialWebSocketEndpoint(
 		remoteAddr = conn.RemoteAddr()
 		remoteMu.Unlock()
 		return conn, nil
+	}
+	if scheme == "ws" && identityEndpoint != endpoint && transport.Proxy != nil {
+		// A forward proxy would replace the fallback IP with the domain in Host.
+		// CONNECT keeps the selected address separate from the HTTP identity.
+		proxyForRequest := transport.Proxy
+		transport.Proxy = nil
+		var roots *x509.CertPool
+		if transport.TLSClientConfig != nil {
+			roots = transport.TLSClientConfig.RootCAs
+		}
+		transport.DialContext = func(ctx context.Context, network, target string) (net.Conn, error) {
+			request := (&http.Request{URL: &url.URL{Scheme: "http", Host: target, Path: "/ws"}}).WithContext(ctx)
+			proxyURL, err := proxyForRequest(request)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := dialWebSocketTunnel(ctx, network, target, proxyURL, roots)
+			if err != nil {
+				return nil, err
+			}
+			remoteMu.Lock()
+			remoteAddr = conn.RemoteAddr()
+			remoteMu.Unlock()
+			return conn, nil
+		}
 	}
 	if scheme == "wss" {
 		// Own proxy setup so net/http cannot replace destination uTLS after CONNECT.
@@ -320,7 +371,7 @@ func dialWebSocketEndpoint(
 		httpTransport := transport.Clone()
 		defer httpTransport.CloseIdleConnections()
 		httpTransport.DialTLSContext = func(ctx context.Context, network, target string) (net.Conn, error) {
-			conn, err := dialTLSForWebSocket(ctx, network, target, nil, roots)
+			conn, err := dialTLSForWebSocket(ctx, network, target, nil, roots, "")
 			if err != nil {
 				return nil, err
 			}
@@ -341,7 +392,11 @@ func dialWebSocketEndpoint(
 					return nil, err
 				}
 			}
-			conn, err := dialTLSForWebSocket(ctx, network, target, proxyURL, roots)
+			tlsServerName := ""
+			if target == endpoint {
+				tlsServerName = serverName
+			}
+			conn, err := dialTLSForWebSocket(ctx, network, target, proxyURL, roots, tlsServerName)
 			if err != nil {
 				return nil, err
 			}
@@ -352,6 +407,9 @@ func dialWebSocketEndpoint(
 		}
 	}
 	opts := &websocket.DialOptions{HTTPClient: &http.Client{Transport: transport}}
+	if identityEndpoint != endpoint {
+		opts.Host = identityEndpoint
+	}
 	conn, resp, err := websocket.Dial(establishCtx, webSocketURL, opts)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -361,29 +419,23 @@ func dialWebSocketEndpoint(
 	}
 
 	wrapped, wrapErr := tcptransport.NewFramedConn(
-		tcptransport.WithReadDeadline(ws.NewConn(connCtx, conn, nil, nil), settings.PingRestartTimeout),
+		tcptransport.WithReadDeadline(ws.NewConn(connCtx, conn, nil, remoteAddr), settings.PingRestartTimeout),
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 	if wrapErr != nil {
 		_ = conn.Close(websocket.StatusInternalError, "adapter wrap failed")
 		return nil, wrapErr
 	}
-	remoteMu.Lock()
-	remote := parseNetAddrPort(remoteAddr)
-	remoteMu.Unlock()
-	if remote.IsValid() {
-		return tcptransport.WithRemoteAddr(wrapped, remote), nil
-	}
-	if remote := parseEndpointAddrPort(endpoint); remote.IsValid() {
-		return tcptransport.WithRemoteAddr(wrapped, remote), nil
-	}
 	return wrapped, nil
 }
 
-func dialTLSForWebSocket(ctx context.Context, network, target string, proxyURL *url.URL, roots *x509.CertPool) (net.Conn, error) {
+func dialTLSForWebSocket(ctx context.Context, network, target string, proxyURL *url.URL, roots *x509.CertPool, serverName string) (net.Conn, error) {
 	host, _, err := net.SplitHostPort(target)
 	if err != nil {
 		return nil, err
+	}
+	if serverName != "" {
+		host = serverName
 	}
 	raw, err := dialWebSocketTunnel(ctx, network, target, proxyURL, roots)
 	if err != nil {
@@ -528,18 +580,6 @@ func handshakeWebSocketTLS(ctx context.Context, raw net.Conn, host string, roots
 	return conn, nil
 }
 
-func ipv6ProbeTimeout(s settings.Settings) time.Duration {
-	timeout := time.Duration(s.DialTimeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	probe := timeout / 2
-	if probe < minimumIPv6ProbeTimeout {
-		return minimumIPv6ProbeTimeout
-	}
-	return probe
-}
-
 func cloneDefaultTransport() *http.Transport {
 	if base, ok := http.DefaultTransport.(*http.Transport); ok && base != nil {
 		return base.Clone()
@@ -552,145 +592,4 @@ func cloneDefaultTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-}
-
-func resolveIPv6AddrPort(ctx context.Context, s settings.Settings) (netip.AddrPort, error) {
-	if s.Server.IPv6 != "" {
-		ip, err := netip.ParseAddr(s.Server.IPv6)
-		if err != nil {
-			return netip.AddrPort{}, err
-		}
-		return addrPort(ip, s.Port)
-	}
-	if s.Server.Domain == "" {
-		return netip.AddrPort{}, fmt.Errorf("host has no IPv6 address")
-	}
-	return resolveDomainAddrPort(ctx, s, true)
-}
-
-func resolvePreferredAddrPort(ctx context.Context, s settings.Settings) (netip.AddrPort, error) {
-	rawIP := s.Server.IPv4
-	if rawIP == "" {
-		rawIP = s.Server.IPv6
-	}
-	if rawIP != "" {
-		ip, err := netip.ParseAddr(rawIP)
-		if err != nil {
-			return netip.AddrPort{}, err
-		}
-		return addrPort(ip, s.Port)
-	}
-	if s.Server.Domain == "" {
-		return netip.AddrPort{}, fmt.Errorf("server host is empty")
-	}
-	if ap4, err4 := resolveDomainAddrPort(ctx, s, false); err4 == nil {
-		return ap4, nil
-	}
-	return resolveDomainAddrPort(ctx, s, true)
-}
-
-func resolveDomainAddrPort(ctx context.Context, s settings.Settings, wantIPv6 bool) (netip.AddrPort, error) {
-	if err := validatePort(s.Port); err != nil {
-		return netip.AddrPort{}, err
-	}
-
-	var (
-		raw string
-		err error
-	)
-	if wantIPv6 {
-		raw, err = host.ResolveIPv6(ctx, s.Server)
-	} else {
-		raw, err = host.ResolveIPv4(ctx, s.Server)
-	}
-	if err != nil {
-		return netip.AddrPort{}, err
-	}
-
-	ip, parseErr := netip.ParseAddr(raw)
-	if parseErr != nil {
-		return netip.AddrPort{}, parseErr
-	}
-	isIPv4 := ip.Unmap().Is4()
-	if wantIPv6 && isIPv4 {
-		return netip.AddrPort{}, fmt.Errorf("resolved IPv4 %q, expected IPv6", raw)
-	}
-	if !wantIPv6 && !isIPv4 {
-		return netip.AddrPort{}, fmt.Errorf("resolved IPv6 %q, expected IPv4", raw)
-	}
-	if isIPv4 {
-		ip = ip.Unmap()
-	}
-	return netip.AddrPortFrom(ip, uint16(s.Port)), nil
-}
-
-func addrPort(ip netip.Addr, port int) (netip.AddrPort, error) {
-	if !ip.IsValid() {
-		return netip.AddrPort{}, fmt.Errorf("invalid IP address")
-	}
-	if err := validatePort(port); err != nil {
-		return netip.AddrPort{}, err
-	}
-	return netip.AddrPortFrom(ip.Unmap(), uint16(port)), nil
-}
-
-func validatePort(port int) error {
-	if port < 1 || port > 65535 {
-		return fmt.Errorf("invalid port: %d", port)
-	}
-	return nil
-}
-
-func parseEndpointAddrPort(endpoint string) netip.AddrPort {
-	ap, err := netip.ParseAddrPort(endpoint)
-	if err == nil {
-		return ap
-	}
-
-	host, portStr, splitErr := net.SplitHostPort(endpoint)
-	if splitErr != nil {
-		return netip.AddrPort{}
-	}
-	ip, ipErr := netip.ParseAddr(host)
-	if ipErr != nil {
-		return netip.AddrPort{}
-	}
-	port, portErr := net.LookupPort("tcp", portStr)
-	if portErr != nil || port < 1 || port > 65535 {
-		return netip.AddrPort{}
-	}
-	if ip.Unmap().Is4() {
-		ip = ip.Unmap()
-	}
-	return netip.AddrPortFrom(ip, uint16(port))
-}
-
-func parseNetAddrPort(addr net.Addr) netip.AddrPort {
-	if addr == nil {
-		return netip.AddrPort{}
-	}
-	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
-		ip, ok := netip.AddrFromSlice(tcpAddr.IP)
-		if !ok {
-			return netip.AddrPort{}
-		}
-		if ip.Unmap().Is4() {
-			ip = ip.Unmap()
-		}
-		return netip.AddrPortFrom(ip, uint16(tcpAddr.Port))
-	}
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		ip, ok := netip.AddrFromSlice(udpAddr.IP)
-		if !ok {
-			return netip.AddrPort{}
-		}
-		if ip.Unmap().Is4() {
-			ip = ip.Unmap()
-		}
-		return netip.AddrPortFrom(ip, uint16(udpAddr.Port))
-	}
-	if ap, err := netip.ParseAddrPort(addr.String()); err == nil {
-		return ap
-	}
-	return netip.AddrPort{}
 }

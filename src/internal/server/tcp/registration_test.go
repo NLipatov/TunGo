@@ -27,7 +27,7 @@ func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
 func (*tcpRegHandshake) ClientSideHandshake(_ io.ReadWriter) error {
 	return nil
 }
-func (h *tcpRegHandshake) ServerSideHandshake(_ io.ReadWriter) (int, error) {
+func (h *tcpRegHandshake) ServerSideHandshake(_ noise.HandshakeTransport) (int, error) {
 	if h.err != nil {
 		return 0, h.err
 	}

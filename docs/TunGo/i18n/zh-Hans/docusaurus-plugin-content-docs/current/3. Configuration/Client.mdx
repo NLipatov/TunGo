@@ -18,6 +18,8 @@ sidebar_position: 2
 
 客户端配置由服务器生成。你可以根据需要进行修改。
 
+将 `DialTimeout` 设置为带单位的字符串：`"5s"` 表示 5 秒，`"500ms"` 表示 500 毫秒，`"1m30s"` 表示 1 分 30 秒。完整语法请参阅 [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration)。
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // 服务器分配的客户端 ID
@@ -35,7 +37,7 @@ sidebar_position: 2
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "TCP", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   // UDPSettings — UDP 设置
@@ -50,7 +52,7 @@ sidebar_position: 2
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "UDP", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   // WSSettings — WS 和 WSS 的 WebSocket 设置
@@ -65,7 +67,7 @@ sidebar_position: 2
     "MTU": 1500, // 隧道 MTU，单位为字节
     "Protocol": "WS", // 此配置块的传输协议；由顶层 Protocol 选择当前使用的协议
     "Encryption": "ChaCha20Poly1305", // 加密算法
-    "DialTimeoutMs": 5000 // 连接超时，单位为毫秒
+    "DialTimeout": "5s" // 连接超时：5 秒
   },
 
   "X25519PublicKey": "<server-public-key>", // 生成的配置中的服务器公钥

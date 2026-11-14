@@ -18,6 +18,8 @@ sidebar_position: 2
 
 ينشئ الخادم إعدادات العميل. يمكنك تخصيصها عند الحاجة.
 
+حدّد `DialTimeout` كسلسلة نصية تتضمن وحدة الزمن: `"5s"` تعني 5 ثوانٍ، و`"500ms"` تعني 500 ميلي ثانية، و`"1m30s"` تعني دقيقة واحدة و30 ثانية. راجع [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) للاطلاع على الصيغة الكاملة.
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // معرّف العميل الذي عيّنه الخادم
@@ -35,7 +37,7 @@ sidebar_position: 2
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "TCP", // بروتوكول نقل هذا القسم؛ يحدد Protocol في المستوى الأعلى النقل النشط
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   // UDPSettings — إعدادات UDP
@@ -50,7 +52,7 @@ sidebar_position: 2
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "UDP", // بروتوكول نقل هذا القسم؛ يحدد Protocol في المستوى الأعلى النقل النشط
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   // WSSettings — إعدادات WebSocket لكل من WS وWSS
@@ -65,7 +67,7 @@ sidebar_position: 2
     "MTU": 1500, // قيمة MTU للنفق بالبايت
     "Protocol": "WS", // بروتوكول نقل هذا القسم؛ يحدد Protocol في المستوى الأعلى النقل النشط
     "Encryption": "ChaCha20Poly1305", // خوارزمية التشفير
-    "DialTimeoutMs": 5000 // مهلة الاتصال بالميلي ثانية
+    "DialTimeout": "5s" // مهلة الاتصال: 5 ثوانٍ
   },
 
   "X25519PublicKey": "<server-public-key>", // المفتاح العام للخادم من ملف الإعدادات المُنشأ

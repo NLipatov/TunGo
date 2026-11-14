@@ -42,7 +42,7 @@ func (h *udpRegHandshake) KeyServerToClient() []byte { return h.s2c }
 func (h *udpRegHandshake) ClientSideHandshake(_ io.ReadWriter) error {
 	return nil
 }
-func (h *udpRegHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) {
+func (h *udpRegHandshake) ServerSideHandshake(transport noise.HandshakeTransport) (int, error) {
 	// Simulate handshake: read from queue, write response.
 	buf := make([]byte, 1024)
 	if _, err := transport.Read(buf); err != nil {
@@ -446,7 +446,7 @@ type udpRegCookieHandshake struct {
 	udpRegHandshake
 }
 
-func (h *udpRegCookieHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) {
+func (h *udpRegCookieHandshake) ServerSideHandshake(transport noise.HandshakeTransport) (int, error) {
 	buf := make([]byte, 1024)
 	if _, err := transport.Read(buf); err != nil {
 		return 0, err

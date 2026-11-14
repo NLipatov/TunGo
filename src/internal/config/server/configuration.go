@@ -111,8 +111,8 @@ func (c *Configuration) fillDefaults(
 	if to.Protocol == settings.UNKNOWN {
 		to.Protocol = from.Protocol
 	}
-	if to.DialTimeoutMs == 0 {
-		to.DialTimeoutMs = from.DialTimeoutMs
+	if to.DialTimeout == 0 {
+		to.DialTimeout = from.DialTimeout
 	}
 }
 
@@ -129,11 +129,11 @@ func (c *Configuration) defaultSettings(
 	// Derive server IP from subnet.
 	_ = network.DeriveIP(0)
 	return settings.Settings{
-		Network:       network,
-		MTU:           settings.DefaultEthernetMTU,
-		Protocol:      protocol,
-		Encryption:    settings.ChaCha20Poly1305,
-		DialTimeoutMs: 5000,
+		Network:     network,
+		MTU:         settings.DefaultEthernetMTU,
+		Protocol:    protocol,
+		Encryption:  settings.ChaCha20Poly1305,
+		DialTimeout: settings.DefaultDialTimeout,
 	}
 }
 

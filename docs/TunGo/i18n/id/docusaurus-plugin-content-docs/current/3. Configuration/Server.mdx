@@ -15,6 +15,8 @@ Mulai ulang server setelah melakukan perubahan.
 
 ## Contoh dengan komentar {#example}
 
+Server menyalin `DialTimeout` ke konfigurasi klien yang dibuat. Isi `DialTimeout` dengan string yang menyertakan satuan waktu: `"5s"` berarti 5 detik, `"500ms"` berarti 500 milidetik, dan `"1m30s"` berarti 1 menit 30 detik. Lihat [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration) untuk sintaks lengkapnya.
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — Pengaturan TCP
@@ -31,7 +33,7 @@ Mulai ulang server setelah melakukan perubahan.
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "TCP", // Protokol transport
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   // UDPSettings — Pengaturan UDP
@@ -45,7 +47,7 @@ Mulai ulang server setelah melakukan perubahan.
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "UDP", // Protokol transport
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   // WSSettings — Pengaturan WebSocket
@@ -59,7 +61,7 @@ Mulai ulang server setelah melakukan perubahan.
     "MTU": 1500, // MTU tunnel dalam byte
     "Protocol": "WS", // Protokol transport
     "Encryption": "ChaCha20Poly1305", // Algoritma enkripsi
-    "DialTimeoutMs": 5000 // Batas waktu koneksi dalam milidetik
+    "DialTimeout": "5s" // Batas waktu koneksi: 5 detik
   },
 
   "Host": "", // Domain/IP untuk klien yang dibuat; kosong untuk deteksi otomatis

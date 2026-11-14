@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	clientconfig "tungo/internal/config/client"
 	serverconfig "tungo/internal/config/server"
@@ -35,10 +36,10 @@ func validClientConfiguration() clientconfig.Configuration {
 				Port:       8080,
 				DNSv4:      []string{"1.1.1.1"},
 			},
-			MTU:           1500,
-			Protocol:      settings.TCP,
-			Encryption:    settings.ChaCha20Poly1305,
-			DialTimeoutMs: 5000,
+			MTU:         1500,
+			Protocol:    settings.TCP,
+			Encryption:  settings.ChaCha20Poly1305,
+			DialTimeout: settings.HumanReadableDuration(5 * time.Second),
 		},
 		ClientPublicKey:  make([]byte, 32),
 		ClientPrivateKey: make([]byte, 32),

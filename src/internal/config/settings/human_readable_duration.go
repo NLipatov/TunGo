@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-type SessionLifetime struct {
-	Ttl             HumanReadableDuration `json:"Ttl"`
-	CleanupInterval HumanReadableDuration `json:"CleanupInterval"`
-}
-
 type HumanReadableDuration time.Duration
 
 func (d HumanReadableDuration) MarshalJSON() ([]byte, error) {

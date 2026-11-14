@@ -2,33 +2,26 @@ package tcp
 
 import (
 	"errors"
+	"net"
+	"os"
 	"testing"
 	"time"
 )
 
-// noDeadlineTransport does not implement SetReadDeadline.
-type noDeadlineTransport struct {
-	readData []byte
-}
-
-func (t *noDeadlineTransport) Read(p []byte) (int, error) {
-	n := copy(p, t.readData)
-	return n, nil
-}
-func (t *noDeadlineTransport) Write(p []byte) (int, error) { return len(p), nil }
-func (t *noDeadlineTransport) Close() error                { return nil }
-
-// deadlineTransport implements SetReadDeadline.
 type deadlineTransport struct {
-	readData     []byte
-	writeData    []byte
-	deadlineHits int
-	lastDeadline time.Time
-	closeErr     error
-	closed       bool
+	net.Conn
+	readData      []byte
+	writeData     []byte
+	deadlineHits  int
+	lastDeadline  time.Time
+	readDeadline  time.Time
+	writeDeadline time.Time
+	closeErr      error
+	closed        bool
 }
 
 func (t *deadlineTransport) Read(p []byte) (int, error) {
+	t.readDeadline = t.lastDeadline
 	n := copy(p, t.readData)
 	return n, nil
 }
@@ -46,20 +39,14 @@ func (t *deadlineTransport) SetReadDeadline(dl time.Time) error {
 	return nil
 }
 
-func TestWithReadDeadline_NoDeadlineSupport_ReturnsSame(t *testing.T) {
-	tr := &noDeadlineTransport{}
-	wrapped := WithReadDeadline(tr, time.Second)
-	if wrapped != tr {
-		t.Fatal("expected same transport when SetReadDeadline is not supported")
-	}
+func (t *deadlineTransport) SetWriteDeadline(dl time.Time) error {
+	t.writeDeadline = dl
+	return nil
 }
 
-func TestWithReadDeadline_WithDeadlineSupport_Wraps(t *testing.T) {
-	tr := &deadlineTransport{readData: []byte("hello")}
-	wrapped := WithReadDeadline(tr, time.Second)
-	if wrapped == tr {
-		t.Fatal("expected a wrapped transport")
-	}
+func (t *deadlineTransport) SetDeadline(dl time.Time) error {
+	_ = t.SetReadDeadline(dl)
+	return t.SetWriteDeadline(dl)
 }
 
 func TestReadDeadlineConn_Read_SetsDeadlineBeforeRead(t *testing.T) {
@@ -79,10 +66,8 @@ func TestReadDeadlineConn_Read_SetsDeadlineBeforeRead(t *testing.T) {
 	if tr.deadlineHits != 1 {
 		t.Fatalf("expected 1 deadline set, got %d", tr.deadlineHits)
 	}
-	// Deadline should be approximately now + timeout
-	expectedMin := before.Add(timeout)
-	if tr.lastDeadline.Before(expectedMin.Add(-time.Second)) {
-		t.Fatalf("deadline too early: %v, expected near %v", tr.lastDeadline, expectedMin)
+	if tr.readDeadline.Before(before.Add(timeout)) || tr.readDeadline.After(time.Now().Add(timeout)) {
+		t.Fatalf("deadline was not set to now + timeout before Read: %v", tr.readDeadline)
 	}
 }
 
@@ -91,12 +76,42 @@ func TestReadDeadlineConn_MultipleReads_RefreshDeadline(t *testing.T) {
 	wrapped := WithReadDeadline(tr, time.Second)
 
 	buf := make([]byte, 2)
-	_, _ = wrapped.Read(buf)
-	_, _ = wrapped.Read(buf)
-	_, _ = wrapped.Read(buf)
+	for range 3 {
+		before := time.Now()
+		_, _ = wrapped.Read(buf)
+		if tr.readDeadline.Before(before.Add(time.Second)) {
+			t.Fatalf("read reused an old deadline: %v", tr.readDeadline)
+		}
+	}
 
 	if tr.deadlineHits != 3 {
 		t.Fatalf("expected 3 deadline sets, got %d", tr.deadlineHits)
+	}
+}
+
+func TestReadDeadlineConn_ReadPreservesWriteDeadline(t *testing.T) {
+	tr := &deadlineTransport{readData: []byte("x")}
+	wrapped := WithReadDeadline(tr, time.Second)
+	deadline := time.Now().Add(-time.Second)
+	if err := wrapped.SetWriteDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wrapped.Read(make([]byte, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if tr.writeDeadline != deadline {
+		t.Fatalf("Read changed write deadline to %v, want %v", tr.writeDeadline, deadline)
+	}
+}
+
+func TestReadDeadlineConn_IdleReadTimesOut(t *testing.T) {
+	conn, peer := net.Pipe()
+	defer func() { _ = conn.Close() }()
+	defer func() { _ = peer.Close() }()
+	wrapped := WithReadDeadline(conn, 50*time.Millisecond)
+	_, err := wrapped.Read(make([]byte, 1))
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("idle Read error = %v, want deadline exceeded", err)
 	}
 }
 

@@ -15,6 +15,8 @@ Reinicie o servidor após fazer alterações.
 
 ## Exemplo com comentários {#example}
 
+O servidor copia `DialTimeout` para as configurações de cliente geradas. Informe `DialTimeout` como uma string com unidades de tempo: `"5s"` significa 5 segundos, `"500ms"` significa 500 milissegundos e `"1m30s"` significa 1 minuto e 30 segundos. Consulte a sintaxe completa em [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration).
+
 ```json title="server_configuration.json"
 {
   // TCPSettings — Configurações de TCP
@@ -31,7 +33,7 @@ Reinicie o servidor após fazer alterações.
     "MTU": 1500, // MTU do túnel em bytes
     "Protocol": "TCP", // Protocolo de transporte
     "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
-    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+    "DialTimeout": "5s" // Tempo limite de conexão: 5 segundos
   },
 
   // UDPSettings — Configurações de UDP
@@ -45,7 +47,7 @@ Reinicie o servidor após fazer alterações.
     "MTU": 1500, // MTU do túnel em bytes
     "Protocol": "UDP", // Protocolo de transporte
     "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
-    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+    "DialTimeout": "5s" // Tempo limite de conexão: 5 segundos
   },
 
   // WSSettings — Configurações de WebSocket
@@ -59,7 +61,7 @@ Reinicie o servidor após fazer alterações.
     "MTU": 1500, // MTU do túnel em bytes
     "Protocol": "WS", // Protocolo de transporte
     "Encryption": "ChaCha20Poly1305", // Algoritmo de criptografia
-    "DialTimeoutMs": 5000 // Tempo limite de conexão em milissegundos
+    "DialTimeout": "5s" // Tempo limite de conexão: 5 segundos
   },
 
   "Host": "", // Domínio/IP para clientes gerados; vazio para detecção automática

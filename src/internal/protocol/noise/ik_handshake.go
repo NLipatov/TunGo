@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"slices"
 	"tungo/internal/protocol/securemem"
+	transport "tungo/internal/transport"
 
 	noiselib "github.com/flynn/noise"
 )
+
+type HandshakeTransport interface {
+	io.ReadWriter
+	RemoteAddr() net.Addr
+}
 
 var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaChaPoly, noiselib.HashSHA256)
 
@@ -112,12 +119,12 @@ func (h *IKHandshake) AllowedIPs() []netip.Prefix {
 
 // ServerSideHandshake performs Noise IK as responder with DoS protection.
 // Returns the client's ClientID for IP allocation at registration time.
-func (h *IKHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) {
+func (h *IKHandshake) ServerSideHandshake(conn HandshakeTransport) (int, error) {
 	if err := h.validateServerConfig(); err != nil {
 		return 0, err
 	}
 
-	msgWithVersion, err := readHandshakeMessage(transport, "noise: read msg1")
+	msgWithVersion, err := readHandshakeMessage(conn, "noise: read msg1")
 	if err != nil {
 		return 0, err
 	}
@@ -132,11 +139,11 @@ func (h *IKHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) 
 	if h.loadMonitor != nil {
 		h.loadMonitor.RecordHandshake()
 	}
-	if err := h.enforceCookieIfNeeded(transport, msg1WithMAC); err != nil {
+	if err := h.enforceCookieIfNeeded(conn, msg1WithMAC); err != nil {
 		return 0, err
 	}
 
-	outcome, err := h.runResponderNoise(transport, msg1WithMAC)
+	outcome, err := h.runResponderNoise(conn, msg1WithMAC)
 	if err != nil {
 		return 0, err
 	}
@@ -150,12 +157,12 @@ func (h *IKHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) 
 }
 
 // ClientSideHandshake performs Noise IK as initiator.
-func (h *IKHandshake) ClientSideHandshake(transport io.ReadWriter) error {
+func (h *IKHandshake) ClientSideHandshake(conn net.Conn) error {
 	if err := h.validateClientConfig(); err != nil {
 		return err
 	}
 
-	hs, response, err := h.initiatorAttempt(transport, "noise: send msg1", "noise: read response")
+	hs, response, err := h.initiatorAttempt(conn, "noise: send msg1", "noise: read response")
 	if err != nil {
 		return err
 	}
@@ -167,7 +174,7 @@ func (h *IKHandshake) ClientSideHandshake(transport io.ReadWriter) error {
 		}
 		h.cookie = cookie
 
-		hs, response, err = h.initiatorAttempt(transport, "noise: send msg1 retry", "noise: read msg2")
+		hs, response, err = h.initiatorAttempt(conn, "noise: send msg1 retry", "noise: read msg2")
 		if err != nil {
 			return err
 		}
@@ -214,7 +221,7 @@ func (h *IKHandshake) validateClientConfig() error {
 }
 
 func (h *IKHandshake) enforceCookieIfNeeded(
-	transport io.ReadWriter,
+	conn HandshakeTransport,
 	msg1WithMAC []byte,
 ) error {
 	if h.loadMonitor == nil || !h.loadMonitor.UnderLoad() || h.cookieManager == nil {
@@ -226,9 +233,9 @@ func (h *IKHandshake) enforceCookieIfNeeded(
 		return ErrMsgTooShort
 	}
 
-	clientIP, ok := h.transportRemoteIP(transport)
-	if !ok {
-		return ErrCookieRequired
+	clientIP, err := transport.NetipAddrFrom(conn.RemoteAddr())
+	if err != nil {
+		return err
 	}
 	if h.cookieManager.VerifyMAC2ForClient(msg1WithMAC, clientIP) {
 		return nil
@@ -238,18 +245,10 @@ func (h *IKHandshake) enforceCookieIfNeeded(
 	if err != nil {
 		return fmt.Errorf("noise: create cookie reply: %w", err)
 	}
-	if _, err := transport.Write(reply); err != nil {
+	if _, err := conn.Write(reply); err != nil {
 		return fmt.Errorf("noise: send cookie reply: %w", err)
 	}
 	return ErrCookieRequired
-}
-
-func (h *IKHandshake) transportRemoteIP(transport io.ReadWriter) (netip.Addr, bool) {
-	tr, ok := transport.(interface{ RemoteAddrPort() netip.AddrPort })
-	if !ok {
-		return netip.Addr{}, false
-	}
-	return tr.RemoteAddrPort().Addr(), true
 }
 
 func (h *IKHandshake) newResponderState(prologue []byte) (*noiselib.HandshakeState, error) {
@@ -271,7 +270,7 @@ func (h *IKHandshake) newResponderState(prologue []byte) (*noiselib.HandshakeSta
 }
 
 func (h *IKHandshake) runResponderNoise(
-	transport io.ReadWriter,
+	conn HandshakeTransport,
 	msg1WithMAC []byte,
 ) (serverHandshakeOutcome, error) {
 	hs, err := h.newResponderState(nil)
@@ -305,7 +304,7 @@ func (h *IKHandshake) runResponderNoise(
 	if err != nil {
 		return serverHandshakeOutcome{}, fmt.Errorf("noise: write msg2: %w", err)
 	}
-	if _, err := transport.Write(msg2); err != nil {
+	if _, err := conn.Write(msg2); err != nil {
 		return serverHandshakeOutcome{}, fmt.Errorf("noise: send msg2: %w", err)
 	}
 	if cs1 == nil || cs2 == nil {
@@ -341,7 +340,7 @@ func (h *IKHandshake) newInitiatorState(prologue []byte) (*noiselib.HandshakeSta
 }
 
 func (h *IKHandshake) initiatorAttempt(
-	transport io.ReadWriter,
+	conn net.Conn,
 	sendErrPrefix string,
 	readErrPrefix string,
 ) (*noiselib.HandshakeState, []byte, error) {
@@ -361,11 +360,11 @@ func (h *IKHandshake) initiatorAttempt(
 		return nil, nil, fmt.Errorf("noise: append MACs: %w", err)
 	}
 	msgWithVersion := PrependVersion(msg1WithMAC)
-	if _, err := transport.Write(msgWithVersion); err != nil {
+	if _, err := conn.Write(msgWithVersion); err != nil {
 		zeroizeLocalEphemeral(hs)
 		return nil, nil, fmt.Errorf("%s: %w", sendErrPrefix, err)
 	}
-	response, err := readHandshakeMessage(transport, readErrPrefix)
+	response, err := readHandshakeMessage(conn, readErrPrefix)
 	if err != nil {
 		zeroizeLocalEphemeral(hs)
 		return nil, nil, err
@@ -425,11 +424,11 @@ func (h *IKHandshake) applySessionMaterial(material sessionMaterial) {
 }
 
 func readHandshakeMessage(
-	transport io.ReadWriter,
+	conn HandshakeTransport,
 	errPrefix string,
 ) ([]byte, error) {
 	buf := make([]byte, 2048)
-	n, err := transport.Read(buf)
+	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errPrefix, err)
 	}

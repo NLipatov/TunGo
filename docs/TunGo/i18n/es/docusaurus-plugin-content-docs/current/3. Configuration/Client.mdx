@@ -18,6 +18,8 @@ Reinicia el cliente después de hacer cambios.
 
 El servidor genera la configuración del cliente. Puedes personalizarla si lo necesitas.
 
+Indica `DialTimeout` como una cadena con unidades de tiempo: `"5s"` significa 5 segundos, `"500ms"` significa 500 milisegundos y `"1m30s"` significa 1 minuto y 30 segundos. Consulta la sintaxis completa en [Go `time.ParseDuration`](https://pkg.go.dev/time#ParseDuration).
+
 ```json title="client_configuration.json"
 {
   "ClientID": 1, // ID del cliente asignado por el servidor
@@ -35,7 +37,7 @@ El servidor genera la configuración del cliente. Puedes personalizarla si lo ne
     "MTU": 1500, // MTU del túnel en bytes
     "Protocol": "TCP", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
     "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
-    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+    "DialTimeout": "5s" // Tiempo de espera de conexión: 5 segundos
   },
 
   // UDPSettings — Ajustes de UDP
@@ -50,7 +52,7 @@ El servidor genera la configuración del cliente. Puedes personalizarla si lo ne
     "MTU": 1500, // MTU del túnel en bytes
     "Protocol": "UDP", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
     "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
-    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+    "DialTimeout": "5s" // Tiempo de espera de conexión: 5 segundos
   },
 
   // WSSettings — Ajustes de WebSocket para WS y WSS
@@ -65,7 +67,7 @@ El servidor genera la configuración del cliente. Puedes personalizarla si lo ne
     "MTU": 1500, // MTU del túnel en bytes
     "Protocol": "WS", // Transporte del perfil; Protocol en el nivel superior selecciona el transporte activo
     "Encryption": "ChaCha20Poly1305", // Algoritmo de cifrado
-    "DialTimeoutMs": 5000 // Tiempo de espera de conexión en milisegundos
+    "DialTimeout": "5s" // Tiempo de espera de conexión: 5 segundos
   },
 
   "X25519PublicKey": "<server-public-key>", // Clave pública del servidor de la configuración generada

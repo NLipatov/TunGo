@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"tungo/internal/client/packetsender"
 	"tungo/internal/protocol/chacha20/rekey"
 	"tungo/internal/protocol/keys"
 	tunnelrekey "tungo/internal/protocol/rekey"
@@ -93,7 +94,7 @@ func rdr(seq ...struct {
 }
 
 func mockEgress(w io.Writer, c crypto) sender {
-	return newPacketSender(w, c)
+	return packetsender.New(w, c)
 }
 
 // ---- Tests ----

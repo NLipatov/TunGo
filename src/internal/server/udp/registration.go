@@ -3,7 +3,6 @@ package udp
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -20,7 +19,7 @@ import (
 
 type handshake interface {
 	chacha20.KeyMaterial
-	ServerSideHandshake(io.ReadWriter) (int, error)
+	ServerSideHandshake(noise.HandshakeTransport) (int, error)
 }
 
 type authenticatedHandshake interface {

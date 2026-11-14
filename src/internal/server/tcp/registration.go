@@ -19,7 +19,7 @@ import (
 
 type handshake interface {
 	chacha20.KeyMaterial
-	ServerSideHandshake(io.ReadWriter) (int, error)
+	ServerSideHandshake(noise.HandshakeTransport) (int, error)
 }
 
 type authenticatedHandshake interface {
@@ -106,12 +106,7 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 	// Wrap with read deadline so the server detects dead clients at the
 	// application level (no data within ServerIdleTimeout → connection closed).
 	deadlineConn := transport.WithReadDeadline(conn, settings.ServerIdleTimeout)
-
-	// Attach remote address so the handshake can extract the client IP
-	// for cookie binding through the framedConn chain.
-	addrConn := transport.WithRemoteAddr(deadlineConn, tcpAddr.AddrPort())
-
-	framingAdapter, fErr := transport.NewFramedConn(addrConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	framingAdapter, fErr := transport.NewFramedConn(deadlineConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
 		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr

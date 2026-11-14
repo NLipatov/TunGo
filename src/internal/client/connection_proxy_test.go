@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -25,12 +24,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"tungo/internal/config/settings"
 
 	"github.com/coder/websocket"
 	"golang.org/x/net/http/httpproxy"
 )
 
-func TestDialWebSocketEndpoint_ProxyTLS(t *testing.T) {
+func TestDialWebSocket_ProxyTLS(t *testing.T) {
 	for _, tc := range []struct{ name, scheme, host string }{
 		{"http", "http", "localhost"},
 		{"https", "https", "localhost"},
@@ -121,14 +121,14 @@ func TestDialWebSocketEndpoint_ProxyTLS(t *testing.T) {
 
 			establishCtx, establishCancel := context.WithCancel(ctx)
 			defer establishCancel()
-			conn, err := dialWebSocketEndpoint(establishCtx, ctx, "wss", "origin.test:443")
+			conn, err := dialWS(establishCtx, ctx, "wss", "origin.test:443", "origin.test")
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = conn.Close() }()
 			establishCancel() // The established tunnel must outlive the dial context.
-			remote, ok := conn.(interface{ RemoteAddrPort() netip.AddrPort })
-			if !ok || !remote.RemoteAddrPort().Addr().IsLoopback() || strconv.Itoa(int(remote.RemoteAddrPort().Port())) != proxyURL.Port() {
+			remote, ok := conn.RemoteAddr().(*net.TCPAddr)
+			if !ok || !remote.IP.IsLoopback() || strconv.Itoa(remote.Port) != proxyURL.Port() {
 				t.Fatalf("remote address must identify the proxy, got %v", remote)
 			}
 			payload := []byte("framed WebSocket through a proxy")
@@ -341,7 +341,7 @@ func proxyTestSOCKS(t *testing.T, ctx context.Context, target string) *url.URL {
 	return &url.URL{Scheme: "socks5", Host: listener.Addr().String(), User: url.UserPassword("user", "password")}
 }
 
-func TestDialWebSocketEndpoint_ProxyCancellation(t *testing.T) {
+func TestDialWS_ProxyCancellation(t *testing.T) {
 	for _, scheme := range []string{"http", "https"} {
 		t.Run(scheme, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -372,7 +372,7 @@ func TestDialWebSocketEndpoint_ProxyCancellation(t *testing.T) {
 			roots := x509.NewCertPool()
 			roots.AddCert(root)
 			proxyTestTransport(t, proxyURL, roots)
-			conn, err := dialWebSocketEndpoint(ctx, t.Context(), "wss", "origin.test:443")
+			conn, err := dialWS(ctx, t.Context(), "wss", "origin.test:443", "")
 			if conn != nil {
 				_ = conn.Close()
 			}
@@ -386,7 +386,7 @@ func TestDialWebSocketEndpoint_ProxyCancellation(t *testing.T) {
 	}
 }
 
-func TestDialWebSocketEndpoint_ProxyRejected(t *testing.T) {
+func TestDialWS_ProxyRejected(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authentication required", http.StatusProxyAuthRequired)
 	}))
@@ -398,7 +398,7 @@ func TestDialWebSocketEndpoint_ProxyRejected(t *testing.T) {
 	proxyTestTransport(t, proxyURL, nil)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	conn, err := dialWebSocketEndpoint(ctx, ctx, "wss", "origin.test:443")
+	conn, err := dialWS(ctx, ctx, "wss", "origin.test:443", "")
 	if conn != nil {
 		_ = conn.Close()
 	}
@@ -407,7 +407,7 @@ func TestDialWebSocketEndpoint_ProxyRejected(t *testing.T) {
 	}
 }
 
-func TestDialWebSocketEndpoint_ProxyCertificates(t *testing.T) {
+func TestDialWS_ProxyCertificates(t *testing.T) {
 	for _, hop := range []string{"proxy", "origin"} {
 		for _, failure := range []string{"untrusted", "hostname"} {
 			t.Run(hop+"/"+failure, func(t *testing.T) {
@@ -446,7 +446,7 @@ func TestDialWebSocketEndpoint_ProxyCertificates(t *testing.T) {
 					roots.AddCert(proxyRoot)
 				}
 				proxyTestTransport(t, proxyURL, roots)
-				conn, err := dialWebSocketEndpoint(ctx, ctx, "wss", "origin.test:443")
+				conn, err := dialWS(ctx, ctx, "wss", "origin.test:443", "")
 				if conn != nil {
 					_ = conn.Close()
 				}
@@ -469,7 +469,7 @@ func TestDialWebSocketEndpoint_ProxyCertificates(t *testing.T) {
 	}
 }
 
-func TestDialWebSocketEndpoint_ProxyBypass(t *testing.T) {
+func TestDialWebSocket_ProxyBypass(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	cert, root := proxyTestCertificate(t, "localhost")
@@ -504,7 +504,7 @@ func TestDialWebSocketEndpoint_ProxyBypass(t *testing.T) {
 		}
 		return nil, nil // Same contract as a NO_PROXY match.
 	}
-	conn, err := dialWebSocketEndpoint(ctx, ctx, "wss", target)
+	conn, err := dialWS(ctx, ctx, "wss", target, "localhost")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,199 @@ func TestDialWebSocketEndpoint_ProxyBypass(t *testing.T) {
 	assertProxyTestHello(t, <-hellos, "localhost")
 }
 
-func TestDialWebSocketEndpoint_RedirectKeepsProxy(t *testing.T) {
+func TestConnect_WSSFallbackPreservesDomainIdentity(t *testing.T) {
+	for _, network := range []string{"tcp4", "tcp6"} {
+		for _, tc := range []struct{ domain, identity, certificate string }{
+			{"origin.test", "origin.test", "origin.test"},
+			{"origin.test", "origin.test", "wrong.test"},
+			{"bücher.test", "xn--bcher-kva.test", "xn--bcher-kva.test"},
+		} {
+			t.Run(network+"/"+tc.certificate, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+				defer cancel()
+				ip := "127.0.0.1"
+				if network == "tcp6" {
+					ip = "::1"
+				}
+				listener, err := net.Listen(network, net.JoinHostPort(ip, "0"))
+				if err != nil {
+					if network == "tcp6" {
+						t.Skipf("IPv6 loopback unavailable: %v", err)
+					}
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = listener.Close() })
+				port := listener.Addr().(*net.TCPAddr).Port
+				configuration, handshake := connectionTestHandshake(t, connectionTestSettings(tc.domain, port, settings.WSS))
+				echo := connectionTestWSHandler(t, ctx, func(conn net.Conn) { connectionTestEcho(t, handshake, conn) })
+				identity := net.JoinHostPort(tc.identity, strconv.Itoa(port))
+				cert, root := proxyTestCertificate(t, tc.certificate)
+				hellos := make(chan *tls.ClientHelloInfo, 1)
+				origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Host != identity {
+						t.Errorf("Host = %q, want %q", r.Host, identity)
+					}
+					echo(w, r)
+				}))
+				_ = origin.Listener.Close()
+				origin.Listener = listener
+				origin.TLS = &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+						hellos <- hello
+						return nil, nil
+					},
+				}
+				origin.StartTLS()
+				t.Cleanup(origin.Close)
+				roots := x509.NewCertPool()
+				roots.AddCert(root)
+				proxyTestTransport(t, nil, roots)
+				queries := connectionTestDNS(t)
+				if network == "tcp6" {
+					configuration.WSSettings.Server.IPv6 = ip
+				} else {
+					configuration.WSSettings.Server.IPv4 = ip
+				}
+				client := connectionTestClient(t, configuration)
+				conn, _, _, err := client.connect(ctx)
+				if len(queries()) == 0 {
+					t.Fatal("explicit IP was tried before resolving the domain")
+				}
+				if tc.certificate != tc.identity {
+					if conn != nil {
+						_ = conn.Close()
+						t.Fatal("accepted a certificate for a different hostname")
+					}
+					var hostnameError x509.HostnameError
+					if !errors.As(err, &hostnameError) {
+						t.Fatalf("error = %v, want certificate hostname mismatch", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = conn.Close() }()
+				payload := []byte("TLS identity survives IP fallback")
+				if _, err := conn.Write(payload); err != nil {
+					t.Fatal(err)
+				}
+				got := make([]byte, len(payload))
+				if _, err := io.ReadFull(conn, got); err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(got, payload) {
+					t.Fatalf("echo = %q, want %q", got, payload)
+				}
+				assertProxyTestHello(t, <-hellos, tc.identity)
+			})
+		}
+	}
+}
+
+func TestConnect_WebSocketIPFallbackThroughProxy(t *testing.T) {
+	for _, protocol := range []settings.Protocol{settings.WS, settings.WSS} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			listener, err := net.Listen("tcp6", "[::1]:0")
+			if err != nil {
+				t.Skipf("IPv6 loopback unavailable: %v", err)
+			}
+			t.Cleanup(func() { _ = listener.Close() })
+			port := listener.Addr().(*net.TCPAddr).Port
+			configuration, handshake := connectionTestHandshake(t, connectionTestSettings("origin.test", port, protocol))
+			echo := connectionTestWSHandler(t, ctx, func(conn net.Conn) { connectionTestEcho(t, handshake, conn) })
+			identity := net.JoinHostPort("origin.test", strconv.Itoa(port))
+			endpoint := listener.Addr().String()
+			origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Host != identity {
+					t.Errorf("Host = %q, want %q", r.Host, identity)
+				}
+				echo(w, r)
+			}))
+			_ = origin.Listener.Close()
+			origin.Listener = listener
+			var roots *x509.CertPool
+			if protocol == settings.WSS {
+				cert, root := proxyTestCertificate(t, "origin.test")
+				origin.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+				roots = x509.NewCertPool()
+				roots.AddCert(root)
+				origin.StartTLS()
+			} else {
+				origin.Start()
+			}
+			t.Cleanup(origin.Close)
+			requests := make(chan string, 4)
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.Host
+				if r.Host == identity {
+					http.Error(w, "domain unavailable", http.StatusBadGateway)
+					return
+				}
+				if r.Method != http.MethodConnect || r.Host != endpoint {
+					t.Errorf("fallback proxy request = %s %s, want CONNECT %s", r.Method, r.Host, endpoint)
+					http.Error(w, "unexpected fallback", http.StatusBadRequest)
+					return
+				}
+				proxyTestRelay(t, ctx, w, endpoint)
+			}))
+			t.Cleanup(proxy.Close)
+			proxyURL, err := url.Parse(proxy.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxyTestTransport(t, proxyURL, roots)
+			var lookedUp atomic.Int32
+			http.DefaultTransport.(*http.Transport).Proxy = func(request *http.Request) (*url.URL, error) {
+				lookedUp.Add(1)
+				if request.URL.Host != identity {
+					t.Errorf("proxy lookup host = %s, want %s", request.URL.Host, identity)
+				}
+				return proxyURL, nil
+			}
+			queries := connectionTestDNS(t)
+			configuration.WSSettings.Server.IPv6 = "::1"
+			client := connectionTestClient(t, configuration)
+			conn, _, _, err := client.connect(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = conn.Close() }()
+			payload := []byte("proxy reaches fallback IPv6")
+			if _, err := conn.Write(payload); err != nil {
+				t.Fatal(err)
+			}
+			got := make([]byte, len(payload))
+			if _, err := io.ReadFull(conn, got); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, payload) {
+				t.Fatalf("echo = %q, want %q", got, payload)
+			}
+			if got := queries(); len(got) != 0 {
+				t.Fatalf("proxy domain was resolved locally: %v", got)
+			}
+			if lookedUp.Load() < 2 {
+				t.Fatal("proxy selection was skipped for the fallback")
+			}
+			for _, want := range []string{identity, endpoint} {
+				select {
+				case got := <-requests:
+					if got != want {
+						t.Fatalf("proxy target = %s, want %s", got, want)
+					}
+				default:
+					t.Fatalf("missing proxy request to %s", want)
+				}
+			}
+		})
+	}
+}
+
+func TestDialWS_RedirectKeepsProxy(t *testing.T) {
 	for _, scheme := range []string{"http", "https"} {
 		t.Run(scheme, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -584,7 +776,7 @@ func TestDialWebSocketEndpoint_RedirectKeepsProxy(t *testing.T) {
 			http.DefaultTransport.(*http.Transport).Proxy = func(r *http.Request) (*url.URL, error) {
 				return selectProxy(r.URL)
 			}
-			conn, err := dialWebSocketEndpoint(ctx, ctx, "wss", "origin.test:443")
+			conn, err := dialWS(ctx, ctx, "wss", "origin.test:443", "")
 			if conn != nil {
 				_ = conn.Close()
 			}
@@ -607,7 +799,7 @@ func TestDialWebSocketEndpoint_RedirectKeepsProxy(t *testing.T) {
 	}
 }
 
-func TestDialWebSocketEndpoint_IDNProxyLookup(t *testing.T) {
+func TestDialWS_IDNProxyLookup(t *testing.T) {
 	for _, scheme := range []string{"http", "https", "socks5", "socks5h"} {
 		t.Run(scheme, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -621,7 +813,7 @@ func TestDialWebSocketEndpoint_IDNProxyLookup(t *testing.T) {
 			t.Cleanup(func() { net.DefaultResolver = previousResolver })
 			proxyURL := &url.URL{Scheme: scheme, Host: "прокси.test:3128"}
 			proxyTestTransport(t, proxyURL, nil)
-			conn, err := dialWebSocketEndpoint(ctx, ctx, "wss", "origin.test:443")
+			conn, err := dialWS(ctx, ctx, "wss", "origin.test:443", "")
 			if conn != nil {
 				_ = conn.Close()
 			}

@@ -43,10 +43,7 @@ func validate(configuration Configuration) error {
 		return fmt.Errorf("active settings: %w", err)
 	}
 	if active.Port < 1 || active.Port > 65535 {
-		// WSS: zero means "use default 443" in connection factory.
-		if configuration.Protocol != settings.WSS || active.Port != 0 {
-			return fmt.Errorf("active settings: invalid Port %d", active.Port)
-		}
+		return fmt.Errorf("active settings: invalid Port %d", active.Port)
 	}
 	hasIPv4 := active.IPv4Subnet.IsValid() && active.IPv4Subnet.Addr().Is4()
 	hasIPv6 := active.IPv6Subnet.IsValid() && active.IPv6Subnet.Addr().Unmap().Is6()

@@ -6,15 +6,17 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"sync"
 	"testing"
 )
 
 // --- Test helpers / mock ---
 
-// framedConnMockConn is a controllable mock for config.Transport.
+// framedConnMockConn controls the I/O behavior of a test connection.
 // It supports partial reads/writes, injected errors, and captures written bytes.
 type framedConnMockConn struct {
+	net.Conn
 	// Read side
 	readData   []byte
 	readOff    int
@@ -35,7 +37,7 @@ type framedConnMockConn struct {
 	wCalls int
 }
 
-type framedConnDiscard struct{}
+type framedConnDiscard struct{ net.Conn }
 
 func (framedConnDiscard) Read([]byte) (int, error)    { return 0, io.EOF }
 func (framedConnDiscard) Write(p []byte) (int, error) { return len(p), nil }

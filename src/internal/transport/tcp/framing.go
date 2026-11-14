@@ -6,18 +6,14 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net/netip"
+	"net"
 	"sync"
 )
-
-type remoteAddrProvider interface {
-	RemoteAddrPort() netip.AddrPort
-}
 
 // framedConn serializes calls to Write. Concurrent reads, or adapters that do
 // not support simultaneous Read and Write, still require external synchronization.
 type framedConn struct {
-	adapter  io.ReadWriteCloser
+	net.Conn
 	frameCap int
 
 	writeMu     sync.Mutex
@@ -30,10 +26,10 @@ type framedConn struct {
 }
 
 func NewFramedConn(
-	adapter io.ReadWriteCloser,
+	conn net.Conn,
 	frameCap int,
 ) (*framedConn, error) {
-	if adapter == nil {
+	if conn == nil {
 		return nil, fmt.Errorf("adapter must not be nil")
 	}
 	if frameCap <= 0 {
@@ -43,10 +39,10 @@ func NewFramedConn(
 		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", frameCap, math.MaxUint16)
 	}
 	return &framedConn{
-		adapter:     adapter,
+		Conn:        conn,
 		frameCap:    frameCap,
 		writeBuffer: make([]byte, 2+frameCap),
-		bufReader:   bufio.NewReader(adapter),
+		bufReader:   bufio.NewReader(conn),
 	}, nil
 }
 
@@ -54,27 +50,27 @@ func NewFramedConn(
 // Header and payload share one write so message transports do not send the
 // length prefix as a separate message. The frame buffer is reused under writeMu.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
-func (a *framedConn) Write(data []byte) (int, error) {
+func (f *framedConn) Write(data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, ErrZeroLengthFrame
 	}
-	if len(data) > a.frameCap {
+	if len(data) > f.frameCap {
 		return 0, ErrFrameCapExceeded
 	}
 
-	a.writeMu.Lock()
-	defer a.writeMu.Unlock()
+	f.writeMu.Lock()
+	defer f.writeMu.Unlock()
 
-	frame := a.writeBuffer[:2+len(data)]
+	frame := f.writeBuffer[:2+len(data)]
 	binary.BigEndian.PutUint16(frame, uint16(len(data)))
 	copy(frame[2:], data)
-	if err := a.writeFull(a.adapter, frame); err != nil {
+	if err := f.writeFull(f.Conn, frame); err != nil {
 		return 0, err
 	}
 	return len(data), nil
 }
 
-func (a *framedConn) writeFull(w io.Writer, p []byte) error {
+func (f *framedConn) writeFull(w io.Writer, p []byte) error {
 	for len(p) > 0 {
 		n, err := w.Write(p)
 		if n > 0 {
@@ -92,35 +88,22 @@ func (a *framedConn) writeFull(w io.Writer, p []byte) error {
 
 // Read reads exactly one u16-BE length-prefixed frame into buffer and returns payload size.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
-func (a *framedConn) Read(buffer []byte) (int, error) {
-	if _, err := io.ReadFull(a.bufReader, a.readHeaderBuffer[:]); err != nil {
+func (f *framedConn) Read(buffer []byte) (int, error) {
+	if _, err := io.ReadFull(f.bufReader, f.readHeaderBuffer[:]); err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrInvalidLengthPrefixHeader, err)
 	}
-	length := int(binary.BigEndian.Uint16(a.readHeaderBuffer[:]))
+	length := int(binary.BigEndian.Uint16(f.readHeaderBuffer[:]))
 	if length == 0 {
 		return 0, ErrZeroLengthFrame
 	}
-	if length > a.frameCap {
+	if length > f.frameCap {
 		return 0, ErrFrameCapExceeded
 	}
 	if length > len(buffer) {
 		return 0, io.ErrShortBuffer
 	}
-	if _, err := io.ReadFull(a.bufReader, buffer[:length]); err != nil {
+	if _, err := io.ReadFull(f.bufReader, buffer[:length]); err != nil {
 		return 0, err
 	}
 	return length, nil
-}
-
-func (a *framedConn) Close() error { return a.adapter.Close() }
-
-// RemoteAddrPort delegates to the inner transport if it implements
-// TransportWithRemoteAddr (e.g. via remoteAddrConn). This allows
-// the Noise handshake to extract the client IP for cookie binding
-// through the adapter chain.
-func (a *framedConn) RemoteAddrPort() netip.AddrPort {
-	if t, ok := a.adapter.(remoteAddrProvider); ok {
-		return t.RemoteAddrPort()
-	}
-	return netip.AddrPort{}
 }

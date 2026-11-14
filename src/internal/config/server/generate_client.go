@@ -193,10 +193,10 @@ func deriveClientSettings(
 			Server:     serverHost,
 			Port:       serverSettings.Port,
 		},
-		MTU:           mtu,
-		Protocol:      protocol,
-		Encryption:    serverSettings.Encryption,
-		DialTimeoutMs: serverSettings.DialTimeoutMs,
+		MTU:         mtu,
+		Protocol:    protocol,
+		Encryption:  serverSettings.Encryption,
+		DialTimeout: serverSettings.DialTimeout,
 	}
 	if serverSettings.IPv6Subnet.IsValid() {
 		clientSettings.IPv6Subnet = serverSettings.IPv6Subnet

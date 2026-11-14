@@ -13,6 +13,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"tungo/internal/client/packetsender"
 	"tungo/internal/config/settings"
 	corechacha20 "tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/rekey"
@@ -351,7 +352,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	coordinator := tunnelrekey.NewClientRekeyCoordinator(
 		&keys.DefaultKeyDeriver{}, ctrl, nil, 5*time.Millisecond, time.Now(),
 	)
-	tunHandler := newTunHandler(ctx, reader, newPacketSender(writer, crypto), coordinator, nil)
+	tunHandler := newTunHandler(ctx, reader, packetsender.New(writer, crypto), coordinator, nil)
 
 	doneTun := make(chan struct{})
 	go func() {
