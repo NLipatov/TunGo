@@ -273,27 +273,21 @@ func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext 
 		return nil
 	}
 	if rekeyed {
-		return s.sendPlaintext(peer, response)
+		return s.sendPayload(peer, response)
 	}
 	return nil
 }
 
 func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, body []byte) error {
-	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	payloadLen := 3 + len(body)
-	if payloadLen > settings.DefaultEthernetMTU {
-		return io.ErrShortBuffer
-	}
-	payload := frame[udpcrypto.PayloadOffset : udpcrypto.PayloadOffset+payloadLen]
-	copy(payload[3:], body)
-	if err := servicepacket.Encode(kind, payload); err != nil {
+	buffer := make([]byte, 3+len(body))
+	copy(buffer[3:], body)
+	if err := servicepacket.Encode(kind, buffer); err != nil {
 		return err
 	}
-	s.peerSend(peer, frame[:udpcrypto.PayloadOffset+payloadLen])
-	return nil
+	return s.sendPayload(peer, buffer)
 }
 
-func (s *Server) sendPlaintext(peer *session.Peer, payload []byte) error {
+func (s *Server) sendPayload(peer *session.Peer, payload []byte) error {
 	if len(payload) > settings.DefaultEthernetMTU {
 		return io.ErrShortBuffer
 	}

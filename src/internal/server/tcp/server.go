@@ -193,7 +193,7 @@ func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintex
 		return true, nil
 	}
 	if rekeyed {
-		if err := s.sendPlaintext(peer, response); err != nil {
+		if err := s.sendPayload(peer, response); err != nil {
 			return true, err
 		}
 		peer.ActivateSendEpoch(epoch)
@@ -217,20 +217,15 @@ func (s *Server) sendPong(peer *session.Peer) {
 }
 
 func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, body []byte) error {
-	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	payloadLen := 3 + len(body)
-	if payloadLen > settings.DefaultEthernetMTU {
-		return io.ErrShortBuffer
-	}
-	payload := frame[tcpcrypto.EpochPrefixSize : tcpcrypto.EpochPrefixSize+payloadLen]
-	copy(payload[3:], body)
-	if err := servicepacket.Encode(kind, payload); err != nil {
+	buffer := make([]byte, 3+len(body))
+	copy(buffer[3:], body)
+	if err := servicepacket.Encode(kind, buffer); err != nil {
 		return err
 	}
-	return peer.Send(frame[:tcpcrypto.EpochPrefixSize+payloadLen])
+	return s.sendPayload(peer, buffer)
 }
 
-func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
+func (*Server) sendPayload(peer *session.Peer, payload []byte) error {
 	if len(payload) > settings.DefaultEthernetMTU {
 		return io.ErrShortBuffer
 	}
