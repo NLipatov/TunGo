@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"tungo/internal/config/settings"
-	"tungo/internal/protocol/chacha20/tcp"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/ip"
 )
 
@@ -22,7 +22,7 @@ type tunHandler struct {
 	egress           sender
 	rekeyInit        rekeyInitiator
 	allowedSources   map[netip.Addr]struct{}
-	controlPacketBuf [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	controlPacketBuf [settings.DefaultEthernetMTU + chacha20.TCPOverhead]byte
 }
 
 func newTunHandler(ctx context.Context,
@@ -42,8 +42,8 @@ func newTunHandler(ctx context.Context,
 
 func (t *tunHandler) HandleTun() error {
 	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
-	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	payload := buffer[tcp.EpochPrefixSize : settings.DefaultEthernetMTU+tcp.EpochPrefixSize]
+	var buffer [settings.DefaultEthernetMTU + chacha20.TCPOverhead]byte
+	payload := buffer[chacha20.TCPEpochPrefixSize : settings.DefaultEthernetMTU+chacha20.TCPEpochPrefixSize]
 
 	for {
 		select {
@@ -64,21 +64,21 @@ func (t *tunHandler) HandleTun() error {
 			}
 
 			// Pass buffer including the 2-byte epoch prefix reservation.
-			if err := t.egress.Send(buffer[:tcp.EpochPrefixSize+n]); err != nil {
+			if err := t.egress.Send(buffer[:chacha20.TCPEpochPrefixSize+n]); err != nil {
 				slog.Error("write to TCP failed", "err", err)
 				return err
 			}
 
 			if t.rekeyInit != nil {
 				now := time.Now().UTC()
-				dst := t.controlPacketBuf[tcp.EpochPrefixSize : tcp.EpochPrefixSize+settings.DefaultEthernetMTU]
+				dst := t.controlPacketBuf[chacha20.TCPEpochPrefixSize : chacha20.TCPEpochPrefixSize+settings.DefaultEthernetMTU]
 				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, dst)
 				if err != nil {
 					slog.Warn("failed to prepare rekey init", "err", err)
 					continue
 				}
 				if ok {
-					spWithPrefix := t.controlPacketBuf[:tcp.EpochPrefixSize+len(servicePayload)]
+					spWithPrefix := t.controlPacketBuf[:chacha20.TCPEpochPrefixSize+len(servicePayload)]
 					if err := t.egress.Send(spWithPrefix); err != nil {
 						slog.Warn("failed to send rekey init", "err", err)
 					}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 
 	"github.com/coder/websocket"
 )
@@ -172,7 +173,7 @@ func TestUpgradeEnforcesReadLimit(t *testing.T) {
 	}
 	defer func() { _ = conn.CloseNow() }()
 
-	payload := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead+1)
+	payload := make([]byte, settings.DefaultEthernetMTU+chacha20.TCPOverhead+1)
 	if err := conn.Write(ctx, websocket.MessageBinary, payload); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}

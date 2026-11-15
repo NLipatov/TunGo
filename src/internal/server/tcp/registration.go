@@ -85,7 +85,7 @@ func newRegistrar(
 // creates a Peer, adds it to the repository, and returns it alongside
 // the framing transport. The caller is responsible for driving the
 // packet loop using the returned peer and transport.
-func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCloser, error) {
+func (r *registrar) registerClient(conn net.Conn) (*session.Peer, *peerSender, io.ReadWriteCloser, error) {
 	slog.Info("TCP client connected", "remote_addr", conn.RemoteAddr())
 
 	// Extract remote address early — needed for cookie IP binding during
@@ -94,7 +94,7 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
 		_ = conn.Close()
-		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
+		return nil, nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
 	}
 
 	// Enable OS-level TCP keepalive for dead connection detection.
@@ -106,10 +106,10 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 	// Wrap with read deadline so the server detects dead clients at the
 	// application level (no data within ServerIdleTimeout → connection closed).
 	deadlineConn := transport.WithReadDeadline(conn, settings.ServerIdleTimeout)
-	framingAdapter, fErr := transport.NewFramedConn(deadlineConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	framingAdapter, fErr := transport.NewFramedConn(deadlineConn, settings.DefaultEthernetMTU+chacha20.TCPOverhead)
 	if fErr != nil {
 		_ = conn.Close() // Prevent socket leak on framing adapter failure
-		return nil, nil, fErr
+		return nil, nil, nil, fErr
 	}
 	var h handshake
 	var clientID int
@@ -125,20 +125,20 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 			continue
 		}
 		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
+		return nil, nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
 
 	internalIP, allocErr := addressing.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
 		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)
+		return nil, nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)
 	}
 	slog.Info("TCP client registered", "remote_addr", conn.RemoteAddr(), "internal_ip", internalIP)
 
-	cryptographyService, epochController, cryptographyServiceErr := r.newCrypto(h, true)
-	if cryptographyServiceErr != nil {
+	cryptoSession, epochController, err := r.newCrypto(h, true)
+	if err != nil {
 		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
+		return nil, nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), err)
 	}
 	var rekeyCoordinator *rekey.ServerRekeyCoordinator
 	if epochController != nil {
@@ -156,7 +156,7 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 		slog.Info("replacing existing session", "internal_ip", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
 		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"connection closed: %s (internal IP %s lookup failed: %v)",
 			conn.RemoteAddr(),
 			internalIP,
@@ -180,10 +180,12 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, io.ReadWriteCl
 		}
 	}
 
+	sender := newPeerSender(framingAdapter, cryptoSession)
+	go sender.processSendQueue()
 	peer := session.NewPeerWithAuth(
-		cryptographyService, rekeyCoordinator, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs, framingAdapter,
+		cryptoSession, rekeyCoordinator, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs, sender,
 	)
 	r.sessionManager.Add(peer)
 
-	return peer, framingAdapter, nil
+	return peer, sender, framingAdapter, nil
 }

@@ -157,7 +157,7 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	internal := netip.MustParseAddr("10.0.0.2")
 	tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), writer)
+	peer := session.NewPeer(&passthroughCrypto{}, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), newPeerSender(writer, &passthroughCrypto{}))
 	peers := session.NewRepository()
 	peers.Add(peer)
 	server := &Server{ctx: context.Background(), tun: tun, peers: peers}
@@ -201,7 +201,7 @@ func TestServer_RunTunSendFailure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			internal := netip.MustParseAddr("10.0.0.2")
 			tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
-			peer := session.NewPeer(tt.crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), tt.writer)
+			peer := session.NewPeer(tt.crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), newPeerSender(tt.writer, tt.crypto))
 			peers := session.NewRepository()
 			peers.Add(peer)
 			server := &Server{ctx: context.Background(), tun: tun, peers: peers}
@@ -222,7 +222,7 @@ func TestServer_RunTunSendFailure(t *testing.T) {
 
 func TestServer_PingDoesNotRequireRekey(t *testing.T) {
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, nil, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, nil, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 	ping := make([]byte, 3)
 	if err := servicepacket.Encode(servicepacket.Ping, ping); err != nil {
@@ -253,7 +253,7 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
 	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, nil)
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 
 	handled, err := server.handleService(peer, 0, init)
@@ -277,7 +277,7 @@ func TestServer_RekeyV2SendsNoiseAckWithoutPrematureUDPActivation(t *testing.T) 
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
 	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, rekeyV2Responder{})
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 
 	handled, err := server.handleService(peer, 0, init)

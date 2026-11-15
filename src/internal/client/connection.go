@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/tcp"
 	"tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/keys"
@@ -267,7 +268,7 @@ func dialTCP(
 	conn = tcptransport.WithReadDeadline(conn, settings.PingRestartTimeout)
 	return tcptransport.NewFramedConn(
 		conn,
-		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
+		settings.DefaultEthernetMTU+chacha20.TCPOverhead,
 	)
 }
 
@@ -420,7 +421,7 @@ func dialWS(
 
 	wrapped, wrapErr := tcptransport.NewFramedConn(
 		tcptransport.WithReadDeadline(ws.NewConn(connCtx, conn, nil, remoteAddr), settings.PingRestartTimeout),
-		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
+		settings.DefaultEthernetMTU+chacha20.TCPOverhead,
 	)
 	if wrapErr != nil {
 		_ = conn.Close(websocket.StatusInternalError, "adapter wrap failed")

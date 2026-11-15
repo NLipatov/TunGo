@@ -100,7 +100,7 @@ func (s *Server) runTransport() error {
 		_ = s.conn.Close()
 	}()
 
-	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var frame [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	var oob [1024]byte
 	for {
 		n, oobn, _, addr, err := s.conn.ReadMsgUDPAddrPort(frame[:], oob[:])
@@ -222,7 +222,7 @@ func (s *Server) handleDecrypted(
 }
 
 func (s *Server) runTun() error {
-	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var frame [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	plaintext := frame[udpcrypto.PayloadOffset : udpcrypto.PayloadOffset+settings.DefaultEthernetMTU]
 
 	for {
@@ -291,7 +291,7 @@ func (s *Server) sendPayload(peer *session.Peer, payload []byte) error {
 	if len(payload) > settings.DefaultEthernetMTU {
 		return io.ErrShortBuffer
 	}
-	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var frame [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	copy(frame[udpcrypto.PayloadOffset:], payload)
 	s.peerSend(peer, frame[:udpcrypto.PayloadOffset+len(payload)])
 	return nil

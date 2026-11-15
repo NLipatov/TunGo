@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 
 	"github.com/coder/websocket"
 )
@@ -18,7 +19,7 @@ type socket interface {
 }
 
 // Keep messages within the receive limit of existing servers.
-const maxMessagePayload = settings.DefaultEthernetMTU + settings.TCPChacha20Overhead
+const maxMessagePayload = settings.DefaultEthernetMTU + chacha20.TCPOverhead
 
 var _ net.Conn = (*Conn)(nil)
 

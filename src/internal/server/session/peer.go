@@ -2,7 +2,6 @@ package session
 
 import (
 	"errors"
-	"io"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -13,7 +12,11 @@ import (
 
 var ErrPeerClosed = errors.New("peer closed")
 
-type peerSender interface {
+// PeerSender is the egress path of a Peer.
+//
+// Close must not return while any encryption started outside Send is still
+// in flight: Repository zeroes key material right after Close.
+type PeerSender interface {
 	Send([]byte) error
 	Close() error
 }
@@ -32,12 +35,13 @@ type peerRekey interface {
 // Peer is a session paired with its egress path — the unit stored in Repository.
 //
 // LIFECYCLE INVARIANT: The closed flag is set BEFORE zeroing crypto.
-// Send and Decrypt hold cryptoMu from the closed check through the crypto
-// operation, preventing concurrent zeroization.
+// Send and Decrypt hold cryptoMu from the closed check until they return,
+// preventing concurrent zeroization. Encryption a sender performs after Send
+// returns is stopped by PeerSender.Close before zeroization.
 type Peer struct {
 	crypto       crypto
 	rekey        peerRekey
-	sender       peerSender
+	sender       PeerSender
 	internalIP   netip.Addr
 	externalIP   netip.AddrPort
 	clientPubKey []byte
@@ -54,9 +58,9 @@ func NewPeer(
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
-	writer io.Writer,
+	peerSender PeerSender,
 ) *Peer {
-	return NewPeerWithAuth(crypto, rekey, internalIP, externalIP, nil, nil, writer)
+	return NewPeerWithAuth(crypto, rekey, internalIP, externalIP, nil, nil, peerSender)
 }
 
 func NewPeerWithAuth(
@@ -66,11 +70,10 @@ func NewPeerWithAuth(
 	externalIP netip.AddrPort,
 	clientPubKey []byte,
 	allowedIPs []netip.Prefix,
-	writer io.Writer,
+	peerSender PeerSender,
 ) *Peer {
 	return newPeerWithAuth(
-		crypto, rekey, internalIP, externalIP, clientPubKey, allowedIPs,
-		newEncryptedSender(writer, crypto),
+		crypto, rekey, internalIP, externalIP, clientPubKey, allowedIPs, peerSender,
 	)
 }
 
@@ -79,7 +82,7 @@ func newPeer(
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
-	sender peerSender,
+	sender PeerSender,
 ) *Peer {
 	return newPeerWithAuth(crypto, rekey, internalIP, externalIP, nil, nil, sender)
 }
@@ -91,7 +94,7 @@ func newPeerWithAuth(
 	externalIP netip.AddrPort,
 	clientPubKey []byte,
 	allowedIPs []netip.Prefix,
-	sender peerSender,
+	sender PeerSender,
 ) *Peer {
 	allowedAddrs := make(map[netip.Addr]struct{}, len(allowedIPs))
 	allowedNets := make([]netip.Prefix, 0, len(allowedIPs))
@@ -202,8 +205,8 @@ func (p *Peer) Decrypt(data []byte) ([]byte, error) {
 	return p.crypto.Decrypt(data)
 }
 
-// Send encrypts and writes data while protecting session crypto from concurrent
-// lifecycle teardown and zeroization.
+// Send passes data to the egress sender while protecting session crypto from
+// concurrent lifecycle teardown and zeroization.
 func (p *Peer) Send(data []byte) error {
 	p.cryptoMu.RLock()
 	defer p.cryptoMu.RUnlock()

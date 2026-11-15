@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 	udpcrypto "tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/ip"
 )
@@ -26,7 +27,7 @@ type tunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	egress              sender
 	allowedSources      map[netip.Addr]struct{}
-	controlPacketBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	controlPacketBuffer [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	rekeyInit           rekeyInitiator
 }
 
@@ -48,12 +49,12 @@ func newTunHandler(ctx context.Context,
 // HandleTun reads packets from the TUN interface,
 // reserves space for AEAD overhead, encrypts them, and forwards them to the correct session.
 //
-// Buffer layout before Encrypt (total size = MTU + UDPChacha20Overhead):
+// Buffer layout before Encrypt (total size = MTU + chacha20.UDPOverhead):
 //
 //	[ 0 ..... 7 ][ 8 .... 19 ][ 20 ........ 1519 ][ 1520 ..... end ]
 //	| Route ID  |   Nonce    |   Payload (<= MTU) |   AEAD tag headroom |
 //
-// Example with MTU = 1500, settings.UDPChacha20Overhead = 36:
+// Example with MTU = 1500, chacha20.UDPOverhead = 36:
 // - buffer length = 1500 + 36 = 1536
 //
 // Step 1 – read plaintext from TUN:
@@ -67,7 +68,7 @@ func newTunHandler(ctx context.Context,
 //   - no additional allocations are required since all prefixes and suffix headroom are reserved.
 func (w *tunHandler) HandleTun() error {
 	// +8 Route ID +12 nonce +16 AEAD tag
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var buffer [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	payloadStart := udpPayloadOffset
 
 	// Main loop to read from TUN and send data

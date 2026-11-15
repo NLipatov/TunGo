@@ -211,9 +211,9 @@ func (r *registrar) registerClient(key registrationKey, queue *registrationQueue
 		return
 	}
 
-	cryptoSession, epochController, cryptoSessionErr := r.newCrypto(h, true)
-	if cryptoSessionErr != nil {
-		slog.Error("failed to init UDP crypto session", "client", clientAddrPort.Addr().AsSlice(), "err", cryptoSessionErr)
+	cryptoSession, epochController, err := r.newCrypto(h, true)
+	if err != nil {
+		slog.Error("failed to init UDP crypto session", "client", clientAddrPort.Addr().AsSlice(), "err", err)
 		return
 	}
 	var rekeyCoordinator *rekey.ServerRekeyCoordinator
@@ -249,7 +249,7 @@ func (r *registrar) registerClient(key registrationKey, queue *registrationQueue
 	}
 
 	peer := session.NewPeerWithAuth(
-		cryptoSession, rekeyCoordinator, internalIP, clientAddrPort, clientPubKey, allowedIPs, regTransport,
+		cryptoSession, rekeyCoordinator, internalIP, clientAddrPort, clientPubKey, allowedIPs, newPeerSender(regTransport, cryptoSession),
 	)
 	r.sessionRepo.Add(peer)
 	slog.Info("UDP client registered", "client", clientAddrPort.Addr(), "internal_ip", internalIP)

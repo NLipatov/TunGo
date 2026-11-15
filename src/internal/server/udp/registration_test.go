@@ -549,7 +549,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	)
 	repo.Add(session.NewPeerWithAuth(
 		udpRegCrypto{}, staleRekey, internalIP, netip.MustParseAddrPort("192.168.1.10:1234"), nil, nil,
-		io.Discard,
+		newPeerSender(io.Discard, udpRegCrypto{}),
 	))
 
 	q, _ := r.getOrCreateRegistrationQueue(key)
