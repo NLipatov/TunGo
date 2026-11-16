@@ -9,11 +9,15 @@ import (
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
 	"tungo/internal/server/session"
+	transport "tungo/internal/transport/tcp"
 )
 
 var errSendQueueFull = errors.New("send queue full")
 
-const frameCap = settings.DefaultEthernetMTU + chacha20.TCPOverhead
+const (
+	frameCap = settings.DefaultEthernetMTU + chacha20.TCPOverhead
+	batchCap = 1024 * 64
+)
 
 type frame = [frameCap]byte
 
@@ -55,7 +59,7 @@ func newPeerSender(
 		writeCloser: writeCloser,
 		crypto:      crypto,
 		controlq:    make(chan controlSendTask, 4),
-		dataq:       make(chan dataSendTask, 64),
+		dataq:       make(chan dataSendTask, 1024),
 		closing:     make(chan struct{}),
 		done:        make(chan struct{}),
 	}
@@ -127,21 +131,21 @@ func (p *peerSender) Close() error {
 
 func (p *peerSender) processSendQueue() {
 	defer close(p.done)
+	// batch is owned by this goroutine and reused once each synchronous Write returns.
+	batch := make([]byte, 0, batchCap)
 	for {
 		select {
 		case <-p.closing:
 			p.err = session.ErrPeerClosed
 			return
 		case task := <-p.dataq:
-			err := p.encryptAndWrite(task.data[:task.n])
-			pool.Put(task.data)
-			if err != nil {
+			if err := p.sendBatch(batch, task); err != nil {
 				p.err = err
 				_ = p.writeCloser.Close()
 				return
 			}
 		case task := <-p.controlq:
-			err := p.encryptAndWrite(task.data[:task.n])
+			err := p.encryptAndWrite(batch, task.data[:task.n])
 			pool.Put(task.data)
 			if err != nil {
 				p.err = err
@@ -155,13 +159,46 @@ func (p *peerSender) processSendQueue() {
 	}
 }
 
-func (p *peerSender) encryptAndWrite(plaintext []byte) error {
-	ciphertext, err := p.crypto.Encrypt(plaintext)
+func (p *peerSender) encryptAndWrite(batch, plaintext []byte) error {
+	frame, err := p.appendFrame(batch[:0], plaintext)
 	if err != nil {
-		return fmt.Errorf("%w: %w", session.ErrEncryption, err)
+		return err
 	}
-	if _, err = p.writeCloser.Write(ciphertext); err != nil {
+	if _, err = p.writeCloser.Write(frame); err != nil {
 		return fmt.Errorf("%w: %w", session.ErrTransportWrite, err)
 	}
 	return nil
+}
+
+func (p *peerSender) sendBatch(batch []byte, task dataSendTask) error {
+	var err error
+	var drain bool
+	batch, err = p.appendFrame(batch[:0], task.data[:task.n])
+	pool.Put(task.data)
+	for err == nil &&
+		!drain &&
+		len(batch)+transport.LengthPrefix+frameCap <= cap(batch) {
+		select {
+		case task = <-p.dataq:
+			batch, err = p.appendFrame(batch, task.data[:task.n])
+			pool.Put(task.data)
+		default:
+			drain = true
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = p.writeCloser.Write(batch); err != nil {
+		return fmt.Errorf("%w: %w", session.ErrTransportWrite, err)
+	}
+	return nil
+}
+
+func (p *peerSender) appendFrame(batch, data []byte) ([]byte, error) {
+	ciphertext, err := p.crypto.Encrypt(data)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", session.ErrEncryption, err)
+	}
+	return transport.AppendFrame(batch, ciphertext), nil
 }

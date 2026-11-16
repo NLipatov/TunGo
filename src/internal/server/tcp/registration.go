@@ -85,7 +85,7 @@ func newRegistrar(
 // creates a Peer, adds it to the repository, and returns it alongside
 // the framing transport. The caller is responsible for driving the
 // packet loop using the returned peer and transport.
-func (r *registrar) registerClient(conn net.Conn) (*session.Peer, *peerSender, io.ReadWriteCloser, error) {
+func (r *registrar) registerClient(conn net.Conn) (*session.Peer, *peerSender, io.ReadCloser, error) {
 	slog.Info("TCP client connected", "remote_addr", conn.RemoteAddr())
 
 	// Extract remote address early — needed for cookie IP binding during
@@ -180,7 +180,7 @@ func (r *registrar) registerClient(conn net.Conn) (*session.Peer, *peerSender, i
 		}
 	}
 
-	sender := newPeerSender(framingAdapter, cryptoSession)
+	sender := newPeerSender(deadlineConn, cryptoSession)
 	go sender.processSendQueue()
 	peer := session.NewPeerWithAuth(
 		cryptoSession, rekeyCoordinator, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs, sender,

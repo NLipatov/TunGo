@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"sync"
@@ -10,13 +11,22 @@ import (
 
 	"tungo/internal/protocol/chacha20"
 	"tungo/internal/server/session"
+	transport "tungo/internal/transport/tcp"
 )
 
 const testWaitTimeout = time.Second
 
-// recordingWriteCloser hands every written frame to packets and reports Close via closed.
+// recordingWrite describes one transport Write.
+type recordingWrite struct {
+	size   int
+	frames int
+}
+
+// recordingWriteCloser splits every Write into its length-prefixed frames, hands each frame payload
+// to packets, describes the Write itself on writes, and reports Close via closed.
 type recordingWriteCloser struct {
 	packets   chan []byte
+	writes    chan recordingWrite
 	closed    chan struct{}
 	closeOnce sync.Once
 	err       error
@@ -24,17 +34,24 @@ type recordingWriteCloser struct {
 
 func newRecordingWriteCloser() *recordingWriteCloser {
 	return &recordingWriteCloser{
-		packets: make(chan []byte, 128),
+		packets: make(chan []byte, 1024),
+		writes:  make(chan recordingWrite, 1024),
 		closed:  make(chan struct{}),
 	}
 }
 
-func (w *recordingWriteCloser) Write(packet []byte) (int, error) {
-	w.packets <- append([]byte(nil), packet...)
+func (w *recordingWriteCloser) Write(data []byte) (int, error) {
+	frames := 0
+	for rest := data; len(rest) > 0; frames++ {
+		end := transport.LengthPrefix + int(binary.BigEndian.Uint16(rest))
+		w.packets <- append([]byte(nil), rest[transport.LengthPrefix:end]...)
+		rest = rest[end:]
+	}
+	w.writes <- recordingWrite{size: len(data), frames: frames}
 	if w.err != nil {
 		return 0, w.err
 	}
-	return len(packet), nil
+	return len(data), nil
 }
 
 func (w *recordingWriteCloser) Close() error {
@@ -144,6 +161,64 @@ func TestPeerSender_SendCopiesPayload(t *testing.T) {
 
 	if got := waitPacket(t, writer.packets); string(got[chacha20.TCPEpochPrefixSize:]) != "original" {
 		t.Fatalf("payload = %q, want copy taken at Send", got[chacha20.TCPEpochPrefixSize:])
+	}
+}
+
+func TestPeerSender_BatchesQueuedFramesIntoOneWrite(t *testing.T) {
+	writer := newRecordingWriteCloser()
+	sender := newPeerSender(writer, &plaintextCrypto{})
+	payloads := [][]byte{[]byte("first"), []byte("second"), []byte("third")}
+	for _, payload := range payloads {
+		if err := sender.Send(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	go sender.processSendQueue()
+	t.Cleanup(func() { _ = sender.Close() })
+
+	select {
+	case write := <-writer.writes:
+		if write.frames != len(payloads) {
+			t.Fatalf("frames in first write = %d, want %d", write.frames, len(payloads))
+		}
+	case <-time.After(testWaitTimeout):
+		t.Fatal("timed out waiting for batched write")
+	}
+	for _, want := range payloads {
+		if got := waitPacket(t, writer.packets); !bytes.Equal(got[chacha20.TCPEpochPrefixSize:], want) {
+			t.Fatalf("payload = %q, want %q", got[chacha20.TCPEpochPrefixSize:], want)
+		}
+	}
+}
+
+func TestPeerSender_BatchStaysWithinCapacity(t *testing.T) {
+	writer := newRecordingWriteCloser()
+	sender := newPeerSender(writer, &plaintextCrypto{})
+	payload := make([]byte, frameCap-chacha20.TCPOverhead)
+	const queued = 64
+	for range queued {
+		if err := sender.Send(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	go sender.processSendQueue()
+	t.Cleanup(func() { _ = sender.Close() })
+
+	frames, writes := 0, 0
+	for frames < queued {
+		select {
+		case write := <-writer.writes:
+			if write.size > batchCap {
+				t.Fatalf("write size = %d, want at most %d", write.size, batchCap)
+			}
+			frames += write.frames
+			writes++
+		case <-time.After(testWaitTimeout):
+			t.Fatalf("timed out after %d of %d frames", frames, queued)
+		}
+	}
+	if writes < 2 {
+		t.Fatalf("writes = %d, want queued frames split across several batches", writes)
 	}
 }
 
