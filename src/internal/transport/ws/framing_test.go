@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/transport/tcp"
+
+	"github.com/coder/websocket"
 )
 
 func TestFramedConn_WebSocketClose(t *testing.T) {
@@ -107,7 +109,7 @@ func (c *recordConn) Read(p []byte) (int, error) {
 
 func TestFramedConn_WebSocketMessagesAndLegacyPeer(t *testing.T) {
 	// Existing servers limit a message to the payload cap, without the u16 prefix.
-	const legacyLimit = settings.DefaultEthernetMTU + settings.TCPChacha20Overhead
+	const legacyLimit = settings.DefaultEthernetMTU + chacha20.TCPOverhead
 	for _, size := range []int{1, 64, legacyLimit - 2, legacyLimit - 1, legacyLimit} {
 		t.Run(strconv.Itoa(size), func(t *testing.T) {
 			t.Parallel()

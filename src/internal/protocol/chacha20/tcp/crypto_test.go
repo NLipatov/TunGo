@@ -64,9 +64,9 @@ func newCryptoPair(t *testing.T) (client, server *Crypto) {
 
 func encryptBuf(t *testing.T, tc *Crypto, msg []byte) []byte {
 	t.Helper()
-	// Reserve EpochPrefixSize bytes at the start for the epoch tag.
-	buf := make([]byte, EpochPrefixSize+len(msg), EpochPrefixSize+len(msg)+chacha20poly1305.Overhead)
-	copy(buf[EpochPrefixSize:], msg)
+	// Reserve chacha20.TCPEpochPrefixSize bytes at the start for the epoch tag.
+	buf := make([]byte, chacha20.TCPEpochPrefixSize+len(msg), chacha20.TCPEpochPrefixSize+len(msg)+chacha20poly1305.Overhead)
+	copy(buf[chacha20.TCPEpochPrefixSize:], msg)
 	ct, err := tc.Encrypt(buf)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
@@ -81,13 +81,13 @@ func TestCrypto_RoundTrip(t *testing.T) {
 	ct := encryptBuf(t, client, msg)
 
 	// Verify epoch prefix (epoch 0 for initial session).
-	epoch := binary.BigEndian.Uint16(ct[:EpochPrefixSize])
+	epoch := binary.BigEndian.Uint16(ct[:chacha20.TCPEpochPrefixSize])
 	if epoch != 0 {
 		t.Fatalf("expected epoch 0, got %d", epoch)
 	}
 
 	// Total length = msg + poly1305 tag + 2-byte epoch.
-	wantLen := len(msg) + chacha20poly1305.Overhead + EpochPrefixSize
+	wantLen := len(msg) + chacha20poly1305.Overhead + chacha20.TCPEpochPrefixSize
 	if len(ct) != wantLen {
 		t.Fatalf("ciphertext len=%d, want %d", len(ct), wantLen)
 	}
@@ -167,7 +167,7 @@ func TestCrypto_StageEpoch_DualEpoch(t *testing.T) {
 	ct2 := encryptBuf(t, client, msg2)
 
 	// Verify new epoch in the frame.
-	epoch2 := binary.BigEndian.Uint16(ct2[:EpochPrefixSize])
+	epoch2 := binary.BigEndian.Uint16(ct2[:chacha20.TCPEpochPrefixSize])
 	if epoch2 != clientEpoch {
 		t.Fatalf("expected epoch %d, got %d", clientEpoch, epoch2)
 	}
@@ -195,7 +195,7 @@ func TestCrypto_StageEpoch_SendStillUsesOldEpoch(t *testing.T) {
 	msg := []byte("still old")
 	ct := encryptBuf(t, client, msg)
 
-	epoch := binary.BigEndian.Uint16(ct[:EpochPrefixSize])
+	epoch := binary.BigEndian.Uint16(ct[:chacha20.TCPEpochPrefixSize])
 	if epoch != 0 {
 		t.Fatalf("expected epoch 0 (old), got %d", epoch)
 	}
@@ -224,7 +224,7 @@ func TestCrypto_PromoteSendEpoch_UnknownEpochKeepsConsistentSlot(t *testing.T) {
 	}
 
 	ct := encryptBuf(t, client, []byte("known slot"))
-	if epoch := binary.BigEndian.Uint16(ct[:EpochPrefixSize]); epoch != send.epoch {
+	if epoch := binary.BigEndian.Uint16(ct[:chacha20.TCPEpochPrefixSize]); epoch != send.epoch {
 		t.Fatalf("wire epoch %d does not match send slot epoch %d", epoch, send.epoch)
 	}
 	if _, err := server.Decrypt(ct); err != nil {
@@ -376,13 +376,13 @@ func TestCrypto_FSMRetiresPreviousEpochBeforeNextRekey(t *testing.T) {
 	if _, err := server.Decrypt(clientFrame); err != nil {
 		t.Fatalf("server Decrypt: %v", err)
 	}
-	serverFSM.ObservePeerEpoch(binary.BigEndian.Uint16(clientFrame[:EpochPrefixSize]))
+	serverFSM.ObservePeerEpoch(binary.BigEndian.Uint16(clientFrame[:chacha20.TCPEpochPrefixSize]))
 
 	serverFrame := encryptBuf(t, server, []byte("server current epoch"))
 	if _, err := client.Decrypt(serverFrame); err != nil {
 		t.Fatalf("client Decrypt: %v", err)
 	}
-	clientFSM.ObservePeerEpoch(binary.BigEndian.Uint16(serverFrame[:EpochPrefixSize]))
+	clientFSM.ObservePeerEpoch(binary.BigEndian.Uint16(serverFrame[:chacha20.TCPEpochPrefixSize]))
 
 	client.mu.RLock()
 	clientHasPrev := client.recvPrevious.session != nil
@@ -414,7 +414,7 @@ func TestCrypto_Encrypt_PropagatesSessionEncryptError(t *testing.T) {
 	client.recvNewest.session.SendNonce.CounterHigh = ^uint16(0)
 	client.recvNewest.session.SendNonce.CounterLow = ^uint64(0)
 
-	buf := make([]byte, EpochPrefixSize+1, EpochPrefixSize+1+chacha20poly1305.Overhead)
+	buf := make([]byte, chacha20.TCPEpochPrefixSize+1, chacha20.TCPEpochPrefixSize+1+chacha20poly1305.Overhead)
 	if _, err := client.Encrypt(buf); err == nil {
 		t.Fatal("expected session encrypt error")
 	}
@@ -423,8 +423,8 @@ func TestCrypto_Encrypt_PropagatesSessionEncryptError(t *testing.T) {
 func TestCrypto_Decrypt_PropagatesSessionDecryptError(t *testing.T) {
 	_, server := newCryptoPair(t)
 	// Known epoch=0 but random payload should fail authentication in session decrypt.
-	frame := make([]byte, EpochPrefixSize+chacha20poly1305.Overhead+1)
-	binary.BigEndian.PutUint16(frame[:EpochPrefixSize], 0)
+	frame := make([]byte, chacha20.TCPEpochPrefixSize+chacha20poly1305.Overhead+1)
+	binary.BigEndian.PutUint16(frame[:chacha20.TCPEpochPrefixSize], 0)
 	if _, err := server.Decrypt(frame); err == nil {
 		t.Fatal("expected decrypt failure for malformed ciphertext")
 	}

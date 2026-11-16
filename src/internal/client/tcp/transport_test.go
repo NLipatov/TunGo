@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/rekey"
 	"tungo/internal/protocol/keys"
@@ -483,7 +484,7 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 }
 
 func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
-	long := make([]byte, 1500+18+1) // DefaultEthernetMTU + TCPChacha20Overhead + 1
+	long := make([]byte, settings.DefaultEthernetMTU+chacha20.TCPOverhead+1)
 	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := newTestTransportHandler(context.Background(),
 		rdr(

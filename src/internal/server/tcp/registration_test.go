@@ -119,7 +119,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error from handshake failure")
 	}
@@ -148,7 +148,7 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error from crypto factory failure")
 	}
@@ -179,10 +179,11 @@ func TestRegisterClient_Success(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	t.Cleanup(func() { repo.Delete(peer) })
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
 	}
@@ -227,7 +228,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	ip := netip.MustParseAddr("10.0.0.2")
 	oldWriter := &tcpRegWriter{}
 	existingPeer := session.NewPeer(
-		tcpRegCrypto{}, nil, ip, netip.MustParseAddrPort("192.168.1.100:9999"), oldWriter,
+		tcpRegCrypto{}, nil, ip, netip.MustParseAddrPort("192.168.1.100:9999"), startPeerSender(t, oldWriter, tcpRegCrypto{}),
 	)
 	repo.Add(existingPeer)
 
@@ -238,10 +239,11 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	}
 
 	// RegisterClient should replace the existing session.
-	peer, _, err := reg.registerClient(conn)
+	peer, _, _, err := reg.registerClient(conn)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	t.Cleanup(func() { repo.Delete(peer) })
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
 	}
@@ -285,7 +287,7 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 		remoteAddr: &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	_, _, err := reg.registerClient(conn)
+	_, _, _, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error for non-TCP remote address")
 	}
@@ -331,7 +333,7 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error from lookup failure")
 	}
@@ -363,7 +365,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error from IP allocation with negative clientID")
 	}
@@ -430,10 +432,11 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err != nil {
 		t.Fatalf("expected success after cookie retry, got: %v", err)
 	}
+	t.Cleanup(func() { repo.Delete(peer) })
 	if peer == nil || transport == nil {
 		t.Fatal("expected non-nil peer and transport")
 	}
@@ -461,7 +464,7 @@ func TestRegisterClient_CookieRetry_SecondFailure_ClosesConn(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	_, _, err := reg.registerClient(conn)
+	_, _, _, err := reg.registerClient(conn)
 	if err == nil {
 		t.Fatal("expected error when cookie retry also fails")
 	}
@@ -498,10 +501,11 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	peer, transport, err := reg.registerClient(conn)
+	peer, _, transport, err := reg.registerClient(conn)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	t.Cleanup(func() { repo.Delete(peer) })
 	if peer == nil || transport == nil {
 		t.Fatal("expected non-nil peer and transport")
 	}

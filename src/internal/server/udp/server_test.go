@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net/netip"
 	"testing"
@@ -156,7 +157,7 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	internal := netip.MustParseAddr("10.0.0.2")
 	tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), writer)
+	peer := session.NewPeer(&passthroughCrypto{}, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), newPeerSender(writer, &passthroughCrypto{}))
 	peers := session.NewRepository()
 	peers.Add(peer)
 	server := &Server{ctx: context.Background(), tun: tun, peers: peers}
@@ -172,9 +173,56 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	}
 }
 
+type failingEncryptCrypto struct{}
+
+func (failingEncryptCrypto) Encrypt([]byte) ([]byte, error) {
+	return nil, errors.New("nonce exhausted")
+}
+func (failingEncryptCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no buffer space available") }
+
+func TestServer_RunTunSendFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		crypto interface {
+			Encrypt([]byte) ([]byte, error)
+			Decrypt([]byte) ([]byte, error)
+		}
+		writer      io.Writer
+		wantDeleted bool
+	}{
+		{name: "success keeps peer", crypto: &passthroughCrypto{}, writer: &captureWriter{}},
+		{name: "transport write keeps peer", crypto: &passthroughCrypto{}, writer: failingWriter{}},
+		{name: "encryption deletes peer", crypto: failingEncryptCrypto{}, writer: &captureWriter{}, wantDeleted: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			internal := netip.MustParseAddr("10.0.0.2")
+			tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
+			peer := session.NewPeer(tt.crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), newPeerSender(tt.writer, tt.crypto))
+			peers := session.NewRepository()
+			peers.Add(peer)
+			server := &Server{ctx: context.Background(), tun: tun, peers: peers}
+
+			if err := server.runTun(); err != io.EOF {
+				t.Fatalf("RunTun error = %v, want EOF", err)
+			}
+			if peer.IsClosed() != tt.wantDeleted {
+				t.Fatalf("peer closed = %v, want %v", peer.IsClosed(), tt.wantDeleted)
+			}
+			_, err := peers.GetByInternalAddrPort(internal)
+			if found := err == nil; found == tt.wantDeleted {
+				t.Fatalf("peer found in repository = %v, want %v", found, !tt.wantDeleted)
+			}
+		})
+	}
+}
+
 func TestServer_PingDoesNotRequireRekey(t *testing.T) {
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, nil, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, nil, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 	ping := make([]byte, 3)
 	if err := servicepacket.Encode(servicepacket.Ping, ping); err != nil {
@@ -205,7 +253,7 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
 	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, nil)
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 
 	handled, err := server.handleService(peer, 0, init)
@@ -229,7 +277,7 @@ func TestServer_RekeyV2SendsNoiseAckWithoutPrematureUDPActivation(t *testing.T) 
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
 	coordinator := tunnelrekey.NewServerRekeyCoordinator(fsm, rekeyV2Responder{})
 	writer := &captureWriter{}
-	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, writer)
+	peer := session.NewPeer(&passthroughCrypto{}, coordinator, netip.Addr{}, netip.AddrPort{}, newPeerSender(writer, &passthroughCrypto{}))
 	server := &Server{}
 
 	handled, err := server.handleService(peer, 0, init)

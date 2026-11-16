@@ -92,7 +92,7 @@ func (s *Server) runTransport() error {
 }
 
 func (s *Server) serveClient(conn net.Conn) {
-	peer, transport, err := s.registrar.registerClient(conn)
+	peer, sender, transport, err := s.registrar.registerClient(conn)
 	if err != nil {
 		slog.Warn("failed to register client", "err", err)
 		return
@@ -103,7 +103,7 @@ func (s *Server) serveClient(conn net.Conn) {
 		slog.Info("client disconnected", "peer", peer.ExternalAddrPort())
 	}()
 
-	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	var frame [settings.DefaultEthernetMTU + chacha20.TCPOverhead]byte
 
 	for {
 		if s.ctx.Err() != nil {
@@ -116,7 +116,7 @@ func (s *Server) serveClient(conn net.Conn) {
 			}
 			return
 		}
-		err = s.handleFrame(peer, frame[:n])
+		err = s.handleFrame(peer, sender, frame[:n])
 		if errors.Is(err, session.ErrPeerClosed) {
 			return
 		}
@@ -127,17 +127,17 @@ func (s *Server) serveClient(conn net.Conn) {
 	}
 }
 
-func (s *Server) handleFrame(peer *session.Peer, frame []byte) error {
-	if len(frame) < tcpcrypto.EpochPrefixSize+chacha20poly1305.Overhead || len(frame) > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
+func (s *Server) handleFrame(peer *session.Peer, sender *peerSender, frame []byte) error {
+	if len(frame) < chacha20.TCPEpochPrefixSize+chacha20poly1305.Overhead || len(frame) > settings.DefaultEthernetMTU+chacha20.TCPOverhead {
 		return nil
 	}
 	plaintext, err := peer.Decrypt(frame)
 	if err != nil {
 		return err
 	}
-	epoch := binary.BigEndian.Uint16(frame[:tcpcrypto.EpochPrefixSize])
+	epoch := binary.BigEndian.Uint16(frame[:chacha20.TCPEpochPrefixSize])
 	peer.ObservePeerEpoch(epoch)
-	if handled, err := s.handleService(peer, epoch, plaintext); handled {
+	if handled, err := s.handleService(peer, sender, epoch, plaintext); handled {
 		return err
 	}
 	source, ok := ip.ExtractSourceIP(plaintext)
@@ -151,14 +151,12 @@ func (s *Server) handleFrame(peer *session.Peer, frame []byte) error {
 }
 
 func (s *Server) runTun() error {
-	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	plaintext := frame[tcpcrypto.EpochPrefixSize : tcpcrypto.EpochPrefixSize+settings.DefaultEthernetMTU]
-
+	var frame [settings.DefaultEthernetMTU]byte
 	for {
 		if s.ctx.Err() != nil {
 			return nil
 		}
-		n, err := s.tun.Read(plaintext)
+		n, err := s.tun.Read(frame[:])
 		if err != nil {
 			if temporary, ok := err.(interface{ Temporary() bool }); ok && temporary.Temporary() {
 				continue
@@ -168,7 +166,7 @@ func (s *Server) runTun() error {
 		if n == 0 {
 			continue
 		}
-		destination, ok := ip.ExtractDestIP(plaintext[:n])
+		destination, ok := ip.ExtractDestIP(frame[:n])
 		if !ok {
 			continue
 		}
@@ -176,28 +174,31 @@ func (s *Server) runTun() error {
 		if err != nil {
 			continue
 		}
-		if err := peer.Send(frame[:tcpcrypto.EpochPrefixSize+n]); err != nil {
-			slog.Warn("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
+		err = peer.Send(frame[:n])
+		switch {
+		case err == nil:
+		case errors.Is(err, session.ErrPeerClosed):
+		case errors.Is(err, session.ErrTransportWrite), errors.Is(err, errSendQueueFull):
+			slog.Debug("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
+		default:
+			slog.Warn("dropping peer after send failure", "peer", peer.ExternalAddrPort(), "err", err)
 			s.peers.Delete(peer)
-			continue
 		}
 	}
 }
 
-func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
+func (s *Server) handleService(peer *session.Peer, sender *peerSender, carrierEpoch uint16, plaintext []byte) (bool, error) {
 	response, epoch, rekeyed, err := peer.HandleRekey(carrierEpoch, &s.deriver, plaintext)
 	if err != nil {
 		if errors.Is(err, chacha20.ErrEpochExhausted) {
-			return true, s.sendService(peer, servicepacket.EpochExhausted, nil)
+			return true, s.sendControl(sender, servicepacket.EpochExhausted, nil, nil)
 		}
 		return true, nil
 	}
 	if rekeyed {
-		if err := s.sendPlaintext(peer, response); err != nil {
-			return true, err
-		}
-		peer.ActivateSendEpoch(epoch)
-		return true, nil
+		return true, sender.SendControl(response, func() {
+			peer.ActivateSendEpoch(epoch)
+		})
 	}
 	kind, ok := servicepacket.Parse(plaintext)
 	if !ok {
@@ -205,36 +206,20 @@ func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintex
 	}
 	switch kind {
 	case servicepacket.Ping:
-		s.sendPong(peer)
+		return true, s.sendControl(sender, servicepacket.Pong, nil, nil)
 	}
 	return true, nil
 }
 
-func (s *Server) sendPong(peer *session.Peer) {
-	if err := s.sendService(peer, servicepacket.Pong, nil); err != nil {
-		slog.Warn("failed to send pong", "err", err)
-	}
-}
-
-func (s *Server) sendService(peer *session.Peer, kind servicepacket.HeaderType, body []byte) error {
-	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	payloadLen := 3 + len(body)
-	if payloadLen > settings.DefaultEthernetMTU {
-		return io.ErrShortBuffer
-	}
-	payload := frame[tcpcrypto.EpochPrefixSize : tcpcrypto.EpochPrefixSize+payloadLen]
-	copy(payload[3:], body)
-	if err := servicepacket.Encode(kind, payload); err != nil {
+func (s *Server) sendControl(
+	sender *peerSender,
+	t servicepacket.HeaderType,
+	body []byte, after func(),
+) error {
+	data := make([]byte, 3+len(body))
+	copy(data[3:], body)
+	if err := servicepacket.Encode(t, data); err != nil {
 		return err
 	}
-	return peer.Send(frame[:tcpcrypto.EpochPrefixSize+payloadLen])
-}
-
-func (*Server) sendPlaintext(peer *session.Peer, payload []byte) error {
-	if len(payload) > settings.DefaultEthernetMTU {
-		return io.ErrShortBuffer
-	}
-	var frame [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	copy(frame[tcpcrypto.EpochPrefixSize:], payload)
-	return peer.Send(frame[:tcpcrypto.EpochPrefixSize+len(payload)])
+	return sender.SendControl(data, after)
 }

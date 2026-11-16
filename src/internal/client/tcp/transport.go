@@ -11,7 +11,6 @@ import (
 
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
-	"tungo/internal/protocol/chacha20/tcp"
 	"tungo/internal/protocol/servicepacket"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -52,7 +51,7 @@ func newTransportHandler(
 		cryptographyService: cryptographyService,
 		rekey:               rekey,
 		egress:              egress,
-		pingBuf:             make([]byte, tcp.EpochPrefixSize+3, tcp.EpochPrefixSize+3+settings.TCPChacha20Overhead),
+		pingBuf:             make([]byte, chacha20.TCPEpochPrefixSize+3, chacha20.TCPEpochPrefixSize+3+chacha20.TCPOverhead),
 	}
 	t.lastRecvNano.Store(time.Now().UnixNano())
 	return t
@@ -61,7 +60,7 @@ func newTransportHandler(
 func (t *transportHandler) HandleTransport() error {
 	go t.keepaliveLoop()
 
-	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	var buffer [settings.DefaultEthernetMTU + chacha20.TCPOverhead]byte
 
 	for {
 		select {
@@ -77,7 +76,7 @@ func (t *transportHandler) HandleTransport() error {
 				return readErr
 			}
 
-			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
+			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+chacha20.TCPOverhead {
 				continue
 			}
 
@@ -86,7 +85,7 @@ func (t *transportHandler) HandleTransport() error {
 				slog.Warn("failed to decrypt data", "err", payloadErr)
 				return payloadErr
 			}
-			carrierEpoch := binary.BigEndian.Uint16(buffer[:tcp.EpochPrefixSize])
+			carrierEpoch := binary.BigEndian.Uint16(buffer[:chacha20.TCPEpochPrefixSize])
 			if t.rekey != nil {
 				t.rekey.ObservePeerEpoch(carrierEpoch)
 			}
@@ -132,7 +131,7 @@ func (t *transportHandler) keepaliveLoop() {
 }
 
 func (t *transportHandler) sendPing() {
-	payload := t.pingBuf[tcp.EpochPrefixSize:]
+	payload := t.pingBuf[chacha20.TCPEpochPrefixSize:]
 	if err := servicepacket.Encode(servicepacket.Ping, payload); err != nil {
 		slog.Warn("keepalive failed to encode ping", "err", err)
 		return

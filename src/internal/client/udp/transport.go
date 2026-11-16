@@ -58,7 +58,7 @@ func newTransportHandler(
 }
 
 func (t *transportHandler) HandleTransport() error {
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var buffer [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 
 	for {
 		select {

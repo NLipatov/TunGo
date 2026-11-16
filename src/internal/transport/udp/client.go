@@ -5,12 +5,13 @@ import (
 	"net"
 	"time"
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 )
 
 // clientConn - single goroutine only client UDP adapter
 type clientConn struct {
 	conn          *net.UDPConn
-	buf           [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	buf           [settings.DefaultEthernetMTU + chacha20.UDPOverhead]byte
 	writeDeadline time.Duration
 }
 

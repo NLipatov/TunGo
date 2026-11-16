@@ -21,6 +21,7 @@ import (
 
 	clientconfig "tungo/internal/config/client"
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/protocol/noise"
 	"tungo/internal/protocol/servicepacket"
@@ -152,7 +153,7 @@ func connectionTestWSHandler(t *testing.T, ctx context.Context, handle func(net.
 		stop := context.AfterFunc(ctx, func() { _ = conn.CloseNow() })
 		defer stop()
 		framed, err := transport.NewFramedConn(transportws.NewConn(ctx, conn, nil, nil),
-			settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+			settings.DefaultEthernetMTU+chacha20.TCPOverhead)
 		if err != nil {
 			t.Error(err)
 			return
@@ -242,7 +243,7 @@ func connectionTestListen(t *testing.T, protocol settings.Protocol, host string,
 		defer func() { _ = conn.Close() }()
 		stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 		defer stop()
-		framed, err := transport.NewFramedConn(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+		framed, err := transport.NewFramedConn(conn, settings.DefaultEthernetMTU+chacha20.TCPOverhead)
 		if err != nil {
 			t.Error(err)
 			return

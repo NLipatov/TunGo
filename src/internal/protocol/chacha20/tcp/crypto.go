@@ -12,9 +12,6 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// EpochPrefixSize is the number of bytes prepended to every encrypted frame.
-const EpochPrefixSize = 2
-
 type epochSession struct {
 	epoch   uint16
 	session *Session
@@ -55,7 +52,7 @@ func NewCrypto(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool) *
 //	input:  [ 2B epoch reserved ][ plaintext (n bytes) ][ Overhead capacity ]
 //	output: [ 2B epoch          ][ ciphertext (n + 16 bytes)                ]
 func (c *Crypto) Encrypt(buf []byte) ([]byte, error) {
-	if len(buf) < EpochPrefixSize {
+	if len(buf) < chacha20.TCPEpochPrefixSize {
 		return nil, fmt.Errorf("buffer too short for epoch prefix: len=%d", len(buf))
 	}
 	if cap(buf) < len(buf)+chacha20poly1305.Overhead {
@@ -74,20 +71,20 @@ func (c *Crypto) Encrypt(buf []byte) ([]byte, error) {
 		return nil, fmt.Errorf("no active send session")
 	}
 
-	ciphertext, err := send.session.Encrypt(buf[EpochPrefixSize:])
+	ciphertext, err := send.session.Encrypt(buf[chacha20.TCPEpochPrefixSize:])
 	if err != nil {
 		return nil, err
 	}
 
-	binary.BigEndian.PutUint16(buf[:EpochPrefixSize], send.epoch)
-	return buf[:EpochPrefixSize+len(ciphertext)], nil
+	binary.BigEndian.PutUint16(buf[:chacha20.TCPEpochPrefixSize], send.epoch)
+	return buf[:chacha20.TCPEpochPrefixSize+len(ciphertext)], nil
 }
 
 func (c *Crypto) Decrypt(data []byte) ([]byte, error) {
-	if len(data) < EpochPrefixSize {
+	if len(data) < chacha20.TCPEpochPrefixSize {
 		return nil, fmt.Errorf("frame too short for epoch header")
 	}
-	epoch := binary.BigEndian.Uint16(data[:EpochPrefixSize])
+	epoch := binary.BigEndian.Uint16(data[:chacha20.TCPEpochPrefixSize])
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -97,7 +94,7 @@ func (c *Crypto) Decrypt(data []byte) ([]byte, error) {
 		return nil, ErrUnknownEpoch
 	}
 
-	return session.Decrypt(data[EpochPrefixSize:])
+	return session.Decrypt(data[chacha20.TCPEpochPrefixSize:])
 }
 
 func (c *Crypto) receiveSessionForEpoch(epoch uint16) *Session {

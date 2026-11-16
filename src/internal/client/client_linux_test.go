@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"tungo/internal/config/settings"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/keys"
 	"tungo/internal/protocol/noise"
 	transport "tungo/internal/transport/tcp"
@@ -90,7 +91,7 @@ func TestRunSessionEstablishedTunnelCleanup(t *testing.T) {
 				}
 				t.Cleanup(func() { _ = conn.Close() })
 				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-				framed, err := transport.NewFramedConn(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+				framed, err := transport.NewFramedConn(conn, settings.DefaultEthernetMTU+chacha20.TCPOverhead)
 				if err == nil {
 					_, err = handshake.ServerSideHandshake(framed)
 				}

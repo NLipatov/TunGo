@@ -56,8 +56,9 @@ func (s *Repository) Add(peer *Peer) {
 
 // Delete removes peer from repository and zeroes key material.
 //
-// LIFECYCLE INVARIANT: mark closed, close egress, remove routes, then wait for
-// in-flight Peer.Send/Decrypt calls before zeroing key material.
+// LIFECYCLE INVARIANT: mark closed, close egress (stopping sender encryption),
+// remove routes, then wait for in-flight Peer.Send/Decrypt calls before zeroing
+// key material.
 func (s *Repository) Delete(peer *Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -164,7 +165,7 @@ func (s *Repository) TerminateByPubKey(pubKey []byte) int {
 //
 // LIFECYCLE ORDER (prevents use-after-free):
 // 1. Mark peer as closed (atomic flag - callers will see this immediately)
-// 2. Close egress (TCP workers will exit, UDP writes will fail)
+// 2. Close egress (returns only after the sender stops encrypting)
 // 3. Remove from maps (no new lookups can find this peer)
 // 4. Zero key material (safe - no active users possible)
 func (s *Repository) deleteLocked(peer *Peer) {
@@ -211,7 +212,8 @@ func (s *Repository) deleteLocked(peer *Peer) {
 		}
 	}
 
-	// Step 4: Zero key material after all in-flight Send/Decrypt calls finish.
+	// Step 4: Zero key material after all in-flight Send/Decrypt calls finish;
+	// encryption outside Send was stopped by sender.Close in step 2.
 	peer.cryptoMu.Lock()
 	if crypto := peer.crypto; crypto != nil {
 		if zeroizer, ok := crypto.(interface{ Zeroize() }); ok {

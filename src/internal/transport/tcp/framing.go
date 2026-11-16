@@ -10,6 +10,10 @@ import (
 	"sync"
 )
 
+const (
+	LengthPrefix = 2
+)
+
 // framedConn serializes calls to Write. Concurrent reads, or adapters that do
 // not support simultaneous Read and Write, still require external synchronization.
 type framedConn struct {
@@ -41,7 +45,7 @@ func NewFramedConn(
 	return &framedConn{
 		Conn:        conn,
 		frameCap:    frameCap,
-		writeBuffer: make([]byte, 2+frameCap),
+		writeBuffer: make([]byte, LengthPrefix+frameCap),
 		bufReader:   bufio.NewReader(conn),
 	}, nil
 }
@@ -61,9 +65,7 @@ func (f *framedConn) Write(data []byte) (int, error) {
 	f.writeMu.Lock()
 	defer f.writeMu.Unlock()
 
-	frame := f.writeBuffer[:2+len(data)]
-	binary.BigEndian.PutUint16(frame, uint16(len(data)))
-	copy(frame[2:], data)
+	frame := AppendFrame(f.writeBuffer[:0], data)
 	if err := f.writeFull(f.Conn, frame); err != nil {
 		return 0, err
 	}
@@ -106,4 +108,10 @@ func (f *framedConn) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 	return length, nil
+}
+
+// AppendFrame appends data to dst as one u16-BE length-prefixed frame.
+func AppendFrame(dst, data []byte) []byte {
+	dst = binary.BigEndian.AppendUint16(dst, uint16(len(data)))
+	return append(dst, data...)
 }
