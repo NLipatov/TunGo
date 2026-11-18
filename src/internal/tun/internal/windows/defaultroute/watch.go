@@ -4,19 +4,22 @@ package defaultroute
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 
+	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-func Watch(ctx context.Context) (<-chan error, error) {
+func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	changed := make(chan struct{})
 	errCh := make(chan error, 1)
 
+	family := addrFamily(serverAddr)
 	var once sync.Once
 	callback, err := winipcfg.RegisterRouteChangeCallback(
 		func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
-			if isDefaultRouteChange(route) {
+			if isDefaultRouteChange(route, family) {
 				once.Do(func() {
 					close(changed)
 				})
@@ -39,8 +42,15 @@ func Watch(ctx context.Context) (<-chan error, error) {
 	return errCh, nil
 }
 
-func isDefaultRouteChange(route *winipcfg.MibIPforwardRow2) bool {
-	if route == nil {
+func addrFamily(addr netip.Addr) winipcfg.AddressFamily {
+	if addr.Unmap().Is4() {
+		return windows.AF_INET
+	}
+	return windows.AF_INET6
+}
+
+func isDefaultRouteChange(route *winipcfg.MibIPforwardRow2, family winipcfg.AddressFamily) bool {
+	if route == nil || route.DestinationPrefix.RawPrefix.Family != family {
 		return false
 	}
 	prefix := route.DestinationPrefix.Prefix()
