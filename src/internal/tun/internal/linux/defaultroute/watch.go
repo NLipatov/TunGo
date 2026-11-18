@@ -5,12 +5,13 @@ package defaultroute
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
-func Watch(ctx context.Context) (<-chan error, error) {
+func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	fd, err := unix.Socket(
 		unix.AF_NETLINK,
 		unix.SOCK_RAW|unix.SOCK_CLOEXEC|unix.SOCK_NONBLOCK,
@@ -20,10 +21,9 @@ func Watch(ctx context.Context) (<-chan error, error) {
 		return nil, err
 	}
 
-	groups := uint32(unix.RTMGRP_IPV4_ROUTE | unix.RTMGRP_IPV6_ROUTE)
 	if err := unix.Bind(fd, &unix.SockaddrNetlink{
 		Family: unix.AF_NETLINK,
-		Groups: groups,
+		Groups: routeGroup(serverAddr),
 	}); err != nil {
 		_ = unix.Close(fd)
 		return nil, err
@@ -81,6 +81,13 @@ func Watch(ctx context.Context) (<-chan error, error) {
 	}()
 
 	return errCh, nil
+}
+
+func routeGroup(addr netip.Addr) uint32 {
+	if addr.Unmap().Is4() {
+		return unix.RTMGRP_IPV4_ROUTE
+	}
+	return unix.RTMGRP_IPV6_ROUTE
 }
 
 func isDefaultRouteChange(message syscall.NetlinkMessage) bool {

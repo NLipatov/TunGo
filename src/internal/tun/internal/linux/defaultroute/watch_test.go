@@ -3,6 +3,7 @@
 package defaultroute
 
 import (
+	"net/netip"
 	"syscall"
 	"testing"
 
@@ -45,6 +46,25 @@ func TestIsDefaultRouteChange(t *testing.T) {
 			}
 			if got := isDefaultRouteChange(message); got != tt.want {
 				t.Fatalf("isDefaultRouteChange() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRouteGroup(t *testing.T) {
+	tests := []struct {
+		addr netip.Addr
+		want uint32
+	}{
+		{addr: netip.MustParseAddr("192.0.2.1"), want: unix.RTMGRP_IPV4_ROUTE},
+		{addr: netip.MustParseAddr("::ffff:192.0.2.1"), want: unix.RTMGRP_IPV4_ROUTE},
+		{addr: netip.MustParseAddr("2001:db8::1"), want: unix.RTMGRP_IPV6_ROUTE},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.addr.String(), func(t *testing.T) {
+			if got := routeGroup(tt.addr); got != tt.want {
+				t.Fatalf("routeGroup() = %v, want %v", got, tt.want)
 			}
 		})
 	}

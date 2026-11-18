@@ -73,7 +73,7 @@ func (t *TUN) Open(serverAddr netip.Addr) (io.ReadWriter, error) {
 		openErr := fmt.Errorf("failed to initialize TUN I/O: %w", err)
 		return nil, errors.Join(openErr, tunFile.Close(), t.Close())
 	}
-	if err := t.watchDefaultRoute(tun); err != nil {
+	if err := t.watchDefaultRoute(tun, serverAddr); err != nil {
 		slog.Warn("failed to configure default route watcher", "err", err)
 	}
 	t.tun = tun
@@ -87,9 +87,9 @@ func (t *TUN) Open(serverAddr netip.Addr) (io.ReadWriter, error) {
 	return t.tun, nil
 }
 
-func (t *TUN) watchDefaultRoute(tun io.Closer) error {
+func (t *TUN) watchDefaultRoute(tun io.Closer, serverAddr netip.Addr) error {
 	ctx, cancel := context.WithCancel(context.Background())
-	errCh, err := defaultroute.Watch(ctx)
+	errCh, err := defaultroute.Watch(ctx, serverAddr)
 	if err != nil {
 		cancel()
 		return err
