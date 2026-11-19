@@ -192,3 +192,26 @@ func TestAddrFamily(t *testing.T) {
 		})
 	}
 }
+
+func TestWatchStarts(t *testing.T) {
+	errCh, err := Watch(t.Context(), netip.MustParseAddr("192.0.2.1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if errCh == nil {
+		t.Fatal("got nil channel")
+	}
+}
+
+func TestIgnoreUnchangedRoutingTable(t *testing.T) {
+	snapshot, ok, err := defaultRoute(windows.AF_INET)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok || snapshot.ifIndex == 0 {
+		t.Skip("no IPv4 default route with a known interface")
+	}
+	if !ignore(snapshot, ok, windows.AF_INET) {
+		t.Fatal("got change for an unchanged routing table, want ignore")
+	}
+}

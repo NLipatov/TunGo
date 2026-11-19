@@ -150,3 +150,13 @@ func newRouteMessage(kind int, destination, mask route.Addr) *route.RouteMessage
 	addrs[unix.RTAX_NETMASK] = mask
 	return &route.RouteMessage{Type: kind, Addrs: addrs}
 }
+
+func TestWatchStarts(t *testing.T) {
+	errCh, err := Watch(t.Context(), netip.MustParseAddr("192.0.2.1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if errCh == nil {
+		t.Fatal("got nil channel")
+	}
+}
