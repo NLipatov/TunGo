@@ -87,11 +87,17 @@ func addrFamily(addr netip.Addr) int {
 
 func changesDefaultRoute(message route.Message, family int) bool {
 	routeMessage, ok := message.(*route.RouteMessage)
-	if !ok || routeMessage.Err != nil {
+	if !ok {
 		return false
 	}
 	switch routeMessage.Type {
-	case unix.RTM_ADD, unix.RTM_DELETE, unix.RTM_CHANGE:
+	case unix.RTM_CHANGE:
+		// XNU may apply the new gateway and interface before reporting
+		// an error for the change, so a failed change still counts.
+	case unix.RTM_ADD, unix.RTM_DELETE:
+		if routeMessage.Err != nil {
+			return false
+		}
 	default:
 		return false
 	}

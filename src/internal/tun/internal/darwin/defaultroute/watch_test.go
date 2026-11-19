@@ -61,11 +61,39 @@ func TestChangesDefaultRoute(t *testing.T) {
 			family: unix.AF_INET,
 		},
 		{
-			name: "failed IPv4 default route operation",
+			name: "failed IPv4 default route add",
 			message: &route.RouteMessage{
 				Type:  unix.RTM_ADD,
 				Err:   unix.EEXIST,
 				Addrs: newRouteMessage(unix.RTM_ADD, &route.Inet4Addr{}, &route.Inet4Addr{}).Addrs,
+			},
+			family: unix.AF_INET,
+		},
+		{
+			name: "failed IPv4 default route delete",
+			message: &route.RouteMessage{
+				Type:  unix.RTM_DELETE,
+				Err:   unix.ESRCH,
+				Addrs: newRouteMessage(unix.RTM_DELETE, &route.Inet4Addr{}, &route.Inet4Addr{}).Addrs,
+			},
+			family: unix.AF_INET,
+		},
+		{
+			name: "failed IPv4 default route change",
+			message: &route.RouteMessage{
+				Type:  unix.RTM_CHANGE,
+				Err:   unix.EINVAL,
+				Addrs: newRouteMessage(unix.RTM_CHANGE, &route.Inet4Addr{}, &route.Inet4Addr{}).Addrs,
+			},
+			family: unix.AF_INET,
+			want:   true,
+		},
+		{
+			name: "failed IPv4 split route change",
+			message: &route.RouteMessage{
+				Type:  unix.RTM_CHANGE,
+				Err:   unix.EINVAL,
+				Addrs: newRouteMessage(unix.RTM_CHANGE, &route.Inet4Addr{}, &route.Inet4Addr{IP: [4]byte{128}}).Addrs,
 			},
 			family: unix.AF_INET,
 		},
