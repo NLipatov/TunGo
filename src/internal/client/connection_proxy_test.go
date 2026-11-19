@@ -573,7 +573,7 @@ func TestConnect_WSSFallbackPreservesDomainIdentity(t *testing.T) {
 				client := connectionTestClient(t, configuration)
 				conn, _, _, err := client.connect(ctx)
 				if len(queries()) == 0 {
-					t.Fatal("explicit IP was tried before resolving the domain")
+					t.Fatalf("explicit IP was tried before resolving the domain (connect error: %v)", err)
 				}
 				if tc.certificate != tc.identity {
 					if conn != nil {
