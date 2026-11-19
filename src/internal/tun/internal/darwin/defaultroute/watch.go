@@ -67,7 +67,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 				return
 			}
 			for _, message := range messages {
-				if isDefaultRouteChange(message, family) {
+				if changesDefaultRoute(message, family) {
 					errCh <- nil
 					return
 				}
@@ -85,7 +85,7 @@ func addrFamily(addr netip.Addr) int {
 	return unix.AF_INET6
 }
 
-func isDefaultRouteChange(message route.Message, family int) bool {
+func changesDefaultRoute(message route.Message, family int) bool {
 	routeMessage, ok := message.(*route.RouteMessage)
 	if !ok || routeMessage.Err != nil {
 		return false

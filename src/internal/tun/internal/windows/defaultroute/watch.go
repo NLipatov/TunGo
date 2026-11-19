@@ -19,7 +19,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	var once sync.Once
 	callback, err := winipcfg.RegisterRouteChangeCallback(
 		func(_ winipcfg.MibNotificationType, route *winipcfg.MibIPforwardRow2) {
-			if isDefaultRouteChange(route, family) {
+			if changesDefaultRoute(route, family) {
 				once.Do(func() {
 					close(changed)
 				})
@@ -49,7 +49,10 @@ func addrFamily(addr netip.Addr) winipcfg.AddressFamily {
 	return windows.AF_INET6
 }
 
-func isDefaultRouteChange(route *winipcfg.MibIPforwardRow2, family winipcfg.AddressFamily) bool {
+func changesDefaultRoute(
+	route *winipcfg.MibIPforwardRow2,
+	family winipcfg.AddressFamily,
+) bool {
 	if route == nil || route.DestinationPrefix.RawPrefix.Family != family {
 		return false
 	}

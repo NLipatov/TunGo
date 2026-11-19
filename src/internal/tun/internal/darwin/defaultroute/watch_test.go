@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestIsDefaultRouteChange(t *testing.T) {
+func TestChangesDefaultRoute(t *testing.T) {
 	tests := []struct {
 		name    string
 		message route.Message
@@ -118,8 +118,8 @@ func TestIsDefaultRouteChange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isDefaultRouteChange(tt.message, tt.family); got != tt.want {
-				t.Fatalf("isDefaultRouteChange() = %v, want %v", got, tt.want)
+			if got := changesDefaultRoute(tt.message, tt.family); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -138,7 +138,7 @@ func TestAddrFamily(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.addr.String(), func(t *testing.T) {
 			if got := addrFamily(tt.addr); got != tt.want {
-				t.Fatalf("addrFamily() = %v, want %v", got, tt.want)
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

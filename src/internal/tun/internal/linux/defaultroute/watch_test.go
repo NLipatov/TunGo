@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestIsDefaultRouteChange(t *testing.T) {
+func TestChangesDefaultRoute(t *testing.T) {
 	tests := []struct {
 		name      string
 		kind      uint16
@@ -45,8 +45,8 @@ func TestIsDefaultRouteChange(t *testing.T) {
 				Header: syscall.NlMsghdr{Type: tt.kind},
 				Data:   data,
 			}
-			if got := isDefaultRouteChange(message); got != tt.want {
-				t.Fatalf("isDefaultRouteChange() = %v, want %v", got, tt.want)
+			if got := changesDefaultRoute(message); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -133,10 +133,10 @@ func TestBestDefaultRoute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, found, err := bestDefaultRoute(tt.messages)
 			if err != nil {
-				t.Fatalf("bestDefaultRoute() error = %v", err)
+				t.Fatalf("unexpected error: %v", err)
 			}
 			if found != tt.wantFound || got != tt.want {
-				t.Fatalf("bestDefaultRoute() = %+v, %v, want %+v, %v", got, found, tt.want, tt.wantFound)
+				t.Fatalf("got %+v, %v, want %+v, %v", got, found, tt.want, tt.wantFound)
 			}
 		})
 	}
@@ -148,7 +148,7 @@ func TestBestDefaultRouteMalformedAttribute(t *testing.T) {
 	binary.NativeEndian.PutUint16(message.Data[unix.SizeofRtMsg:], 64)
 
 	if _, _, err := bestDefaultRoute([]syscall.NetlinkMessage{message}); err == nil {
-		t.Fatal("bestDefaultRoute() error = nil, want error")
+		t.Fatal("got nil error, want error")
 	}
 }
 
@@ -198,7 +198,7 @@ func TestRouteGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.addr.String(), func(t *testing.T) {
 			if got := routeGroup(tt.addr); got != tt.want {
-				t.Fatalf("routeGroup() = %v, want %v", got, tt.want)
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

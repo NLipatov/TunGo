@@ -89,7 +89,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 				}
 				return
 			}
-			if slices.ContainsFunc(messages, isDefaultRouteChange) {
+			if slices.ContainsFunc(messages, changesDefaultRoute) {
 				if ignore(prev, prevOk, family) {
 					continue
 				}
@@ -100,14 +100,6 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	}()
 
 	return errCh, nil
-}
-
-func ignore(prev route, prevOk bool, family int) bool {
-	if !prevOk {
-		return false
-	}
-	cur, curOk, err := defaultRoute(family)
-	return err == nil && curOk && cur.gateway == prev.gateway && cur.oif == prev.oif
 }
 
 func routeGroup(addr netip.Addr) uint32 {
@@ -124,7 +116,19 @@ func addrFamily(addr netip.Addr) int {
 	return unix.AF_INET6
 }
 
-func isDefaultRouteChange(message syscall.NetlinkMessage) bool {
+func ignore(prev route, prevOk bool, family int) bool {
+	if !prevOk {
+		return false
+	}
+	cur, curOk, err := defaultRoute(family)
+	return err == nil && curOk &&
+		cur.gateway == prev.gateway && cur.oif == prev.oif &&
+		// A zero interface index means the route was not parsed (multipath or nexthop object),
+		// so its identity is unknown and cannot prove the route is unchanged.
+		cur.oif != 0
+}
+
+func changesDefaultRoute(message syscall.NetlinkMessage) bool {
 	return (message.Header.Type == unix.RTM_NEWROUTE ||
 		message.Header.Type == unix.RTM_DELROUTE) &&
 		len(message.Data) >= unix.SizeofRtMsg &&
@@ -146,17 +150,17 @@ func defaultRoute(family int) (route, bool, error) {
 
 func bestDefaultRoute(messages []syscall.NetlinkMessage) (route, bool, error) {
 	best, found := route{}, false
-	for _, m := range messages {
-		cur, ok, err := routeFrom(m)
+	for _, message := range messages {
+		r, ok, err := routeFrom(message)
 		if err != nil {
 			return route{}, false, err
 		}
 		if !ok {
 			continue
 		}
-		if !found || best.metric > cur.metric {
+		if !found || best.metric > r.metric {
 			found = true
-			best = cur
+			best = r
 		}
 	}
 	return best, found, nil

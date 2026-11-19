@@ -10,13 +10,13 @@ import (
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-func TestIsDefaultRouteChange(t *testing.T) {
-	if isDefaultRouteChange(nil, windows.AF_INET) {
-		t.Fatal("isDefaultRouteChange(nil) = true")
+func TestChangesDefaultRoute(t *testing.T) {
+	if changesDefaultRoute(nil, windows.AF_INET) {
+		t.Fatal("got true for nil route, want false")
 	}
 
-	if isDefaultRouteChange(&winipcfg.MibIPforwardRow2{}, windows.AF_INET) {
-		t.Fatal("isDefaultRouteChange() = true for invalid prefix")
+	if changesDefaultRoute(&winipcfg.MibIPforwardRow2{}, windows.AF_INET) {
+		t.Fatal("got true for invalid prefix, want false")
 	}
 
 	tests := []struct {
@@ -39,8 +39,8 @@ func TestIsDefaultRouteChange(t *testing.T) {
 			if err := route.DestinationPrefix.SetPrefix(tt.prefix); err != nil {
 				t.Fatal(err)
 			}
-			if got := isDefaultRouteChange(&route, tt.family); got != tt.want {
-				t.Fatalf("isDefaultRouteChange() = %v, want %v", got, tt.want)
+			if got := changesDefaultRoute(&route, tt.family); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -59,7 +59,7 @@ func TestAddrFamily(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.addr.String(), func(t *testing.T) {
 			if got := addrFamily(tt.addr); got != tt.want {
-				t.Fatalf("addrFamily() = %v, want %v", got, tt.want)
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
