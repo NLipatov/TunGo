@@ -21,8 +21,10 @@ const (
 )
 
 type route struct {
+	destination netip.Addr
+	bits        uint8
 	gateway     netip.Addr
-	oif, metric uint32
+	oif         uint32
 }
 
 func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
@@ -43,10 +45,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 		return nil, err
 	}
 
-	family := addrFamily(serverAddr)
-	// Without a snapshot every default route event counts as a change.
-	prev, prevOk, _ := defaultRoute(family)
-
+	serverAddr = serverAddr.Unmap()
 	errCh := make(chan error, 1)
 	go func() {
 		defer func() {
@@ -79,7 +78,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 			// for example while split routes are added. Lost notifications may
 			// hide a default route change, so the routing table is checked instead.
 			if errors.Is(err, unix.ENOBUFS) {
-				if ignore(prev, prevOk, family) {
+				if ignore(serverAddr) {
 					continue
 				}
 				errCh <- nil
@@ -100,7 +99,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 				return
 			}
 			if slices.ContainsFunc(messages, isDefaultRouteChange) {
-				if ignore(prev, prevOk, family) {
+				if ignore(serverAddr) {
 					continue
 				}
 				errCh <- nil
@@ -112,16 +111,29 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	return errCh, nil
 }
 
-func ignore(prev route, prevOk bool, family int) bool {
-	if !prevOk {
+func ignore(serverAddr netip.Addr) bool {
+	routes, err := mainRoutes(addrFamily(serverAddr))
+	return err == nil && keepsServerPath(routes, serverAddr)
+}
+
+// keepsServerPath reports whether a default route still leads through the
+// gateway and interface of the host route to the server, which carries the tunnel.
+func keepsServerPath(routes []route, serverAddr netip.Addr) bool {
+	i := slices.IndexFunc(routes, func(r route) bool {
+		return int(r.bits) == serverAddr.BitLen() && r.destination == serverAddr
+	})
+	// A zero interface index means the route was not parsed (multipath or nexthop object),
+	// so its path is unknown and cannot prove the path is kept.
+	if i < 0 || routes[i].oif == 0 {
 		return false
 	}
-	cur, curOk, err := defaultRoute(family)
-	return err == nil && curOk &&
-		cur.gateway == prev.gateway && cur.oif == prev.oif &&
-		// A zero interface index means the route was not parsed (multipath or nexthop object),
-		// so its identity is unknown and cannot prove the route is unchanged.
-		cur.oif != 0
+	server := routes[i]
+	return slices.ContainsFunc(routes, func(r route) bool {
+		// A server route without a gateway is on-link: a default route through
+		// the same interface shows that interface still serves the network.
+		return r.bits == 0 && r.oif == server.oif &&
+			(!server.gateway.IsValid() || r.gateway == server.gateway)
+	})
 }
 
 func routeGroup(addr netip.Addr) uint32 {
@@ -146,40 +158,35 @@ func isDefaultRouteChange(message syscall.NetlinkMessage) bool {
 		message.Data[routingTableOffset] == unix.RT_TABLE_MAIN
 }
 
-func defaultRoute(family int) (route, bool, error) {
+func mainRoutes(family int) ([]route, error) {
 	rib, err := syscall.NetlinkRIB(unix.RTM_GETROUTE, family)
 	if err != nil {
-		return route{}, false, err
+		return nil, err
 	}
 	messages, err := syscall.ParseNetlinkMessage(rib)
 	if err != nil {
-		return route{}, false, err
+		return nil, err
 	}
-	return bestDefaultRoute(messages)
+	return routesFrom(messages)
 }
 
-func bestDefaultRoute(messages []syscall.NetlinkMessage) (route, bool, error) {
-	best, found := route{}, false
+func routesFrom(messages []syscall.NetlinkMessage) ([]route, error) {
+	routes := make([]route, 0, len(messages))
 	for _, m := range messages {
-		cur, ok, err := routeFrom(m)
+		r, ok, err := routeFrom(m)
 		if err != nil {
-			return route{}, false, err
+			return nil, err
 		}
-		if !ok {
-			continue
-		}
-		if !found || best.metric > cur.metric {
-			found = true
-			best = cur
+		if ok {
+			routes = append(routes, r)
 		}
 	}
-	return best, found, nil
+	return routes, nil
 }
 
 func routeFrom(m syscall.NetlinkMessage) (route, bool, error) {
 	if m.Header.Type != unix.RTM_NEWROUTE ||
 		len(m.Data) < unix.SizeofRtMsg ||
-		m.Data[destinationPrefixLengthOffset] != 0 ||
 		m.Data[routingTableOffset] != unix.RT_TABLE_MAIN ||
 		m.Data[routeTypeOffset] != unix.RTN_UNICAST {
 		return route{}, false, nil
@@ -188,15 +195,15 @@ func routeFrom(m syscall.NetlinkMessage) (route, bool, error) {
 	if err != nil {
 		return route{}, false, err
 	}
-	r := route{}
+	r := route{bits: m.Data[destinationPrefixLengthOffset]}
 	for _, a := range attrs {
 		switch a.Attr.Type {
+		case unix.RTA_DST:
+			r.destination, _ = netip.AddrFromSlice(a.Value)
 		case unix.RTA_GATEWAY:
 			r.gateway, _ = netip.AddrFromSlice(a.Value)
 		case unix.RTA_OIF:
 			r.oif = binary.NativeEndian.Uint32(a.Value)
-		case unix.RTA_PRIORITY:
-			r.metric = binary.NativeEndian.Uint32(a.Value)
 		}
 	}
 	return r, true, nil

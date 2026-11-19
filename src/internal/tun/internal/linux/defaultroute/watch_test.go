@@ -3,8 +3,10 @@
 package defaultroute
 
 import (
+	"cmp"
 	"encoding/binary"
 	"net/netip"
+	"slices"
 	"syscall"
 	"testing"
 
@@ -46,109 +48,124 @@ func TestIsDefaultRouteChange(t *testing.T) {
 				Data:   data,
 			}
 			if got := isDefaultRouteChange(message); got != tt.want {
-				t.Fatalf("isDefaultRouteChange() = %v, want %v", got, tt.want)
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestBestDefaultRoute(t *testing.T) {
+func TestRoutesFrom(t *testing.T) {
 	gateway := netip.MustParseAddr("10.0.0.3")
-	otherGateway := netip.MustParseAddr("192.168.1.1")
+	server := netip.MustParseAddr("198.51.100.7")
+
+	messages := []syscall.NetlinkMessage{
+		routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2)),
+		routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, dstAttr(server), gatewayAttr(gateway), oifAttr(2)),
+		routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, oifAttr(7)),
+		routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(netip.MustParseAddr("fe80::1")), oifAttr(3)),
+		// Skipped: other table, non-unicast and deleted routes.
+		routeMessage(unix.RTM_NEWROUTE, 0, 100, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2)),
+		routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNREACHABLE),
+		routeMessage(unix.RTM_DELROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2)),
+	}
+	want := []route{
+		{gateway: gateway, oif: 2},
+		{destination: server, bits: 32, gateway: gateway, oif: 2},
+		{oif: 7},
+		{gateway: netip.MustParseAddr("fe80::1"), oif: 3},
+	}
+
+	got, err := routesFrom(messages)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestRoutesFromMalformedAttribute(t *testing.T) {
+	message := routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, oifAttr(2))
+	// Declare an attribute longer than the remaining payload.
+	binary.NativeEndian.PutUint16(message.Data[unix.SizeofRtMsg:], 64)
+
+	if _, err := routesFrom([]syscall.NetlinkMessage{message}); err == nil {
+		t.Fatal("got nil error, want error")
+	}
+}
+
+func TestKeepsServerPath(t *testing.T) {
+	server := netip.MustParseAddr("198.51.100.7")
+	gateway := netip.MustParseAddr("10.0.0.1")
+	otherGateway := netip.MustParseAddr("10.0.0.2")
+	serverRoute := route{destination: server, bits: 32, gateway: gateway, oif: 2}
 
 	tests := []struct {
-		name      string
-		messages  []syscall.NetlinkMessage
-		want      route
-		wantFound bool
+		name   string
+		server netip.Addr
+		routes []route
+		want   bool
 	}{
 		{
-			name:      "no default route",
-			messages:  []syscall.NetlinkMessage{routeMessage(unix.RTM_NEWROUTE, 24, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2))},
-			wantFound: false,
+			name:   "default route through the server route gateway and interface",
+			routes: []route{serverRoute, {gateway: gateway, oif: 2}},
+			want:   true,
 		},
 		{
-			name: "single default route",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(101)),
-			},
-			want:      route{gateway: gateway, oif: 2, metric: 101},
-			wantFound: true,
+			name:   "better default route next to the server route path",
+			routes: []route{serverRoute, {gateway: otherGateway, oif: 3}, {gateway: gateway, oif: 2}},
+			want:   true,
 		},
 		{
-			name: "lowest metric wins when it comes last",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(3), metricAttr(600)),
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(100)),
-			},
-			want:      route{gateway: gateway, oif: 2, metric: 100},
-			wantFound: true,
+			name:   "default route through another gateway",
+			routes: []route{serverRoute, {gateway: otherGateway, oif: 2}},
 		},
 		{
-			name: "same route with penalized metric",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(20101)),
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(101)),
-			},
-			want:      route{gateway: gateway, oif: 2, metric: 101},
-			wantFound: true,
+			name:   "default route through another interface",
+			routes: []route{serverRoute, {gateway: gateway, oif: 3}},
 		},
 		{
-			name: "non-default routes are skipped",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 1, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(3)),
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(101)),
-			},
-			want:      route{gateway: gateway, oif: 2, metric: 101},
-			wantFound: true,
+			name:   "no default route",
+			routes: []route{serverRoute},
 		},
 		{
-			name: "other table, non-unicast and deleted routes are skipped",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, 100, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(3)),
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNREACHABLE, metricAttr(1)),
-				routeMessage(unix.RTM_DELROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(3)),
-			},
-			wantFound: false,
+			name:   "no server route",
+			routes: []route{{gateway: gateway, oif: 2}},
 		},
 		{
-			name: "default route without gateway",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, oifAttr(7)),
-			},
-			want:      route{oif: 7},
-			wantFound: true,
+			name:   "host route to another address",
+			routes: []route{{destination: otherGateway, bits: 32, gateway: gateway, oif: 2}, {gateway: gateway, oif: 2}},
 		},
 		{
-			name: "IPv6 gateway",
-			messages: []syscall.NetlinkMessage{
-				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(netip.MustParseAddr("fe80::1")), oifAttr(2)),
+			name:   "server route with unknown interface",
+			routes: []route{{destination: server, bits: 32}, {}},
+		},
+		{
+			name:   "on-link server route and default route through its interface",
+			routes: []route{{destination: server, bits: 32, oif: 2}, {gateway: gateway, oif: 2}},
+			want:   true,
+		},
+		{
+			name:   "on-link server route and default route through another interface",
+			routes: []route{{destination: server, bits: 32, oif: 2}, {gateway: gateway, oif: 3}},
+		},
+		{
+			name:   "IPv6 server route",
+			server: netip.MustParseAddr("2001:db8::7"),
+			routes: []route{
+				{destination: netip.MustParseAddr("2001:db8::7"), bits: 128, gateway: netip.MustParseAddr("fe80::1"), oif: 2},
+				{gateway: netip.MustParseAddr("fe80::1"), oif: 2},
 			},
-			want:      route{gateway: netip.MustParseAddr("fe80::1"), oif: 2},
-			wantFound: true,
+			want: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found, err := bestDefaultRoute(tt.messages)
-			if err != nil {
-				t.Fatalf("bestDefaultRoute() error = %v", err)
-			}
-			if found != tt.wantFound || got != tt.want {
-				t.Fatalf("bestDefaultRoute() = %+v, %v, want %+v, %v", got, found, tt.want, tt.wantFound)
+			if got := keepsServerPath(tt.routes, cmp.Or(tt.server, server)); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestBestDefaultRouteMalformedAttribute(t *testing.T) {
-	message := routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, oifAttr(2))
-	// Declare an attribute longer than the remaining payload.
-	binary.NativeEndian.PutUint16(message.Data[unix.SizeofRtMsg:], 64)
-
-	if _, _, err := bestDefaultRoute([]syscall.NetlinkMessage{message}); err == nil {
-		t.Fatal("bestDefaultRoute() error = nil, want error")
 	}
 }
 
@@ -157,16 +174,16 @@ type routeAttr struct {
 	value []byte
 }
 
+func dstAttr(addr netip.Addr) routeAttr {
+	return routeAttr{kind: unix.RTA_DST, value: addr.AsSlice()}
+}
+
 func gatewayAttr(addr netip.Addr) routeAttr {
 	return routeAttr{kind: unix.RTA_GATEWAY, value: addr.AsSlice()}
 }
 
 func oifAttr(index uint32) routeAttr {
 	return routeAttr{kind: unix.RTA_OIF, value: binary.NativeEndian.AppendUint32(nil, index)}
-}
-
-func metricAttr(metric uint32) routeAttr {
-	return routeAttr{kind: unix.RTA_PRIORITY, value: binary.NativeEndian.AppendUint32(nil, metric)}
 }
 
 func routeMessage(kind uint16, dstLen, table, routeType byte, attrs ...routeAttr) syscall.NetlinkMessage {
@@ -198,7 +215,7 @@ func TestRouteGroup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.addr.String(), func(t *testing.T) {
 			if got := routeGroup(tt.addr); got != tt.want {
-				t.Fatalf("routeGroup() = %v, want %v", got, tt.want)
+				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
