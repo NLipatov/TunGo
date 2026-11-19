@@ -46,6 +46,26 @@ func TestChangesDefaultRoute(t *testing.T) {
 	}
 }
 
+func TestChangesInterface(t *testing.T) {
+	tests := []struct {
+		name  string
+		iface *winipcfg.MibIPInterfaceRow
+		want  bool
+	}{
+		{name: "nil interface"},
+		{name: "same family", iface: &winipcfg.MibIPInterfaceRow{Family: windows.AF_INET}, want: true},
+		{name: "other family", iface: &winipcfg.MibIPInterfaceRow{Family: windows.AF_INET6}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := changesInterface(tt.iface, windows.AF_INET); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBestDefaultRoute(t *testing.T) {
 	const (
 		ethernet winipcfg.LUID = 1

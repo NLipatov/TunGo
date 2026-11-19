@@ -4,6 +4,7 @@ package defaultroute
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"sync"
 
@@ -26,25 +27,45 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	prev, prevOk, _ := defaultRoute(family)
 
 	var once sync.Once
-	callback, err := winipcfg.RegisterRouteChangeCallback(
+	check := func() {
+		if !ignore(prev, prevOk, family) {
+			once.Do(func() {
+				close(changed)
+			})
+		}
+	}
+	routeCallback, err := winipcfg.RegisterRouteChangeCallback(
 		func(_ winipcfg.MibNotificationType, row *winipcfg.MibIPforwardRow2) {
-			if changesDefaultRoute(row, family) && !ignore(prev, prevOk, family) {
-				once.Do(func() {
-					close(changed)
-				})
+			if changesDefaultRoute(row, family) {
+				check()
 			}
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
+	// Interface metric and connectivity take part in default route selection,
+	// but changing them does not raise a route notification.
+	interfaceCallback, err := winipcfg.RegisterInterfaceChangeCallback(
+		func(_ winipcfg.MibNotificationType, iface *winipcfg.MibIPInterfaceRow) {
+			if changesInterface(iface, family) {
+				check()
+			}
+		},
+	)
+	if err != nil {
+		return nil, errors.Join(err, routeCallback.Unregister())
+	}
 
+	unregister := func() error {
+		return errors.Join(routeCallback.Unregister(), interfaceCallback.Unregister())
+	}
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = callback.Unregister()
+			_ = unregister()
 		case <-changed:
-			errCh <- callback.Unregister()
+			errCh <- unregister()
 		}
 	}()
 
@@ -79,6 +100,10 @@ func changesDefaultRoute(
 	}
 	prefix := row.DestinationPrefix.Prefix()
 	return prefix.IsValid() && prefix.Bits() == 0
+}
+
+func changesInterface(iface *winipcfg.MibIPInterfaceRow, family winipcfg.AddressFamily) bool {
+	return iface != nil && iface.Family == family
 }
 
 func defaultRoute(family winipcfg.AddressFamily) (route, bool, error) {
