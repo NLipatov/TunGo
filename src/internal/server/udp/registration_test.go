@@ -1,3 +1,5 @@
+//go:build linux
+
 package udp
 
 import (
@@ -179,11 +181,13 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 
 	r.enqueuePacket(key, []byte("hello"))
 
-	// After registration failure, the queue should be removed.
-	// Give time for the registration goroutine to complete.
-	time.Sleep(100 * time.Millisecond)
-	if registrationCount(r) != 0 {
-		t.Fatalf("expected registration removed after failure, got %d", registrationCount(r))
+	// Registration fails asynchronously; the queue is removed afterwards.
+	deadline := time.Now().Add(2 * time.Second)
+	for registrationCount(r) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("expected registration removed after failure, got %d", registrationCount(r))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

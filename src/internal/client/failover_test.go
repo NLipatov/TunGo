@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -174,6 +175,9 @@ func TestFailoverRequiresTwoNamedConfigurations(t *testing.T) {
 }
 
 func TestFailoverReturnsEmptyNameOnListError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports a file read as a directory as a missing path")
+	}
 	directory := filepath.Join(t.TempDir(), "configurations")
 	if err := os.WriteFile(directory, nil, 0600); err != nil {
 		t.Fatal(err)

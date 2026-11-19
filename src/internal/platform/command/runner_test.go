@@ -1,3 +1,6 @@
+//go:build !windows
+
+// The runner tests drive a POSIX shell.
 package command
 
 import (

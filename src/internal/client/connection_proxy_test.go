@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -708,6 +709,9 @@ func TestConnect_WebSocketIPFallbackThroughProxy(t *testing.T) {
 }
 
 func TestDialWS_RedirectKeepsProxy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Windows hosts file does not define localhost, so resolving the proxy needs DNS")
+	}
 	for _, scheme := range []string{"http", "https"} {
 		t.Run(scheme, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)

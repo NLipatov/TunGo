@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -481,6 +482,9 @@ func TestConfigurationsListMissingDirectory(t *testing.T) {
 }
 
 func TestConfigurationsListReturnsReadError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports a file read as a directory as a missing path")
+	}
 	parent := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
