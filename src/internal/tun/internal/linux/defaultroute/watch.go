@@ -4,12 +4,26 @@ package defaultroute
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"net/netip"
+	"slices"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
+
+// Offsets of struct rtmsg (<linux/rtnetlink.h>) fields in a route message payload.
+const (
+	destinationPrefixLengthOffset = 1 // rtm_dst_len
+	routingTableOffset            = 4 // rtm_table
+	routeTypeOffset               = 7 // rtm_type
+)
+
+type route struct {
+	gateway     netip.Addr
+	oif, metric uint32
+}
 
 func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	fd, err := unix.Socket(
@@ -28,6 +42,10 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 		_ = unix.Close(fd)
 		return nil, err
 	}
+
+	family := addrFamily(serverAddr)
+	// Without a snapshot every default route event counts as a change.
+	prev, prevOk, _ := defaultRoute(family)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -71,16 +89,25 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 				}
 				return
 			}
-			for _, message := range messages {
-				if isDefaultRouteChange(message) {
-					errCh <- nil
-					return
+			if slices.ContainsFunc(messages, isDefaultRouteChange) {
+				if ignore(prev, prevOk, family) {
+					continue
 				}
+				errCh <- nil
+				return
 			}
 		}
 	}()
 
 	return errCh, nil
+}
+
+func ignore(prev route, prevOk bool, family int) bool {
+	if !prevOk {
+		return false
+	}
+	cur, curOk, err := defaultRoute(family)
+	return err == nil && curOk && cur.gateway == prev.gateway && cur.oif == prev.oif
 }
 
 func routeGroup(addr netip.Addr) uint32 {
@@ -90,14 +117,73 @@ func routeGroup(addr netip.Addr) uint32 {
 	return unix.RTMGRP_IPV6_ROUTE
 }
 
+func addrFamily(addr netip.Addr) int {
+	if addr.Unmap().Is4() {
+		return unix.AF_INET
+	}
+	return unix.AF_INET6
+}
+
 func isDefaultRouteChange(message syscall.NetlinkMessage) bool {
-	const (
-		destinationPrefixLengthOffset = 1
-		routingTableOffset            = 4
-	)
 	return (message.Header.Type == unix.RTM_NEWROUTE ||
 		message.Header.Type == unix.RTM_DELROUTE) &&
 		len(message.Data) >= unix.SizeofRtMsg &&
 		message.Data[destinationPrefixLengthOffset] == 0 &&
 		message.Data[routingTableOffset] == unix.RT_TABLE_MAIN
+}
+
+func defaultRoute(family int) (route, bool, error) {
+	rib, err := syscall.NetlinkRIB(unix.RTM_GETROUTE, family)
+	if err != nil {
+		return route{}, false, err
+	}
+	messages, err := syscall.ParseNetlinkMessage(rib)
+	if err != nil {
+		return route{}, false, err
+	}
+	return bestDefaultRoute(messages)
+}
+
+func bestDefaultRoute(messages []syscall.NetlinkMessage) (route, bool, error) {
+	best, found := route{}, false
+	for _, m := range messages {
+		cur, ok, err := routeFrom(m)
+		if err != nil {
+			return route{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		if !found || best.metric > cur.metric {
+			found = true
+			best = cur
+		}
+	}
+	return best, found, nil
+}
+
+func routeFrom(m syscall.NetlinkMessage) (route, bool, error) {
+	if m.Header.Type != unix.RTM_NEWROUTE ||
+		len(m.Data) < unix.SizeofRtMsg ||
+		m.Data[destinationPrefixLengthOffset] != 0 ||
+		m.Data[routingTableOffset] != unix.RT_TABLE_MAIN ||
+		m.Data[routeTypeOffset] != unix.RTN_UNICAST {
+		return route{}, false, nil
+	}
+	attrs, err := syscall.ParseNetlinkRouteAttr(&m)
+	if err != nil {
+		return route{}, false, err
+	}
+	r := route{}
+	for _, a := range attrs {
+		switch a.Attr.Type {
+		case unix.RTA_GATEWAY:
+			r.gateway, _ = netip.AddrFromSlice(a.Value)
+		case unix.RTA_OIF:
+			r.oif = binary.NativeEndian.Uint32(a.Value)
+		case unix.RTA_PRIORITY:
+			r.metric = binary.NativeEndian.Uint32(a.Value)
+		}
+	}
+	return r, true, nil
 }
