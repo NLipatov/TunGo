@@ -104,8 +104,9 @@ func changesDefaultRoute(message route.Message, family int) bool {
 	if len(routeMessage.Addrs) <= unix.RTAX_NETMASK {
 		return false
 	}
-	// Scoped default routes only serve sockets bound to their interface.
-	// The connection to the server is unbound and follows the unscoped one.
+	// Scoped default routes of other interfaces do not carry traffic to the
+	// server, which follows the pinned host route. The primary interface's
+	// scoped default changes together with the unscoped one, which is kept.
 	if routeMessage.Flags&unix.RTF_IFSCOPE != 0 {
 		return false
 	}
