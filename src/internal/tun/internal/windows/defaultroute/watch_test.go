@@ -35,15 +35,123 @@ func TestChangesDefaultRoute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var route winipcfg.MibIPforwardRow2
-			if err := route.DestinationPrefix.SetPrefix(tt.prefix); err != nil {
+			var row winipcfg.MibIPforwardRow2
+			if err := row.DestinationPrefix.SetPrefix(tt.prefix); err != nil {
 				t.Fatal(err)
 			}
-			if got := changesDefaultRoute(&route, tt.family); got != tt.want {
+			if got := changesDefaultRoute(&row, tt.family); got != tt.want {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
 	}
+}
+
+func TestBestDefaultRoute(t *testing.T) {
+	const (
+		ethernet winipcfg.LUID = 1
+		wifi     winipcfg.LUID = 2
+		vpn      winipcfg.LUID = 3
+	)
+	ethernetGateway := netip.MustParseAddr("10.0.0.3")
+	wifiGateway := netip.MustParseAddr("192.168.1.1")
+
+	tests := []struct {
+		name       string
+		routes     []winipcfg.MibIPforwardRow2
+		interfaces []winipcfg.MibIPInterfaceRow
+		want       route
+		wantFound  bool
+	}{
+		{
+			name:       "no default route",
+			routes:     []winipcfg.MibIPforwardRow2{routeRow(t, "10.0.0.0/24", ethernetGateway, ethernet, 7, 0)},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
+		},
+		{
+			name:       "single default route",
+			routes:     []winipcfg.MibIPforwardRow2{routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0)},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
+			want:       route{nextHop: ethernetGateway, ifIndex: 7, metric: 25},
+			wantFound:  true,
+		},
+		{
+			name: "interface metric decides",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", wifiGateway, wifi, 9, 0),
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(wifi, 50, true), interfaceRow(ethernet, 25, true)},
+			want:       route{nextHop: ethernetGateway, ifIndex: 7, metric: 25},
+			wantFound:  true,
+		},
+		{
+			name: "route metric is added to interface metric",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 100),
+				routeRow(t, "0.0.0.0/0", wifiGateway, wifi, 9, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true), interfaceRow(wifi, 50, true)},
+			want:       route{nextHop: wifiGateway, ifIndex: 9, metric: 50},
+			wantFound:  true,
+		},
+		{
+			name: "same route with penalized metric",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 20000),
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
+			want:       route{nextHop: ethernetGateway, ifIndex: 7, metric: 25},
+			wantFound:  true,
+		},
+		{
+			name: "disconnected and unknown interfaces are skipped",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", wifiGateway, wifi, 9, 0),
+				routeRow(t, "0.0.0.0/0", netip.IPv4Unspecified(), vpn, 11, 0),
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(wifi, 1, false), interfaceRow(ethernet, 25, true)},
+			want:       route{nextHop: ethernetGateway, ifIndex: 7, metric: 25},
+			wantFound:  true,
+		},
+		{
+			name:       "other address family is skipped",
+			routes:     []winipcfg.MibIPforwardRow2{routeRow(t, "::/0", netip.MustParseAddr("fe80::1"), ethernet, 7, 0)},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, found := bestDefaultRoute(tt.routes, tt.interfaces, windows.AF_INET)
+			if found != tt.wantFound || got != tt.want {
+				t.Fatalf("got %+v, %v, want %+v, %v", got, found, tt.want, tt.wantFound)
+			}
+		})
+	}
+}
+
+func routeRow(
+	t *testing.T,
+	prefix string,
+	nextHop netip.Addr,
+	luid winipcfg.LUID,
+	ifIndex, metric uint32,
+) winipcfg.MibIPforwardRow2 {
+	t.Helper()
+	row := winipcfg.MibIPforwardRow2{InterfaceLUID: luid, InterfaceIndex: ifIndex, Metric: metric}
+	if err := row.DestinationPrefix.SetPrefix(netip.MustParsePrefix(prefix)); err != nil {
+		t.Fatal(err)
+	}
+	if err := row.NextHop.SetAddr(nextHop); err != nil {
+		t.Fatal(err)
+	}
+	return row
+}
+
+func interfaceRow(luid winipcfg.LUID, metric uint32, connected bool) winipcfg.MibIPInterfaceRow {
+	return winipcfg.MibIPInterfaceRow{InterfaceLUID: luid, Metric: metric, Connected: connected}
 }
 
 func TestAddrFamily(t *testing.T) {
