@@ -132,7 +132,7 @@ func bestDefaultRoute(
 			connected[iface.InterfaceLUID] = iface.Metric
 		}
 	}
-	best, found := route{}, false
+	best, found, ambiguous := route{}, false, false
 	for i := range routes {
 		row := &routes[i]
 		if !changesDefaultRoute(row, family) {
@@ -147,10 +147,20 @@ func bestDefaultRoute(
 			ifIndex: row.InterfaceIndex,
 			metric:  row.Metric + interfaceMetric,
 		}
+		// Windows picks among routes with equal effective metrics by rules not
+		// visible in these tables, so the choice is unknown.
+		if found && best.metric == r.metric &&
+			!(best.ifIndex == r.ifIndex && best.nextHop == r.nextHop) {
+			ambiguous = true
+		}
 		if !found || best.metric > r.metric {
+			ambiguous = false
 			found = true
 			best = r
 		}
+	}
+	if ambiguous {
+		return route{}, false
 	}
 	return best, found
 }

@@ -140,6 +140,37 @@ func TestBestDefaultRoute(t *testing.T) {
 			routes:     []winipcfg.MibIPforwardRow2{routeRow(t, "::/0", netip.MustParseAddr("fe80::1"), ethernet, 7, 0)},
 			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
 		},
+		{
+			name: "equal effective metrics with different paths are ambiguous",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+				routeRow(t, "0.0.0.0/0", wifiGateway, wifi, 9, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true), interfaceRow(wifi, 25, true)},
+		},
+		{
+			name: "equal effective metrics with the same path are not ambiguous",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 0),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{interfaceRow(ethernet, 25, true)},
+			want:       route{nextHop: ethernetGateway, ifIndex: 7, metric: 25},
+			wantFound:  true,
+		},
+		{
+			name: "lower effective metric resolves earlier ambiguity",
+			routes: []winipcfg.MibIPforwardRow2{
+				routeRow(t, "0.0.0.0/0", wifiGateway, wifi, 9, 575),
+				routeRow(t, "0.0.0.0/0", netip.IPv4Unspecified(), vpn, 11, 575),
+				routeRow(t, "0.0.0.0/0", ethernetGateway, ethernet, 7, 75),
+			},
+			interfaces: []winipcfg.MibIPInterfaceRow{
+				interfaceRow(wifi, 25, true), interfaceRow(vpn, 25, true), interfaceRow(ethernet, 25, true),
+			},
+			want:      route{nextHop: ethernetGateway, ifIndex: 7, metric: 100},
+			wantFound: true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -149,7 +149,7 @@ func defaultRoute(family int) (route, bool, error) {
 }
 
 func bestDefaultRoute(messages []syscall.NetlinkMessage) (route, bool, error) {
-	best, found := route{}, false
+	best, found, ambiguous := route{}, false, false
 	for _, message := range messages {
 		r, ok, err := routeFrom(message)
 		if err != nil {
@@ -158,10 +158,20 @@ func bestDefaultRoute(messages []syscall.NetlinkMessage) (route, bool, error) {
 		if !ok {
 			continue
 		}
+		// The kernel picks among equal-metric routes by rules not visible in
+		// the dump, such as IPv6 router preference, so the choice is unknown.
+		if found && best.metric == r.metric &&
+			!(best.gateway == r.gateway && best.oif == r.oif) {
+			ambiguous = true
+		}
 		if !found || best.metric > r.metric {
+			ambiguous = false
 			found = true
 			best = r
 		}
+	}
+	if ambiguous {
+		return route{}, false, nil
 	}
 	return best, found, nil
 }

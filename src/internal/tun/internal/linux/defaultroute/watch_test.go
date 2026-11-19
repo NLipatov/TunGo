@@ -127,6 +127,33 @@ func TestBestDefaultRoute(t *testing.T) {
 			want:      route{gateway: netip.MustParseAddr("fe80::1"), oif: 2},
 			wantFound: true,
 		},
+		{
+			name: "equal metrics with different paths are ambiguous",
+			messages: []syscall.NetlinkMessage{
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(1024)),
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(2), metricAttr(1024)),
+			},
+			wantFound: false,
+		},
+		{
+			name: "equal metrics with the same path are not ambiguous",
+			messages: []syscall.NetlinkMessage{
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(1024)),
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(1024)),
+			},
+			want:      route{gateway: gateway, oif: 2, metric: 1024},
+			wantFound: true,
+		},
+		{
+			name: "lower metric resolves earlier ambiguity",
+			messages: []syscall.NetlinkMessage{
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(otherGateway), oifAttr(3), metricAttr(600)),
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(netip.MustParseAddr("172.16.0.1")), oifAttr(4), metricAttr(600)),
+				routeMessage(unix.RTM_NEWROUTE, 0, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, gatewayAttr(gateway), oifAttr(2), metricAttr(100)),
+			},
+			want:      route{gateway: gateway, oif: 2, metric: 100},
+			wantFound: true,
+		},
 	}
 
 	for _, tt := range tests {
