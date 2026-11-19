@@ -75,6 +75,16 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 			if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
 				continue
 			}
+			// The kernel drops notifications when the socket buffer overflows,
+			// for example while split routes are added. Lost notifications may
+			// hide a default route change, so the routing table is checked instead.
+			if errors.Is(err, unix.ENOBUFS) {
+				if ignore(prev, prevOk, family) {
+					continue
+				}
+				errCh <- nil
+				return
+			}
 			if err != nil {
 				if ctx.Err() == nil {
 					errCh <- err
