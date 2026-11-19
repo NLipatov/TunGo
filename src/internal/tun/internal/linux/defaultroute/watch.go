@@ -117,7 +117,11 @@ func ignore(prev route, prevOk bool, family int) bool {
 		return false
 	}
 	cur, curOk, err := defaultRoute(family)
-	return err == nil && curOk && cur.gateway == prev.gateway && cur.oif == prev.oif
+	return err == nil && curOk &&
+		cur.gateway == prev.gateway && cur.oif == prev.oif &&
+		// A zero interface index means the route was not parsed (multipath or nexthop object),
+		// so its identity is unknown and cannot prove the route is unchanged.
+		cur.oif != 0
 }
 
 func routeGroup(addr netip.Addr) uint32 {
