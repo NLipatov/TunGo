@@ -17,7 +17,6 @@ import (
 const (
 	familyOffset                  = 0 // rtm_family
 	destinationPrefixLengthOffset = 1 // rtm_dst_len
-	routingTableOffset            = 4 // rtm_table
 	routeTypeOffset               = 7 // rtm_type
 )
 
@@ -47,9 +46,12 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 		return nil, err
 	}
 
-	// Asked after subscribing, so a change in between is not missed. Without
-	// the path every notification counts as a change.
-	path, _ := serverPath(serverAddr)
+	// Asked after subscribing, so a change in between is not missed.
+	path, err := serverPath(serverAddr)
+	if err != nil {
+		_ = unix.Close(fd)
+		return nil, err
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -130,8 +132,7 @@ func keeps(serverAddr netip.Addr, path route) bool {
 }
 
 func samePath(path, current route) bool {
-	// A zero interface index means the kernel did not resolve the path.
-	return current.oif != 0 && current.oif == path.oif && current.gateway == path.gateway
+	return current.oif == path.oif && current.gateway == path.gateway
 }
 
 // serverPath asks the kernel which route it takes to the server, as `ip route get` does.
@@ -190,25 +191,21 @@ func routeReply(messages []syscall.NetlinkMessage) (route, error) {
 		}
 		return route{}, syscall.Errno(-int32(binary.NativeEndian.Uint32(message.Data)))
 	}
-	r, ok, err := routeFrom(message)
+	if message.Header.Type != unix.RTM_NEWROUTE || len(message.Data) < unix.SizeofRtMsg {
+		return route{}, fmt.Errorf("unexpected route reply of type %d", message.Header.Type)
+	}
+	// A local route leads to an address of this host, such as a loopback proxy.
+	if routeType := message.Data[routeTypeOffset]; routeType != unix.RTN_UNICAST && routeType != unix.RTN_LOCAL {
+		return route{}, fmt.Errorf("route reply of route type %d leads to no host", routeType)
+	}
+	r, err := routeAttrs(message)
 	if err != nil {
 		return route{}, err
 	}
-	if !ok {
-		return route{}, fmt.Errorf("route reply of type %d is not a main table unicast route", message.Header.Type)
+	if r.oif == 0 {
+		return route{}, errors.New("route reply has no interface")
 	}
 	return r, nil
-}
-
-func routeFrom(m syscall.NetlinkMessage) (route, bool, error) {
-	if m.Header.Type != unix.RTM_NEWROUTE ||
-		len(m.Data) < unix.SizeofRtMsg ||
-		m.Data[routingTableOffset] != unix.RT_TABLE_MAIN ||
-		m.Data[routeTypeOffset] != unix.RTN_UNICAST {
-		return route{}, false, nil
-	}
-	r, err := routeAttrs(m)
-	return r, err == nil, err
 }
 
 func routeAttrs(m syscall.NetlinkMessage) (route, error) {

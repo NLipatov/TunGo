@@ -5,6 +5,7 @@ package defaultroute
 import (
 	"encoding/binary"
 	"errors"
+	"net"
 	"net/netip"
 	"syscall"
 	"testing"
@@ -28,7 +29,6 @@ func TestSamePath(t *testing.T) {
 		{name: "another interface", path: path, current: route{gateway: gateway, oif: 3}},
 		{name: "on-link path through the same interface", path: route{oif: 2}, current: route{oif: 2}, want: true},
 		{name: "on-link path now through a gateway", path: route{oif: 2}, current: route{gateway: gateway, oif: 2}},
-		{name: "unresolved paths", path: route{}, current: route{}},
 	}
 
 	for _, tt := range tests {
@@ -128,8 +128,38 @@ func TestRouteReply(t *testing.T) {
 			t.Fatal("got nil error, want error")
 		}
 	})
-	t.Run("route from another table", func(t *testing.T) {
-		reply := routeMessage(unix.RTM_NEWROUTE, 32, 100, unix.RTN_UNICAST, dstAttr(server), oifAttr(2))
+	t.Run("route from a policy routing table", func(t *testing.T) {
+		got, err := routeReply([]syscall.NetlinkMessage{
+			routeMessage(unix.RTM_NEWROUTE, 32, 100, unix.RTN_UNICAST, dstAttr(server), gatewayAttr(gateway), oifAttr(2)),
+		})
+		want := route{destination: server, bits: 32, gateway: gateway, oif: 2}
+		if err != nil || got != want {
+			t.Fatalf("got %+v, %v, want %+v", got, err, want)
+		}
+	})
+	t.Run("local route", func(t *testing.T) {
+		got, err := routeReply([]syscall.NetlinkMessage{
+			routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_LOCAL, unix.RTN_LOCAL, dstAttr(server), oifAttr(1)),
+		})
+		want := route{destination: server, bits: 32, oif: 1}
+		if err != nil || got != want {
+			t.Fatalf("got %+v, %v, want %+v", got, err, want)
+		}
+	})
+	t.Run("route without interface", func(t *testing.T) {
+		reply := routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, dstAttr(server), gatewayAttr(gateway))
+		if _, err := routeReply([]syscall.NetlinkMessage{reply}); err == nil {
+			t.Fatal("got nil error, want error")
+		}
+	})
+	t.Run("unexpected message", func(t *testing.T) {
+		reply := syscall.NetlinkMessage{Header: syscall.NlMsghdr{Type: unix.RTM_NEWLINK}}
+		if _, err := routeReply([]syscall.NetlinkMessage{reply}); err == nil {
+			t.Fatal("got nil error, want error")
+		}
+	})
+	t.Run("unreachable route", func(t *testing.T) {
+		reply := routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_MAIN, unix.RTN_UNREACHABLE, dstAttr(server))
 		if _, err := routeReply([]syscall.NetlinkMessage{reply}); err == nil {
 			t.Fatal("got nil error, want error")
 		}
@@ -161,15 +191,27 @@ func TestGroups(t *testing.T) {
 }
 
 func TestServerPathAsksTheKernel(t *testing.T) {
-	r, err := serverPath(netip.MustParseAddr("192.0.2.1"))
+	_, err := serverPath(netip.MustParseAddr("192.0.2.1"))
 	// A host without a route to the address gets the kernel's error instead.
-	if err == nil && r.oif == 0 {
-		t.Fatalf("got %+v, want a route with an interface", r)
+	if err != nil && !errors.Is(err, unix.ENETUNREACH) {
+		t.Fatalf("got %v, want a route or %v", err, unix.ENETUNREACH)
+	}
+}
+
+func TestServerPathToLoopback(t *testing.T) {
+	lo, err := net.InterfaceByName("lo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, err := serverPath(netip.MustParseAddr("127.0.0.1"))
+	if err != nil || got.oif != uint32(lo.Index) || got.gateway.IsValid() {
+		t.Fatalf("got %+v, %v, want a route through interface %d", got, err, lo.Index)
 	}
 }
 
 func TestWatchStarts(t *testing.T) {
-	errCh, err := Watch(t.Context(), netip.MustParseAddr("192.0.2.1"))
+	// Through a local proxy the client sees the proxy's loopback address as the server.
+	errCh, err := Watch(t.Context(), netip.MustParseAddr("127.0.0.1"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,6 +219,9 @@ func TestWatchStarts(t *testing.T) {
 		t.Fatal("got nil channel")
 	}
 }
+
+// routingTableOffset is the offset of rtm_table in struct rtmsg.
+const routingTableOffset = 4
 
 type routeAttr struct {
 	kind  uint16
