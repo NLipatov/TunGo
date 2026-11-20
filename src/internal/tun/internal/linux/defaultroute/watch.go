@@ -21,10 +21,8 @@ const (
 )
 
 type route struct {
-	destination netip.Addr
-	bits        uint8
-	gateway     netip.Addr
-	oif         uint32
+	gateway netip.Addr // RTA_GATEWAY: address of the next hop router, invalid for on-link paths
+	oif     uint32     // RTA_OIF: index of the output interface
 }
 
 func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
@@ -46,7 +44,8 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 		return nil, err
 	}
 
-	// Asked after subscribing, so a change in between is not missed.
+	// Subscribe before asking for the path: a change between asking and
+	// subscribing would send no notification and be missed.
 	path, err := serverPath(serverAddr)
 	if err != nil {
 		_ = unix.Close(fd)
@@ -213,11 +212,9 @@ func routeAttrs(m syscall.NetlinkMessage) (route, error) {
 	if err != nil {
 		return route{}, err
 	}
-	r := route{bits: m.Data[destinationPrefixLengthOffset]}
+	var r route
 	for _, a := range attrs {
 		switch a.Attr.Type {
-		case unix.RTA_DST:
-			r.destination, _ = netip.AddrFromSlice(a.Value)
 		case unix.RTA_GATEWAY:
 			r.gateway, _ = netip.AddrFromSlice(a.Value)
 		case unix.RTA_OIF:

@@ -3,6 +3,7 @@
 package defaultroute
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -88,12 +89,12 @@ func TestRouteRequest(t *testing.T) {
 			}
 			// The standard parser reads attributes of route notifications only.
 			m.Header.Type = unix.RTM_NEWROUTE
-			r, err := routeAttrs(m)
+			attrs, err := syscall.ParseNetlinkRouteAttr(&m)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if r.destination != server {
-				t.Fatalf("got destination %v, want %v", r.destination, server)
+			if len(attrs) != 1 || attrs[0].Attr.Type != unix.RTA_DST || !bytes.Equal(attrs[0].Value, server.AsSlice()) {
+				t.Fatalf("got attributes %+v, want the destination %v", attrs, server)
 			}
 		})
 	}
@@ -112,7 +113,7 @@ func TestRouteReply(t *testing.T) {
 		got, err := routeReply([]syscall.NetlinkMessage{
 			routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_MAIN, unix.RTN_UNICAST, dstAttr(server), gatewayAttr(gateway), oifAttr(2)),
 		})
-		want := route{destination: server, bits: 32, gateway: gateway, oif: 2}
+		want := route{gateway: gateway, oif: 2}
 		if err != nil || got != want {
 			t.Fatalf("got %+v, %v, want %+v", got, err, want)
 		}
@@ -132,7 +133,7 @@ func TestRouteReply(t *testing.T) {
 		got, err := routeReply([]syscall.NetlinkMessage{
 			routeMessage(unix.RTM_NEWROUTE, 32, 100, unix.RTN_UNICAST, dstAttr(server), gatewayAttr(gateway), oifAttr(2)),
 		})
-		want := route{destination: server, bits: 32, gateway: gateway, oif: 2}
+		want := route{gateway: gateway, oif: 2}
 		if err != nil || got != want {
 			t.Fatalf("got %+v, %v, want %+v", got, err, want)
 		}
@@ -141,7 +142,7 @@ func TestRouteReply(t *testing.T) {
 		got, err := routeReply([]syscall.NetlinkMessage{
 			routeMessage(unix.RTM_NEWROUTE, 32, unix.RT_TABLE_LOCAL, unix.RTN_LOCAL, dstAttr(server), oifAttr(1)),
 		})
-		want := route{destination: server, bits: 32, oif: 1}
+		want := route{oif: 1}
 		if err != nil || got != want {
 			t.Fatalf("got %+v, %v, want %+v", got, err, want)
 		}
