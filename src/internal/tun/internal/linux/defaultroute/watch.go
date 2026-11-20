@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"slices"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -29,15 +28,6 @@ type route struct {
 	oif         uint32
 }
 
-// verdict is what a notification means for the path to the server, ordered by severity.
-type verdict int
-
-const (
-	unrelated verdict = iota // the notification cannot affect the path
-	recheck                  // the path may be gone
-	changed                  // the path is gone
-)
-
 func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 	serverAddr = serverAddr.Unmap()
 	fd, err := unix.Socket(
@@ -57,9 +47,8 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 		return nil, err
 	}
 
-	family := addrFamily(serverAddr)
 	// Asked after subscribing, so a change in between is not missed. Without
-	// the path every relevant notification counts as a change.
+	// the path every notification counts as a change.
 	path, _ := serverPath(serverAddr)
 
 	errCh := make(chan error, 1)
@@ -79,6 +68,9 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 			if errors.Is(err, unix.EINTR) || n == 0 {
 				continue
 			}
+			if err == nil {
+				err = drain(fd, buffer)
+			}
 			if err != nil {
 				if ctx.Err() == nil {
 					errCh <- err
@@ -86,35 +78,7 @@ func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
 				return
 			}
 
-			v := unrelated
-			n, _, err = unix.Recvfrom(fd, buffer, 0)
-			switch {
-			case errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR):
-				continue
-			// The kernel drops notifications when the socket buffer overflows,
-			// for example while split routes are added. Lost notifications may
-			// hide a change, so the routing table is checked instead.
-			case errors.Is(err, unix.ENOBUFS):
-				v = recheck
-			case err != nil:
-				if ctx.Err() == nil {
-					errCh <- err
-				}
-				return
-			default:
-				messages, err := syscall.ParseNetlinkMessage(buffer[:n])
-				if err != nil {
-					if ctx.Err() == nil {
-						errCh <- err
-					}
-					return
-				}
-				for _, message := range messages {
-					v = max(v, classify(message, serverAddr))
-				}
-			}
-
-			if v == unrelated || (v == recheck && keeps(path, family)) {
+			if keeps(serverAddr, path) {
 				continue
 			}
 			if ctx.Err() == nil {
@@ -141,63 +105,33 @@ func addrFamily(addr netip.Addr) int {
 	return unix.AF_INET6
 }
 
-func classify(message syscall.NetlinkMessage, serverAddr netip.Addr) verdict {
-	switch message.Header.Type {
-	case unix.RTM_DELLINK, unix.RTM_DELADDR:
-		// The kernel removes routes of a deleted link or address without notifications.
-		return recheck
-	case unix.RTM_NEWROUTE, unix.RTM_DELROUTE:
-		return classifyRoute(message, serverAddr)
-	default:
-		return unrelated
+// drain reads pending notifications, so a burst of them costs one route lookup.
+// Their content is not needed: the kernel is asked for the path instead.
+func drain(fd int, buffer []byte) error {
+	for {
+		_, _, err := unix.Recvfrom(fd, buffer, 0)
+		switch {
+		case errors.Is(err, unix.EAGAIN):
+			return nil
+		// The kernel drops notifications when the socket buffer overflows, for
+		// example while split routes are added. The path is asked all the same.
+		case err == nil || errors.Is(err, unix.EINTR) || errors.Is(err, unix.ENOBUFS):
+			continue
+		default:
+			return err
+		}
 	}
 }
 
-func classifyRoute(message syscall.NetlinkMessage, serverAddr netip.Addr) verdict {
-	if len(message.Data) < unix.SizeofRtMsg ||
-		message.Data[routingTableOffset] != unix.RT_TABLE_MAIN {
-		return unrelated
-	}
-	switch int(message.Data[destinationPrefixLengthOffset]) {
-	case 0:
-		return recheck
-	case serverAddr.BitLen():
-		if message.Header.Type != unix.RTM_DELROUTE {
-			return unrelated
-		}
-		r, err := routeAttrs(message)
-		if err != nil {
-			return recheck
-		}
-		// The host route to the server is pinned on connect; without it the
-		// tunnel traffic to the server would follow the split routes.
-		if r.destination == serverAddr {
-			return changed
-		}
-	}
-	return unrelated
+// keeps reports whether the kernel still takes the path to the server.
+func keeps(serverAddr netip.Addr, path route) bool {
+	current, err := serverPath(serverAddr)
+	return err == nil && samePath(path, current)
 }
 
-func keeps(path route, family int) bool {
-	routes, err := mainRoutes(family)
-	return err == nil && keepsPath(routes, path)
-}
-
-// keepsPath reports whether a default route still leads through the gateway
-// and interface of the path to the server.
-func keepsPath(routes []route, path route) bool {
+func samePath(path, current route) bool {
 	// A zero interface index means the kernel did not resolve the path.
-	if path.oif == 0 {
-		return false
-	}
-	// Multipath defaults carry their next hops in RTA_MULTIPATH and parse with
-	// a zero interface index, so they never match and cannot prove the path is kept.
-	return slices.ContainsFunc(routes, func(r route) bool {
-		// A path without a gateway is on-link: a default route through the
-		// same interface shows that interface still serves the network.
-		return r.bits == 0 && r.oif == path.oif &&
-			(!path.gateway.IsValid() || r.gateway == path.gateway)
-	})
+	return current.oif != 0 && current.oif == path.oif && current.gateway == path.gateway
 }
 
 // serverPath asks the kernel which route it takes to the server, as `ip route get` does.
@@ -264,32 +198,6 @@ func routeReply(messages []syscall.NetlinkMessage) (route, error) {
 		return route{}, fmt.Errorf("route reply of type %d is not a main table unicast route", message.Header.Type)
 	}
 	return r, nil
-}
-
-func mainRoutes(family int) ([]route, error) {
-	rib, err := syscall.NetlinkRIB(unix.RTM_GETROUTE, family)
-	if err != nil {
-		return nil, err
-	}
-	messages, err := syscall.ParseNetlinkMessage(rib)
-	if err != nil {
-		return nil, err
-	}
-	return routesFrom(messages)
-}
-
-func routesFrom(messages []syscall.NetlinkMessage) ([]route, error) {
-	routes := make([]route, 0, len(messages))
-	for _, m := range messages {
-		r, ok, err := routeFrom(m)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			routes = append(routes, r)
-		}
-	}
-	return routes, nil
 }
 
 func routeFrom(m syscall.NetlinkMessage) (route, bool, error) {
