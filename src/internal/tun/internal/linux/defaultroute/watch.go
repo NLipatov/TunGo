@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/netip"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -25,117 +26,46 @@ type route struct {
 	oif     uint32     // RTA_OIF: index of the output interface
 }
 
-func Watch(ctx context.Context, serverAddr netip.Addr) (<-chan error, error) {
-	serverAddr = serverAddr.Unmap()
-	fd, err := unix.Socket(
-		unix.AF_NETLINK,
-		unix.SOCK_RAW|unix.SOCK_CLOEXEC|unix.SOCK_NONBLOCK,
-		unix.NETLINK_ROUTE,
-	)
+func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
+	addr = addr.Unmap()
+	initialRoute, err := routeTo(addr)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := unix.Bind(fd, &unix.SockaddrNetlink{
-		Family: unix.AF_NETLINK,
-		Groups: groups(serverAddr),
-	}); err != nil {
-		_ = unix.Close(fd)
-		return nil, err
-	}
-
-	// Subscribe before asking for the path: a change between asking and
-	// subscribing would send no notification and be missed.
-	path, err := serverPath(serverAddr)
-	if err != nil {
-		_ = unix.Close(fd)
-		return nil, err
-	}
-
 	errCh := make(chan error, 1)
 	go func() {
-		defer func() {
-			_ = unix.Close(fd)
-		}()
-
-		poll := []unix.PollFd{{
-			Fd:     int32(fd),
-			Events: unix.POLLIN,
-		}}
-		buffer := make([]byte, 64*1024)
-
-		for ctx.Err() == nil {
-			n, err := unix.Poll(poll, 500)
-			if errors.Is(err, unix.EINTR) || n == 0 {
-				continue
-			}
-			if err == nil {
-				err = drain(fd, buffer)
-			}
-			if err != nil {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if unchanged(addr, initialRoute) {
+					continue
+				}
 				if ctx.Err() == nil {
-					errCh <- err
+					errCh <- nil
 				}
 				return
 			}
-
-			if keeps(serverAddr, path) {
-				continue
-			}
-			if ctx.Err() == nil {
-				errCh <- nil
-			}
-			return
 		}
 	}()
-
 	return errCh, nil
 }
 
-func groups(addr netip.Addr) uint32 {
-	if addr.Unmap().Is4() {
-		return unix.RTMGRP_LINK | unix.RTMGRP_IPV4_IFADDR | unix.RTMGRP_IPV4_ROUTE
-	}
-	return unix.RTMGRP_LINK | unix.RTMGRP_IPV6_IFADDR | unix.RTMGRP_IPV6_ROUTE
+// unchanged reports whether the kernel still takes the path to the server.
+func unchanged(serverAddr netip.Addr, prev route) bool {
+	cur, err := routeTo(serverAddr)
+	return err == nil && same(prev, cur)
 }
 
-func addrFamily(addr netip.Addr) int {
-	if addr.Unmap().Is4() {
-		return unix.AF_INET
-	}
-	return unix.AF_INET6
+func same(a, b route) bool {
+	return a.oif == b.oif && a.gateway == b.gateway
 }
 
-// drain reads pending notifications, so a burst of them costs one route lookup.
-// Their content is not needed: the kernel is asked for the path instead.
-func drain(fd int, buffer []byte) error {
-	for {
-		_, _, err := unix.Recvfrom(fd, buffer, 0)
-		switch {
-		case errors.Is(err, unix.EAGAIN):
-			return nil
-		// The kernel drops notifications when the socket buffer overflows, for
-		// example while split routes are added. The path is asked all the same.
-		case err == nil || errors.Is(err, unix.EINTR) || errors.Is(err, unix.ENOBUFS):
-			continue
-		default:
-			return err
-		}
-	}
-}
-
-// keeps reports whether the kernel still takes the path to the server.
-func keeps(serverAddr netip.Addr, path route) bool {
-	current, err := serverPath(serverAddr)
-	return err == nil && samePath(path, current)
-}
-
-func samePath(path, current route) bool {
-	return current.oif == path.oif && current.gateway == path.gateway
-}
-
-// serverPath asks the kernel which route it takes to the server, as `ip route get` does.
-func serverPath(serverAddr netip.Addr) (route, error) {
+// routeTo asks the kernel which route it takes to the server, as `ip route get` does.
+func routeTo(addr netip.Addr) (route, error) {
 	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC, unix.NETLINK_ROUTE)
 	if err != nil {
 		return route{}, err
@@ -143,8 +73,7 @@ func serverPath(serverAddr netip.Addr) (route, error) {
 	defer func() {
 		_ = unix.Close(fd)
 	}()
-
-	if err := unix.Sendto(fd, routeRequest(serverAddr), 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
+	if err := unix.Sendto(fd, routeRequest(addr), 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
 		return route{}, err
 	}
 	buffer := make([]byte, unix.Getpagesize())
@@ -176,6 +105,13 @@ func routeRequest(serverAddr netip.Addr) []byte {
 	request = binary.NativeEndian.AppendUint16(request, uint16(attrLength))
 	request = binary.NativeEndian.AppendUint16(request, unix.RTA_DST)
 	return append(request, destination...)
+}
+
+func addrFamily(addr netip.Addr) int {
+	if addr.Unmap().Is4() {
+		return unix.AF_INET
+	}
+	return unix.AF_INET6
 }
 
 func routeReply(messages []syscall.NetlinkMessage) (route, error) {

@@ -10,63 +10,35 @@ import (
 	"net/netip"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-func TestSamePath(t *testing.T) {
+func TestSame(t *testing.T) {
 	gateway := netip.MustParseAddr("10.0.0.1")
 	otherGateway := netip.MustParseAddr("10.0.0.2")
-	path := route{gateway: gateway, oif: 2}
+	prev := route{gateway: gateway, oif: 2}
 
 	tests := []struct {
-		name    string
-		path    route
-		current route
-		want    bool
+		name string
+		prev route
+		cur  route
+		want bool
 	}{
-		{name: "same gateway and interface", path: path, current: route{gateway: gateway, oif: 2}, want: true},
-		{name: "another gateway", path: path, current: route{gateway: otherGateway, oif: 2}},
-		{name: "another interface", path: path, current: route{gateway: gateway, oif: 3}},
-		{name: "on-link path through the same interface", path: route{oif: 2}, current: route{oif: 2}, want: true},
-		{name: "on-link path now through a gateway", path: route{oif: 2}, current: route{gateway: gateway, oif: 2}},
+		{name: "same gateway and interface", prev: prev, cur: route{gateway: gateway, oif: 2}, want: true},
+		{name: "another gateway", prev: prev, cur: route{gateway: otherGateway, oif: 2}},
+		{name: "another interface", prev: prev, cur: route{gateway: gateway, oif: 3}},
+		{name: "on-link route through the same interface", prev: route{oif: 2}, cur: route{oif: 2}, want: true},
+		{name: "on-link route now through a gateway", prev: route{oif: 2}, cur: route{gateway: gateway, oif: 2}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := samePath(tt.path, tt.current); got != tt.want {
+			if got := same(tt.prev, tt.cur); got != tt.want {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestDrain(t *testing.T) {
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_NONBLOCK, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = unix.Close(fds[0])
-		_ = unix.Close(fds[1])
-	})
-	for range 3 {
-		if _, err := unix.Write(fds[1], []byte("notification")); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-
-	if err := drain(fds[0], make([]byte, 64)); err != nil {
-		t.Fatalf("got %v, want nil", err)
-	}
-	if _, _, err := unix.Recvfrom(fds[0], make([]byte, 64), 0); !errors.Is(err, unix.EAGAIN) {
-		t.Fatalf("got %v, want %v", err, unix.EAGAIN)
-	}
-}
-
-func TestDrainClosedSocket(t *testing.T) {
-	if err := drain(-1, make([]byte, 64)); !errors.Is(err, unix.EBADF) {
-		t.Fatalf("got %v, want %v", err, unix.EBADF)
 	}
 }
 
@@ -172,52 +144,49 @@ func TestRouteReply(t *testing.T) {
 	})
 }
 
-func TestGroups(t *testing.T) {
-	tests := []struct {
-		addr netip.Addr
-		want uint32
-	}{
-		{addr: netip.MustParseAddr("192.0.2.1"), want: unix.RTMGRP_LINK | unix.RTMGRP_IPV4_IFADDR | unix.RTMGRP_IPV4_ROUTE},
-		{addr: netip.MustParseAddr("::ffff:192.0.2.1"), want: unix.RTMGRP_LINK | unix.RTMGRP_IPV4_IFADDR | unix.RTMGRP_IPV4_ROUTE},
-		{addr: netip.MustParseAddr("2001:db8::1"), want: unix.RTMGRP_LINK | unix.RTMGRP_IPV6_IFADDR | unix.RTMGRP_IPV6_ROUTE},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.addr.String(), func(t *testing.T) {
-			if got := groups(tt.addr); got != tt.want {
-				t.Fatalf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestServerPathAsksTheKernel(t *testing.T) {
-	_, err := serverPath(netip.MustParseAddr("192.0.2.1"))
+func TestRouteToAsksTheKernel(t *testing.T) {
+	_, err := routeTo(netip.MustParseAddr("192.0.2.1"))
 	// A host without a route to the address gets the kernel's error instead.
 	if err != nil && !errors.Is(err, unix.ENETUNREACH) {
 		t.Fatalf("got %v, want a route or %v", err, unix.ENETUNREACH)
 	}
 }
 
-func TestServerPathToLoopback(t *testing.T) {
+func TestRouteToLoopback(t *testing.T) {
 	lo, err := net.InterfaceByName("lo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got, err := serverPath(netip.MustParseAddr("127.0.0.1"))
+	got, err := routeTo(netip.MustParseAddr("127.0.0.1"))
 	if err != nil || got.oif != uint32(lo.Index) || got.gateway.IsValid() {
 		t.Fatalf("got %+v, %v, want a route through interface %d", got, err, lo.Index)
 	}
 }
 
-func TestWatchStarts(t *testing.T) {
+func TestUnchanged(t *testing.T) {
+	loopback := netip.MustParseAddr("127.0.0.1")
+	prev, err := routeTo(loopback)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !unchanged(loopback, prev) {
+		t.Fatal("got changed, want unchanged")
+	}
+	if unchanged(loopback, route{oif: prev.oif + 1}) {
+		t.Fatal("got unchanged, want changed")
+	}
+}
+
+func TestWatchKeepsAnUnchangedRoute(t *testing.T) {
 	// Through a local proxy the client sees the proxy's loopback address as the server.
 	errCh, err := Watch(t.Context(), netip.MustParseAddr("127.0.0.1"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if errCh == nil {
-		t.Fatal("got nil channel")
+	select {
+	case err := <-errCh:
+		t.Fatalf("got %v, want no signal", err)
+	case <-time.After(time.Second): // two checks
 	}
 }
 
