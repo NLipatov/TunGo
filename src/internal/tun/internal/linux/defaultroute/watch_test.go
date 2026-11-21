@@ -15,33 +15,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestSame(t *testing.T) {
-	gateway := netip.MustParseAddr("10.0.0.1")
-	otherGateway := netip.MustParseAddr("10.0.0.2")
-	prev := route{gateway: gateway, oif: 2}
-
-	tests := []struct {
-		name string
-		prev route
-		cur  route
-		want bool
-	}{
-		{name: "same gateway and interface", prev: prev, cur: route{gateway: gateway, oif: 2}, want: true},
-		{name: "another gateway", prev: prev, cur: route{gateway: otherGateway, oif: 2}},
-		{name: "another interface", prev: prev, cur: route{gateway: gateway, oif: 3}},
-		{name: "on-link route through the same interface", prev: route{oif: 2}, cur: route{oif: 2}, want: true},
-		{name: "on-link route now through a gateway", prev: route{oif: 2}, cur: route{gateway: gateway, oif: 2}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := same(tt.prev, tt.cur); got != tt.want {
-				t.Fatalf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestRouteRequest(t *testing.T) {
 	for _, server := range []netip.Addr{netip.MustParseAddr("198.51.100.7"), netip.MustParseAddr("2001:db8::7")} {
 		t.Run(server.String(), func(t *testing.T) {
@@ -160,20 +133,6 @@ func TestRouteToLoopback(t *testing.T) {
 	got, err := routeTo(netip.MustParseAddr("127.0.0.1"))
 	if err != nil || got.oif != uint32(lo.Index) || got.gateway.IsValid() {
 		t.Fatalf("got %+v, %v, want a route through interface %d", got, err, lo.Index)
-	}
-}
-
-func TestUnchanged(t *testing.T) {
-	loopback := netip.MustParseAddr("127.0.0.1")
-	prev, err := routeTo(loopback)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !unchanged(loopback, prev) {
-		t.Fatal("got changed, want unchanged")
-	}
-	if unchanged(loopback, route{oif: prev.oif + 1}) {
-		t.Fatal("got unchanged, want changed")
 	}
 }
 

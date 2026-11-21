@@ -41,7 +41,14 @@ func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if unchanged(addr, initialRoute) {
+				cur, err := routeTo(addr)
+				if err != nil {
+					if ctx.Err() == nil {
+						errCh <- fmt.Errorf("no route to the server: %w", err)
+					}
+					return
+				}
+				if cur == initialRoute {
 					continue
 				}
 				if ctx.Err() == nil {
@@ -52,16 +59,6 @@ func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
 		}
 	}()
 	return errCh, nil
-}
-
-// unchanged reports whether the kernel still takes the path to the server.
-func unchanged(serverAddr netip.Addr, prev route) bool {
-	cur, err := routeTo(serverAddr)
-	return err == nil && same(prev, cur)
-}
-
-func same(a, b route) bool {
-	return a.oif == b.oif && a.gateway == b.gateway
 }
 
 // routeTo asks the kernel which route it takes to the server, as `ip route get` does.
