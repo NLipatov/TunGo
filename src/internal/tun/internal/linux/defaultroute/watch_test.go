@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"os"
+	"os/exec"
 	"syscall"
 	"testing"
 	"time"
@@ -146,6 +148,75 @@ func TestWatchKeepsAnUnchangedRoute(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("got %v, want no signal", err)
 	case <-time.After(time.Second): // two checks
+	}
+}
+
+func TestWatchKernel(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("route watcher integration test requires root")
+	}
+	const (
+		link   = "tungo-wt0"
+		server = "203.0.113.7"
+	)
+	if out, err := exec.Command("ip", "-4", "route", "show", server+"/32").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) != 0 {
+		t.Skipf("preserving existing route to %s: %s %v", server, out, err)
+	}
+	ip(t, "link", "add", link, "type", "dummy")
+	t.Cleanup(func() {
+		_ = exec.Command("ip", "route", "del", server+"/32").Run()
+		_ = exec.Command("ip", "link", "del", link).Run()
+	})
+	ip(t, "addr", "add", "192.0.2.1/24", "dev", link)
+	ip(t, "link", "set", link, "up")
+	serverAddr := netip.MustParseAddr(server)
+
+	t.Run("another gateway", func(t *testing.T) {
+		ip(t, "route", "replace", server, "via", "192.0.2.2", "dev", link)
+		errCh, err := Watch(t.Context(), serverAddr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		ip(t, "route", "replace", server, "via", "192.0.2.3", "dev", link)
+		if err := signal(t, errCh); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+	})
+	t.Run("no route", func(t *testing.T) {
+		ip(t, "route", "replace", server, "via", "192.0.2.2", "dev", link)
+		errCh, err := Watch(t.Context(), serverAddr)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		ip(t, "route", "replace", "unreachable", server)
+		if err := signal(t, errCh); !errors.Is(err, unix.EHOSTUNREACH) {
+			t.Fatalf("got %v, want %v", err, unix.EHOSTUNREACH)
+		}
+	})
+	t.Run("no route at start", func(t *testing.T) {
+		ip(t, "route", "replace", "unreachable", server)
+		if _, err := Watch(t.Context(), serverAddr); !errors.Is(err, unix.EHOSTUNREACH) {
+			t.Fatalf("got %v, want %v", err, unix.EHOSTUNREACH)
+		}
+	})
+}
+
+func ip(t *testing.T, args ...string) {
+	t.Helper()
+	if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
+		t.Fatalf("ip %v: %v %s", args, err, out)
+	}
+}
+
+// signal waits for the watcher to report, allowing a few lookup intervals.
+func signal(t *testing.T, errCh <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(3 * time.Second):
+		t.Fatal("got no signal")
+		return nil
 	}
 }
 
