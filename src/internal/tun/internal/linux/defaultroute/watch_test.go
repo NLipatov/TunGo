@@ -15,10 +15,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func TestRouteRequest(t *testing.T) {
+func TestBuildRouteRequest(t *testing.T) {
 	for _, server := range []netip.Addr{netip.MustParseAddr("198.51.100.7"), netip.MustParseAddr("2001:db8::7")} {
 		t.Run(server.String(), func(t *testing.T) {
-			messages, err := syscall.ParseNetlinkMessage(routeRequest(server))
+			messages, err := syscall.ParseNetlinkMessage(buildRouteRequest(server))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -117,20 +117,20 @@ func TestRouteReply(t *testing.T) {
 	})
 }
 
-func TestRouteToAsksTheKernel(t *testing.T) {
-	_, err := routeTo(netip.MustParseAddr("192.0.2.1"))
+func TestLookupRouteAsksTheKernel(t *testing.T) {
+	_, err := lookup(netip.MustParseAddr("192.0.2.1"))
 	// A host without a route to the address gets the kernel's error instead.
 	if err != nil && !errors.Is(err, unix.ENETUNREACH) {
 		t.Fatalf("got %v, want a route or %v", err, unix.ENETUNREACH)
 	}
 }
 
-func TestRouteToLoopback(t *testing.T) {
+func TestLookupRouteToLoopback(t *testing.T) {
 	lo, err := net.InterfaceByName("lo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got, err := routeTo(netip.MustParseAddr("127.0.0.1"))
+	got, err := lookup(netip.MustParseAddr("127.0.0.1"))
 	if err != nil || got.oif != uint32(lo.Index) || got.gateway.IsValid() {
 		t.Fatalf("got %+v, %v, want a route through interface %d", got, err, lo.Index)
 	}
@@ -147,6 +147,10 @@ func TestWatchKeepsAnUnchangedRoute(t *testing.T) {
 		t.Fatalf("got %v, want no signal", err)
 	case <-time.After(time.Second): // two checks
 	}
+}
+
+func lookup(addr netip.Addr) (route, error) {
+	return lookupRoute(make([]byte, unix.Getpagesize()), buildRouteRequest(addr), &unix.SockaddrNetlink{Family: unix.AF_NETLINK})
 }
 
 // routingTableOffset is the offset of rtm_table in struct rtmsg.

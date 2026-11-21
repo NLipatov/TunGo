@@ -28,7 +28,10 @@ type route struct {
 
 func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
 	addr = addr.Unmap()
-	initialRoute, err := routeTo(addr)
+	recvBuffer := make([]byte, unix.Getpagesize())
+	request := buildRouteRequest(addr)
+	dst := &unix.SockaddrNetlink{Family: unix.AF_NETLINK}
+	initialRoute, err := lookupRoute(recvBuffer, request, dst)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +44,7 @@ func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				cur, err := routeTo(addr)
+				cur, err := lookupRoute(recvBuffer, request, dst)
 				if err != nil {
 					if ctx.Err() == nil {
 						errCh <- fmt.Errorf("no route to the server: %w", err)
@@ -61,8 +64,7 @@ func Watch(ctx context.Context, addr netip.Addr) (<-chan error, error) {
 	return errCh, nil
 }
 
-// routeTo asks the kernel which route it takes to the server, as `ip route get` does.
-func routeTo(addr netip.Addr) (route, error) {
+func lookupRoute(recvBuffer, request []byte, dst unix.Sockaddr) (route, error) {
 	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC, unix.NETLINK_ROUTE)
 	if err != nil {
 		return route{}, err
@@ -70,23 +72,22 @@ func routeTo(addr netip.Addr) (route, error) {
 	defer func() {
 		_ = unix.Close(fd)
 	}()
-	if err := unix.Sendto(fd, routeRequest(addr), 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
+	if err := unix.Sendto(fd, request, 0, dst); err != nil {
 		return route{}, err
 	}
-	buffer := make([]byte, unix.Getpagesize())
-	n, _, err := unix.Recvfrom(fd, buffer, 0)
+	n, _, err := unix.Recvfrom(fd, recvBuffer, 0)
 	if err != nil {
 		return route{}, err
 	}
-	messages, err := syscall.ParseNetlinkMessage(buffer[:n])
+	messages, err := syscall.ParseNetlinkMessage(recvBuffer[:n])
 	if err != nil {
 		return route{}, err
 	}
 	return routeReply(messages)
 }
 
-func routeRequest(serverAddr netip.Addr) []byte {
-	destination := serverAddr.AsSlice()
+func buildRouteRequest(addr netip.Addr) []byte {
+	destination := addr.AsSlice()
 	attrLength := unix.SizeofRtAttr + len(destination)
 	length := unix.SizeofNlMsghdr + unix.SizeofRtMsg + attrLength
 	request := make([]byte, 0, length)
@@ -96,8 +97,8 @@ func routeRequest(serverAddr netip.Addr) []byte {
 	request = binary.NativeEndian.AppendUint32(request, 1) // sequence number
 	request = binary.NativeEndian.AppendUint32(request, 0) // port ID, filled in by the kernel
 	rtmsg := make([]byte, unix.SizeofRtMsg)
-	rtmsg[familyOffset] = byte(addrFamily(serverAddr))
-	rtmsg[destinationPrefixLengthOffset] = byte(serverAddr.BitLen())
+	rtmsg[familyOffset] = byte(addrFamily(addr))
+	rtmsg[destinationPrefixLengthOffset] = byte(addr.BitLen())
 	request = append(request, rtmsg...)
 	request = binary.NativeEndian.AppendUint16(request, uint16(attrLength))
 	request = binary.NativeEndian.AppendUint16(request, unix.RTA_DST)
