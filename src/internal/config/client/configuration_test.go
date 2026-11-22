@@ -214,7 +214,9 @@ func TestConfiguration_ApplyDefaults(t *testing.T) {
 			logs.Reset()
 			cfg := Configuration{Protocol: settings.UDP, UDPSettings: tt.s}
 			cfg.UDPSettings.DialTimeout = settings.HumanReadableDuration(200 * time.Millisecond) // Keep this test focused on MTU warnings.
-			cfg.applyDefaults()
+			if err := cfg.applyDefaults(); err != nil {
+				t.Fatal(err)
+			}
 			if cfg.UDPSettings.MTU != tt.want {
 				t.Fatalf("MTU = %d, want %d", cfg.UDPSettings.MTU, tt.want)
 			}
@@ -264,7 +266,9 @@ func TestConfiguration_ApplyDefaultsDialTimeout(t *testing.T) {
 				}
 				active.Protocol = protocol
 				active.DialTimeout = settings.HumanReadableDuration(test.configured)
-				cfg.applyDefaults()
+				if err := cfg.applyDefaults(); err != nil {
+					t.Fatal(err)
+				}
 				if time.Duration(active.DialTimeout) != test.want {
 					t.Fatalf("DialTimeout = %v, want %v", time.Duration(active.DialTimeout), test.want)
 				}
@@ -278,7 +282,9 @@ func TestConfiguration_ApplyDefaultsDialTimeout(t *testing.T) {
 					t.Errorf("positive timeout logged changes: %s", &logs)
 				}
 				logs.Reset()
-				cfg.applyDefaults()
+				if err := cfg.applyDefaults(); err != nil {
+					t.Fatal(err)
+				}
 				if time.Duration(active.DialTimeout) != test.want || logs.Len() != 0 {
 					t.Errorf("reapplying defaults changed timeout or logged changes: timeout=%v log=%q", time.Duration(active.DialTimeout), logs.String())
 				}
@@ -335,7 +341,9 @@ func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
 					DialTimeout: settings.HumanReadableDuration(200 * time.Millisecond),
 				},
 			}
-			cfg.applyDefaults()
+			if err := cfg.applyDefaults(); err != nil {
+				t.Fatal(err)
+			}
 
 			if !reflect.DeepEqual(cfg.UDPSettings.DNSv4, test.wantDNS4) {
 				t.Fatalf("DNSv4 = %v, want %v", cfg.UDPSettings.DNSv4, test.wantDNS4)
@@ -352,7 +360,9 @@ func TestConfiguration_ApplyDefaultsSetsDNSForConfiguredFamilies(t *testing.T) {
 				t.Errorf("got %d log entries, want %d: %q", got, len(test.wantLogs), logs.String())
 			}
 			logs.Reset()
-			cfg.applyDefaults()
+			if err := cfg.applyDefaults(); err != nil {
+				t.Fatal(err)
+			}
 			if logs.Len() != 0 {
 				t.Fatalf("reapplying defaults logged changes: %s", &logs)
 			}
@@ -369,8 +379,12 @@ func TestConfiguration_ApplyDefaultsKeepsDNSIndependent(t *testing.T) {
 		}},
 	}
 	other := cfg
-	cfg.applyDefaults()
-	other.applyDefaults()
+	if err := cfg.applyDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	if err := other.applyDefaults(); err != nil {
+		t.Fatal(err)
+	}
 	wantDNS4 := append([]string(nil), other.UDPSettings.DNSv4...)
 	wantDNS6 := append([]string(nil), other.UDPSettings.DNSv6...)
 
@@ -463,14 +477,18 @@ func TestConfiguration_ApplyDefaultsRoutesDNS(t *testing.T) {
 			cfg.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::42/64")
 			cfg.UDPSettings.DNSv4, cfg.UDPSettings.DNSv6 = tt.dns4, tt.dns6
 			cfg.TunnelRoutesV4, cfg.TunnelRoutesV6 = tt.v4, tt.v6
-			cfg.applyDefaults()
+			if err := cfg.applyDefaults(); err != nil {
+				t.Fatal(err)
+			}
 			if !slices.Equal(cfg.TunnelRoutesV4, tt.wantV4) {
 				t.Fatalf("TunnelRoutesV4 = %v, want %v", cfg.TunnelRoutesV4, tt.wantV4)
 			}
 			if !slices.Equal(cfg.TunnelRoutesV6, tt.wantV6) {
 				t.Fatalf("TunnelRoutesV6 = %v, want %v", cfg.TunnelRoutesV6, tt.wantV6)
 			}
-			cfg.applyDefaults()
+			if err := cfg.applyDefaults(); err != nil {
+				t.Fatal(err)
+			}
 			if !slices.Equal(cfg.TunnelRoutesV4, tt.wantV4) || !slices.Equal(cfg.TunnelRoutesV6, tt.wantV6) {
 				t.Fatal("reapplying defaults changed the DNS routes")
 			}
@@ -504,7 +522,9 @@ func TestConfiguration_ApplyDefaultsRoutesDNSForActiveProtocolAndFamilies(t *tes
 				} else {
 					active.IPv4Subnet = netip.MustParsePrefix("10.0.1.0/24")
 				}
-				cfg.applyDefaults()
+				if err := cfg.applyDefaults(); err != nil {
+					t.Fatal(err)
+				}
 				if !slices.Equal(cfg.TunnelRoutesV4, wantV4) || !slices.Equal(cfg.TunnelRoutesV6, wantV6) {
 					t.Fatalf("TunnelRoutes = %v, %v; want %v, %v", cfg.TunnelRoutesV4, cfg.TunnelRoutesV6, wantV4, wantV6)
 				}
@@ -576,10 +596,9 @@ func TestEffectiveTunnelRoutesLogsOnlyChanges(t *testing.T) {
 			wantLogs:   []string{`level=WARN msg="client tunnel route host bits cleared" field=TunnelRoutesV4 configured=192.0.2.42/24 effective=192.0.2.0/24`},
 		},
 		{
-			name:       "invalid entry",
-			routes:     []string{"bad CIDR", "192.0.2.0/24"},
+			name:       "surrounding whitespace",
+			routes:     []string{" 192.0.2.0/24 "},
 			wantRoutes: []string{"192.0.2.0/24"},
-			wantLogs:   []string{`level=WARN msg="client tunnel route skipped: invalid prefix" field=TunnelRoutesV4 configured="bad CIDR"`},
 		},
 		{
 			name:       "default prefix",
@@ -598,7 +617,10 @@ func TestEffectiveTunnelRoutesLogsOnlyChanges(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			logs.Reset()
-			got := effectiveTunnelRoutes("TunnelRoutesV4", tt.routes, tt.resolvers, tunSubnet, []string{"0.0.0.0/1", "128.0.0.0/1"}, isIPv4Prefix)
+			got, err := effectiveTunnelRoutes("TunnelRoutesV4", tt.routes, tt.resolvers, tunSubnet, []string{"0.0.0.0/1", "128.0.0.0/1"}, isIPv4Prefix)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !slices.Equal(got, tt.wantRoutes) {
 				t.Errorf("routes = %v, want %v", got, tt.wantRoutes)
 			}

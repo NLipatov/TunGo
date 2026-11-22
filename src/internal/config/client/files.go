@@ -168,7 +168,9 @@ func decode(data []byte) (Configuration, error) {
 	if err := json.Unmarshal(data, &configuration); err != nil {
 		return Configuration{}, err
 	}
-	configuration.applyDefaults()
+	if err := configuration.applyDefaults(); err != nil {
+		return Configuration{}, err
+	}
 	if err := validate(configuration); err != nil {
 		return Configuration{}, err
 	}

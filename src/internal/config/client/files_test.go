@@ -265,6 +265,11 @@ func TestConfigurationsActiveExpandsDefaultTunnelRoutes(t *testing.T) {
 		wantV6 []string
 	}{
 		{
+			name:   "missing lists",
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantV6: []string{"::/1", "8000::/1"},
+		},
+		{
 			name:   "default prefixes",
 			v4:     []string{"0.0.0.0/0"},
 			v6:     []string{"::/0"},
@@ -365,29 +370,24 @@ func TestConfigurationsEmptyTunnelRoutes(t *testing.T) {
 	}
 }
 
-func TestConfigurationsActiveSkipsInvalidTunnelRoutes(t *testing.T) {
-	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
-	defaultV6 := []string{"::/1", "8000::/1"}
+func TestConfigurationsActiveRejectsInvalidTunnelRoutes(t *testing.T) {
 	customV4 := []string{"192.0.2.0/24"}
 	customV6 := []string{"2001:db8::/64"}
 	for _, tt := range []struct {
-		name   string
-		v4     []string
-		v6     []string
-		wantV4 []string
-		wantV6 []string
+		name    string
+		v4      []string
+		v6      []string
+		wantErr string
 	}{
-		{name: "missing lists", wantV4: defaultV4, wantV6: defaultV6},
-		{name: "invalid IPv4 CIDR", v4: []string{"10.0.0.0/33"}, v6: customV6, wantV4: []string{}, wantV6: customV6},
-		{name: "invalid IPv6 CIDR", v4: customV4, v6: []string{"2001:db8::/129"}, wantV4: customV4, wantV6: []string{}},
-		{name: "IPv6 in IPv4 list", v4: customV6, v6: customV6, wantV4: []string{}, wantV6: customV6},
-		{name: "IPv4 in IPv6 list", v4: customV4, v6: customV4, wantV4: customV4, wantV6: []string{}},
-		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantV4: []string{}, wantV6: customV6},
-		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantV4: customV4, wantV6: []string{}},
-		{name: "partially invalid IPv4 list", v4: []string{"192.0.2.1/24", "bad CIDR"}, v6: customV6, wantV4: customV4, wantV6: customV6},
-		{name: "partially invalid IPv6 list", v4: customV4, v6: []string{"2001:db8::1/64", "bad CIDR"}, wantV4: customV4, wantV6: customV6},
-		{name: "invalid entry before default prefix", v4: []string{"bad CIDR", "0.0.0.0/0"}, v6: []string{"bad CIDR", "::/0"}, wantV4: defaultV4, wantV6: defaultV6},
-		{name: "both lists invalid", v4: []string{"bad CIDR"}, v6: []string{"bad CIDR"}, wantV4: []string{}, wantV6: []string{}},
+		{name: "missing prefix length", v4: []string{"192.0.2.0/24", "10.0.0.0"}, v6: customV6, wantErr: `TunnelRoutesV4[1] "10.0.0.0" is not a valid prefix`},
+		{name: "IPv4 prefix length out of range", v4: []string{"10.0.0.0/33"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "10.0.0.0/33" is not a valid prefix`},
+		{name: "IPv6 prefix length out of range", v4: customV4, v6: []string{"2001:db8::/129"}, wantErr: `TunnelRoutesV6[0] "2001:db8::/129" is not a valid prefix`},
+		{name: "stray separator", v4: []string{"10.0.0.0/8,"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "10.0.0.0/8," is not a valid prefix`},
+		{name: "IPv6 in IPv4 list", v4: customV6, v6: customV6, wantErr: `TunnelRoutesV4[0] "2001:db8::/64" is not a prefix of this address family`},
+		{name: "IPv4 in IPv6 list", v4: customV4, v6: customV4, wantErr: `TunnelRoutesV6[0] "192.0.2.0/24" is not a prefix of this address family`},
+		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "::ffff:192.0.2.0/120" is not a prefix of this address family`},
+		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantErr: `TunnelRoutesV6[0] "::ffff:192.0.2.0/120" is not a prefix of this address family`},
+		{name: "invalid entry before default prefix", v4: []string{"bad CIDR", "0.0.0.0/0"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "bad CIDR" is not a valid prefix`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()
@@ -396,15 +396,9 @@ func TestConfigurationsActiveSkipsInvalidTunnelRoutes(t *testing.T) {
 			configuration.TunnelRoutesV6 = tt.v6
 			path := filepath.Join(t.TempDir(), "client_configuration.json")
 			writeConfiguration(t, path, configuration)
-			loaded, err := (&Configurations{activePath: path}).Active()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if loaded.TunnelRoutesV4 == nil || !slices.Equal(loaded.TunnelRoutesV4, tt.wantV4) {
-				t.Errorf("TunnelRoutesV4 = %#v, want %#v", loaded.TunnelRoutesV4, tt.wantV4)
-			}
-			if loaded.TunnelRoutesV6 == nil || !slices.Equal(loaded.TunnelRoutesV6, tt.wantV6) {
-				t.Errorf("TunnelRoutesV6 = %#v, want %#v", loaded.TunnelRoutesV6, tt.wantV6)
+			_, err := (&Configurations{activePath: path}).Active()
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
 	}
