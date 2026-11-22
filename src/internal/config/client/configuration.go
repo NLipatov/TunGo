@@ -36,15 +36,33 @@ func (c *Configuration) applyDefaults() {
 		return
 	}
 	dnsV4, dnsV6 := effectiveDNS(activeSettings.Network)
-	routesV4, routesV6 := effectiveTunnelRoutes(
-		c.TunnelRoutesV4, c.TunnelRoutesV6,
-		dnsV4, dnsV6,
-		activeSettings.IPv4Subnet, activeSettings.IPv6Subnet,
-	)
 	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
-	c.TunnelRoutesV4, c.TunnelRoutesV6 = routesV4, routesV6
+	c.TunnelRoutesV4 = effectiveTunnelRoutes(
+		"TunnelRoutesV4",
+		c.TunnelRoutesV4,
+		dnsV4,
+		activeSettings.IPv4Subnet,
+		splits.FullTunnelV4(),
+		isIPv4Prefix,
+	)
+	c.TunnelRoutesV6 = effectiveTunnelRoutes(
+		"TunnelRoutesV6",
+		c.TunnelRoutesV6,
+		dnsV6,
+		activeSettings.IPv6Subnet,
+		splits.FullTunnelV6(),
+		isIPv6Prefix,
+	)
 	activeSettings.MTU = effectiveMTU(*activeSettings, c.Protocol)
 	activeSettings.DialTimeout = effectiveDialTimeout(*activeSettings)
+}
+
+func isIPv4Prefix(p netip.Prefix) bool {
+	return p.Addr().Is4()
+}
+
+func isIPv6Prefix(p netip.Prefix) bool {
+	return p.Addr().Unmap().Is6()
 }
 
 func effectiveDNS(network settings.Network) ([]string, []string) {
@@ -62,134 +80,80 @@ func effectiveDNS(network settings.Network) ([]string, []string) {
 	return v4, v6
 }
 
+// effectiveTunnelRoutes normalizes one address family's tunnel routes.
+// A nil list means full tunnel; an empty list tunnels nothing but DNS.
+// Invalid entries are skipped, any /0 entry replaces the list with full tunnel,
+// and host bits are cleared. Each resolver outside the TUN subnet gets a host
+// route unless a configured prefix already covers it.
 func effectiveTunnelRoutes(
-	v4, v6 []string,
-	dnsV4, dnsV6 []string,
-	tunSubnetV4, tunSubnetV6 netip.Prefix,
-) ([]string, []string) {
-	defaultV4 := splits.FullTunnelV4()
-	defaultV6 := splits.FullTunnelV6()
-	if v4 == nil {
-		v4 = defaultV4
+	field string,
+	routes, resolvers []string,
+	tunSubnet netip.Prefix,
+	defaultRoutes []string,
+	inFamily func(netip.Prefix) bool,
+) []string {
+	if routes == nil {
+		routes = defaultRoutes
 	}
-	if v6 == nil {
-		v6 = defaultV6
-	}
-	uncoveredDNSV4 := make([]netip.Addr, 0, len(dnsV4))
-	for _, strAddr := range dnsV4 {
+	uncoveredDNS := make([]netip.Addr, 0, len(resolvers))
+	for _, strAddr := range resolvers {
 		addr, err := netip.ParseAddr(strings.TrimSpace(strAddr))
 		if err != nil {
-			slog.Warn(
-				"invalid DNS v4 address excluded",
-				"address", strAddr,
-			)
 			continue
 		}
 		addr = addr.WithZone("")
-		if tunSubnetV4.IsValid() && !tunSubnetV4.Contains(addr) && !slices.Contains(uncoveredDNSV4, addr) {
-			uncoveredDNSV4 = append(uncoveredDNSV4, addr)
+		if tunSubnet.IsValid() && !tunSubnet.Contains(addr) && !slices.Contains(uncoveredDNS, addr) {
+			uncoveredDNS = append(uncoveredDNS, addr)
 		}
 	}
-	uncoveredDNSV6 := make([]netip.Addr, 0, len(dnsV6))
-	for _, strAddr := range dnsV6 {
-		addr, err := netip.ParseAddr(strings.TrimSpace(strAddr))
-		if err != nil {
-			slog.Warn(
-				"invalid DNS v6 address excluded",
-				"address", strAddr,
-			)
-			continue
-		}
-		addr = addr.WithZone("")
-		if tunSubnetV6.IsValid() && !tunSubnetV6.Contains(addr) && !slices.Contains(uncoveredDNSV6, addr) {
-			uncoveredDNSV6 = append(uncoveredDNSV6, addr)
-		}
-	}
-	seen := make(map[netip.Prefix]struct{}, len(v4)+len(v6))
-	normalizedV4 := make([]string, 0, len(v4))
-	for _, cidr := range v4 {
+	seen := make(map[netip.Prefix]struct{}, len(routes))
+	normalized := make([]string, 0, len(routes))
+	for _, cidr := range routes {
 		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || !prefix.Addr().Is4() {
+		if err != nil || !inFamily(prefix) {
 			slog.Warn(
-				"invalid v4 address excluded from TunnelRoutesV4",
-				"cidr", cidr,
+				"client tunnel route skipped: invalid prefix",
+				"field", field,
+				"configured", cidr,
 			)
 			continue
 		}
 		if prefix.Bits() == 0 {
 			slog.Warn(
-				"ipv4 family will be full-tunneled as /0 mask subnet found in TunnelRoutesV4",
+				"client tunnel routes replaced with full tunnel: /0 prefix",
+				"field", field,
 				"configured", cidr,
 			)
-			normalizedV4 = defaultV4
-			uncoveredDNSV4 = uncoveredDNSV4[:0]
+			normalized = defaultRoutes
+			uncoveredDNS = uncoveredDNS[:0]
 			break
 		}
 		prefixMasked := prefix.Masked()
 		if prefix != prefixMasked {
 			slog.Warn(
-				"subnet in TunnelRoutesV4 was changed",
+				"client tunnel route host bits cleared",
+				"field", field,
 				"configured", cidr,
 				"effective", prefixMasked,
 			)
 		}
-		uncoveredDNSV4 = slices.DeleteFunc(uncoveredDNSV4, prefix.Contains)
+		uncoveredDNS = slices.DeleteFunc(uncoveredDNS, prefix.Contains)
 		if _, ok := seen[prefixMasked]; ok {
 			continue
 		}
 		seen[prefixMasked] = struct{}{}
-		normalizedV4 = append(normalizedV4, prefixMasked.String())
+		normalized = append(normalized, prefixMasked.String())
 	}
-
-	normalizedV6 := make([]string, 0, len(v6))
-	for _, cidr := range v6 {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || prefix.Addr().Unmap().Is4() {
-			slog.Warn(
-				"invalid v6 address excluded from TunnelRoutesV6",
-				"cidr", cidr,
-			)
-			continue
-		}
-		if prefix.Bits() == 0 {
-			slog.Warn(
-				"ipv6 family will be full-tunneled as /0 mask subnet found in TunnelRoutesV6",
-				"configured", cidr,
-			)
-			normalizedV6 = defaultV6
-			uncoveredDNSV6 = uncoveredDNSV6[:0]
-			break
-		}
-		prefixMasked := prefix.Masked()
-		if prefix != prefixMasked {
-			slog.Warn(
-				"subnet in TunnelRoutesV6 was changed",
-				"configured", cidr,
-				"effective", prefixMasked,
-			)
-		}
-		uncoveredDNSV6 = slices.DeleteFunc(uncoveredDNSV6, prefix.Contains)
-		if _, ok := seen[prefixMasked]; ok {
-			continue
-		}
-		seen[prefixMasked] = struct{}{}
-		normalizedV6 = append(normalizedV6, prefixMasked.String())
-	}
-	for _, addr := range uncoveredDNSV4 {
+	for _, addr := range uncoveredDNS {
+		route := netip.PrefixFrom(addr, addr.BitLen()).String()
 		slog.Info(
-			"dns ipv4 address added to TunnelRoutesV4",
-			"address", addr,
+			"client DNS resolver route added",
+			"field", field,
+			"route", route,
 		)
-		normalizedV4 = append(normalizedV4, netip.PrefixFrom(addr, addr.BitLen()).String())
+		normalized = append(normalized, route)
 	}
-	for _, addr := range uncoveredDNSV6 {
-		slog.Info(
-			"dns ipv6 address added to TunnelRoutesV6",
-			"address", addr,
-		)
-		normalizedV6 = append(normalizedV6, netip.PrefixFrom(addr, addr.BitLen()).String())
-	}
-	return normalizedV4, normalizedV6
+	return normalized
 }
 
 // effectiveMTU determines the usable MTU for the configured address families.

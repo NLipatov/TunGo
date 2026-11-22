@@ -279,18 +279,18 @@ func TestConfigurationsActiveExpandsDefaultTunnelRoutes(t *testing.T) {
 			wantV6: []string{"::/1", "8000::/1"},
 		},
 		{
-			name:   "deduplicates expanded and explicit halves in first occurrence order",
+			name:   "default prefix after explicit halves",
 			v4:     []string{"128.0.0.0/1", "0.0.0.0/0", "0.0.0.0/1", "0.0.0.0/0"},
 			v6:     []string{"8000::/1", "::/0", "::/1", "::/0"},
-			wantV4: []string{"128.0.0.0/1", "0.0.0.0/1"},
-			wantV6: []string{"8000::/1", "::/1"},
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantV6: []string{"::/1", "8000::/1"},
 		},
 		{
-			name:   "preserves other prefixes around the expansion",
+			name:   "default prefix replaces other prefixes",
 			v4:     []string{"192.0.2.42/24", "0.0.0.0/0", "198.51.100.42/24"},
 			v6:     []string{"2001:db8:1::42/64", "::/0", "2001:db8:2::42/64"},
-			wantV4: []string{"192.0.2.0/24", "0.0.0.0/1", "128.0.0.0/1", "198.51.100.0/24"},
-			wantV6: []string{"2001:db8:1::/64", "::/1", "8000::/1", "2001:db8:2::/64"},
+			wantV4: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantV6: []string{"::/1", "8000::/1"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -365,7 +365,7 @@ func TestConfigurationsEmptyTunnelRoutes(t *testing.T) {
 	}
 }
 
-func TestConfigurationsActiveDefaultsInvalidTunnelRoutes(t *testing.T) {
+func TestConfigurationsActiveSkipsInvalidTunnelRoutes(t *testing.T) {
 	defaultV4 := []string{"0.0.0.0/1", "128.0.0.0/1"}
 	defaultV6 := []string{"::/1", "8000::/1"}
 	customV4 := []string{"192.0.2.0/24"}
@@ -378,17 +378,16 @@ func TestConfigurationsActiveDefaultsInvalidTunnelRoutes(t *testing.T) {
 		wantV6 []string
 	}{
 		{name: "missing lists", wantV4: defaultV4, wantV6: defaultV6},
-		{name: "invalid IPv4 CIDR", v4: []string{"10.0.0.0/33"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
-		{name: "invalid IPv6 CIDR", v4: customV4, v6: []string{"2001:db8::/129"}, wantV4: customV4, wantV6: defaultV6},
-		{name: "IPv6 in IPv4 list", v4: customV6, v6: customV6, wantV4: defaultV4, wantV6: customV6},
-		{name: "IPv4 in IPv6 list", v4: customV4, v6: customV4, wantV4: customV4, wantV6: defaultV6},
-		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
-		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantV4: customV4, wantV6: defaultV6},
-		{name: "partially invalid IPv4 list", v4: []string{"192.0.2.1/24", "bad CIDR"}, v6: customV6, wantV4: defaultV4, wantV6: customV6},
-		{name: "partially invalid IPv6 list", v4: customV4, v6: []string{"2001:db8::1/64", "bad CIDR"}, wantV4: customV4, wantV6: defaultV6},
-		{name: "invalid IPv4 preserves empty IPv6", v4: []string{"bad CIDR"}, v6: []string{}, wantV4: defaultV4, wantV6: []string{}},
-		{name: "invalid IPv6 preserves empty IPv4", v4: []string{}, v6: []string{"bad CIDR"}, wantV4: []string{}, wantV6: defaultV6},
-		{name: "both lists invalid", v4: []string{"bad CIDR"}, v6: []string{"bad CIDR"}, wantV4: defaultV4, wantV6: defaultV6},
+		{name: "invalid IPv4 CIDR", v4: []string{"10.0.0.0/33"}, v6: customV6, wantV4: []string{}, wantV6: customV6},
+		{name: "invalid IPv6 CIDR", v4: customV4, v6: []string{"2001:db8::/129"}, wantV4: customV4, wantV6: []string{}},
+		{name: "IPv6 in IPv4 list", v4: customV6, v6: customV6, wantV4: []string{}, wantV6: customV6},
+		{name: "IPv4 in IPv6 list", v4: customV4, v6: customV4, wantV4: customV4, wantV6: []string{}},
+		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantV4: []string{}, wantV6: customV6},
+		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantV4: customV4, wantV6: []string{}},
+		{name: "partially invalid IPv4 list", v4: []string{"192.0.2.1/24", "bad CIDR"}, v6: customV6, wantV4: customV4, wantV6: customV6},
+		{name: "partially invalid IPv6 list", v4: customV4, v6: []string{"2001:db8::1/64", "bad CIDR"}, wantV4: customV4, wantV6: customV6},
+		{name: "invalid entry before default prefix", v4: []string{"bad CIDR", "0.0.0.0/0"}, v6: []string{"bad CIDR", "::/0"}, wantV4: defaultV4, wantV6: defaultV6},
+		{name: "both lists invalid", v4: []string{"bad CIDR"}, v6: []string{"bad CIDR"}, wantV4: []string{}, wantV6: []string{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()
