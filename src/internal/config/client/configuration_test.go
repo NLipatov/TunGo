@@ -513,29 +513,102 @@ func TestConfiguration_ApplyDefaultsRoutesDNSForActiveProtocolAndFamilies(t *tes
 	}
 }
 
-func TestConfiguration_ApplyDefaultsWarnsAboutDNSRoutes(t *testing.T) {
+func TestEffectiveTunnelRoutesLogsOnlyChanges(t *testing.T) {
 	var logs bytes.Buffer
 	originalLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if len(groups) == 0 && attr.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return attr
+		},
+	})))
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 
-	cfg := validTestConfiguration()
-	cfg.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
-	cfg.UDPSettings.DNSv4 = []string{"9.9.9.9"}
-	cfg.UDPSettings.DNSv6 = []string{"2620:fe::9"}
-	cfg.TunnelRoutesV4, cfg.TunnelRoutesV6 = []string{}, []string{}
-	cfg.applyDefaults()
-	for _, message := range []string{
-		`level=WARN msg="client TunnelRoutesV4 were changed" configured=[] effective=[9.9.9.9/32]`,
-		`level=WARN msg="client TunnelRoutesV6 were changed" configured=[] effective=[2620:fe::9/128]`,
-	} {
-		if !strings.Contains(logs.String(), message) {
-			t.Errorf("log does not contain %q: %q", message, logs.String())
-		}
+	manyRoutes := make([]string, 0, 1000)
+	for i := range 1000 {
+		manyRoutes = append(manyRoutes, netip.AddrFrom4([4]byte{100, byte(i >> 8), byte(i), 0}).String()+"/24")
 	}
-	logs.Reset()
-	cfg.applyDefaults()
-	if logs.Len() != 0 {
-		t.Fatalf("reapplying defaults logged changes: %s", &logs)
+	tunSubnet := netip.MustParsePrefix("10.0.1.0/24")
+	for _, tt := range []struct {
+		name       string
+		routes     []string
+		resolvers  []string
+		wantRoutes []string
+		wantLogs   []string
+	}{
+		{
+			name:       "canonical split covering resolvers",
+			routes:     []string{"192.0.2.0/24", "9.9.9.0/24"},
+			resolvers:  []string{"9.9.9.9"},
+			wantRoutes: []string{"192.0.2.0/24", "9.9.9.0/24"},
+		},
+		{
+			name:       "canonical split without resolver coverage",
+			routes:     []string{"192.0.2.0/24"},
+			resolvers:  []string{"9.9.9.9"},
+			wantRoutes: []string{"192.0.2.0/24", "9.9.9.9/32"},
+			wantLogs:   []string{`level=INFO msg="client DNS resolver route added" field=TunnelRoutesV4 route=9.9.9.9/32`},
+		},
+		{
+			name:       "duplicate resolvers",
+			routes:     []string{},
+			resolvers:  []string{"9.9.9.9", " 9.9.9.9 "},
+			wantRoutes: []string{"9.9.9.9/32"},
+			wantLogs:   []string{`level=INFO msg="client DNS resolver route added" field=TunnelRoutesV4 route=9.9.9.9/32`},
+		},
+		{
+			name:       "invalid resolver",
+			routes:     []string{"192.0.2.0/24"},
+			resolvers:  []string{"bad resolver"},
+			wantRoutes: []string{"192.0.2.0/24"},
+		},
+		{
+			name:       "duplicate routes",
+			routes:     []string{"192.0.2.0/24", "192.0.2.0/24"},
+			wantRoutes: []string{"192.0.2.0/24"},
+		},
+		{
+			name:       "host bits",
+			routes:     []string{"192.0.2.42/24"},
+			wantRoutes: []string{"192.0.2.0/24"},
+			wantLogs:   []string{`level=WARN msg="client tunnel route host bits cleared" field=TunnelRoutesV4 configured=192.0.2.42/24 effective=192.0.2.0/24`},
+		},
+		{
+			name:       "invalid entry",
+			routes:     []string{"bad CIDR", "192.0.2.0/24"},
+			wantRoutes: []string{"192.0.2.0/24"},
+			wantLogs:   []string{`level=WARN msg="client tunnel route skipped: invalid prefix" field=TunnelRoutesV4 configured="bad CIDR"`},
+		},
+		{
+			name:       "default prefix",
+			routes:     []string{"192.0.2.0/24", "0.0.0.0/0"},
+			resolvers:  []string{"9.9.9.9"},
+			wantRoutes: []string{"0.0.0.0/1", "128.0.0.0/1"},
+			wantLogs:   []string{`level=WARN msg="client tunnel routes replaced with full tunnel: /0 prefix" field=TunnelRoutesV4 configured=0.0.0.0/0`},
+		},
+		{
+			name:       "many routes keep entries small",
+			routes:     manyRoutes,
+			resolvers:  []string{"9.9.9.9"},
+			wantRoutes: append(slices.Clone(manyRoutes), "9.9.9.9/32"),
+			wantLogs:   []string{`level=INFO msg="client DNS resolver route added" field=TunnelRoutesV4 route=9.9.9.9/32`},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			logs.Reset()
+			got := effectiveTunnelRoutes("TunnelRoutesV4", tt.routes, tt.resolvers, tunSubnet, []string{"0.0.0.0/1", "128.0.0.0/1"}, isIPv4Prefix)
+			if !slices.Equal(got, tt.wantRoutes) {
+				t.Errorf("routes = %v, want %v", got, tt.wantRoutes)
+			}
+			gotLogs := strings.Split(strings.TrimSuffix(logs.String(), "\n"), "\n")
+			if logs.Len() == 0 {
+				gotLogs = nil
+			}
+			if !slices.Equal(gotLogs, tt.wantLogs) {
+				t.Errorf("logs = %q, want %q", gotLogs, tt.wantLogs)
+			}
+		})
 	}
 }
