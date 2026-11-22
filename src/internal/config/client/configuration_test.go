@@ -605,7 +605,7 @@ func TestEffectiveTunnelRoutesLogsOnlyChanges(t *testing.T) {
 			routes:     []string{"192.0.2.0/24", "0.0.0.0/0"},
 			resolvers:  []string{"9.9.9.9"},
 			wantRoutes: []string{"0.0.0.0/1", "128.0.0.0/1"},
-			wantLogs:   []string{`level=WARN msg="client tunnel routes replaced with full tunnel: /0 prefix" field=TunnelRoutesV4 configured=0.0.0.0/0`},
+			wantLogs:   []string{`level=WARN msg="client tunnel routes replaced with full tunnel: /0 prefix" field=TunnelRoutesV4`},
 		},
 		{
 			name:       "many routes keep entries small",

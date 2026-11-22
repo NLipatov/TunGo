@@ -388,6 +388,8 @@ func TestConfigurationsActiveRejectsInvalidTunnelRoutes(t *testing.T) {
 		{name: "mapped IPv4 in IPv4 list", v4: []string{"::ffff:192.0.2.0/120"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "::ffff:192.0.2.0/120" is not a prefix of this address family`},
 		{name: "mapped IPv4 in IPv6 list", v4: customV4, v6: []string{"::ffff:192.0.2.0/120"}, wantErr: `TunnelRoutesV6[0] "::ffff:192.0.2.0/120" is not a prefix of this address family`},
 		{name: "invalid entry before default prefix", v4: []string{"bad CIDR", "0.0.0.0/0"}, v6: customV6, wantErr: `TunnelRoutesV4[0] "bad CIDR" is not a valid prefix`},
+		{name: "invalid entry after default prefix", v4: []string{"0.0.0.0/0", "bad CIDR"}, v6: customV6, wantErr: `TunnelRoutesV4[1] "bad CIDR" is not a valid prefix`},
+		{name: "invalid IPv6 entry after default prefix", v4: customV4, v6: []string{"::/0", "192.0.2.0/24"}, wantErr: `TunnelRoutesV6[1] "192.0.2.0/24" is not a prefix of this address family`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			configuration := validTestConfiguration()

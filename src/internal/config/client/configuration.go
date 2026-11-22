@@ -116,8 +116,7 @@ func effectiveTunnelRoutes(
 			uncoveredDNS = append(uncoveredDNS, addr)
 		}
 	}
-	seen := make(map[netip.Prefix]struct{}, len(routes))
-	normalized := make([]string, 0, len(routes))
+	prefixes, zeroMaskFound := make([]netip.Prefix, 0, len(routes)), false
 	for i, cidr := range routes {
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
 		if err != nil {
@@ -127,21 +126,26 @@ func effectiveTunnelRoutes(
 			return nil, fmt.Errorf("%s[%d] %q is not a prefix of this address family", field, i, cidr)
 		}
 		if prefix.Bits() == 0 {
-			slog.Warn(
-				"client tunnel routes replaced with full tunnel: /0 prefix",
-				"field", field,
-				"configured", cidr,
-			)
-			normalized = defaultRoutes
-			uncoveredDNS = uncoveredDNS[:0]
-			break
+			zeroMaskFound = true
 		}
+		prefixes = append(prefixes, prefix)
+	}
+	if zeroMaskFound {
+		slog.Warn(
+			"client tunnel routes replaced with full tunnel: /0 prefix",
+			"field", field,
+		)
+		return defaultRoutes, nil
+	}
+	seen := make(map[netip.Prefix]struct{}, len(routes))
+	normalized := make([]string, 0, len(routes))
+	for i, prefix := range prefixes {
 		prefixMasked := prefix.Masked()
 		if prefix != prefixMasked {
 			slog.Warn(
 				"client tunnel route host bits cleared",
 				"field", field,
-				"configured", cidr,
+				"configured", routes[i],
 				"effective", prefixMasked,
 			)
 		}
