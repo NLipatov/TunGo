@@ -118,7 +118,7 @@ func (w *configWatcher) watch(ctx context.Context) {
 
 // loadCurrentState returns the current peer access snapshot.
 func (w *configWatcher) loadCurrentState() map[string]peerAccessState {
-	conf, err := w.file.Load()
+	conf, err := w.file.Read()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load initial config", "err", err)
 		return nil
@@ -139,7 +139,7 @@ func (w *configWatcher) loadCurrentState() map[string]peerAccessState {
 // 1. Revokes sessions for peers that were removed or disabled
 // 2. Updates the runtime AllowedPeers map for new handshake lookups
 func (w *configWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
-	conf, err := w.file.Load()
+	conf, err := w.file.Read()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load config", "err", err)
 		return prevPeers

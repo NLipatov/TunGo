@@ -43,8 +43,9 @@ func (f *File) Path() string {
 	return f.path
 }
 
+// Load reads the configuration, creating it with defaults when the file does not exist.
 func (f *File) Load() (*Configuration, error) {
-	configuration, err := f.read()
+	configuration, err := f.Read()
 	if err == nil {
 		return configuration, nil
 	}
@@ -55,15 +56,17 @@ func (f *File) Load() (*Configuration, error) {
 	if err := f.create(*configuration); err != nil {
 		// race condition case: another process created the file, for example a text editor.
 		if errors.Is(err, os.ErrExist) {
-			return f.read()
+			return f.Read()
 		}
 		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}
 	slog.Info("server configuration created with defaults", "path", f.path)
-	return f.read()
+	return f.Read()
 }
 
-func (f *File) read() (*Configuration, error) {
+// Read reads the existing configuration without creating it.
+// It fails with an os.ErrNotExist error when the file does not exist.
+func (f *File) Read() (*Configuration, error) {
 	data, err := os.ReadFile(f.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

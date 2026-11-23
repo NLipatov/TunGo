@@ -112,7 +112,8 @@ func TestConfigWatcherIgnoresConfigurationMovedAway(t *testing.T) {
 	}
 
 	runtime := revocationChannelRuntime{revoked: make(chan []byte, 8)}
-	watcher := newConfigWatcher(file, runtime, time.Hour)
+	// A short interval makes several polls run while the file is missing.
+	watcher := newConfigWatcher(file, runtime, 50*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -125,7 +126,8 @@ func TestConfigWatcherIgnoresConfigurationMovedAway(t *testing.T) {
 	})
 	time.Sleep(200 * time.Millisecond) // let the watcher register its fsnotify watch
 
-	// An editor that saves by renaming moves the original away first.
+	// An editor that saves by renaming moves the original away first; the file
+	// stays missing across several polls, as when it is moved away for longer.
 	if err := os.Rename(file.Path(), file.Path()+"~"); err != nil {
 		t.Fatal(err)
 	}
