@@ -64,17 +64,47 @@ func TestFileCreateKeepsExistingFile(t *testing.T) {
 	}
 }
 
-func TestFileLoadKeepsExistingConfiguration(t *testing.T) {
+func TestFileReadAndPeersDoNotCreateConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server_configuration.json")
 	file := NewFile(path)
-	if err := file.EnsureKeys(); err != nil {
+	if _, err := file.Read(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Read() error = %v, want os.ErrNotExist", err)
+	}
+	peers, err := file.Peers()
+	if err != nil || peers == nil || len(peers) != 0 {
+		t.Fatalf("Peers() = %v, %v; want an empty list", peers, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reading created the configuration: stat error = %v", err)
+	}
+}
+
+func TestFilePrepareCreatesConfigurationWithKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	file := NewFile(path)
+	if err := file.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := file.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateX25519KeyPair(configuration.X25519PublicKey, configuration.X25519PrivateKey); err != nil {
+		t.Fatalf("prepared configuration has no valid key pair: %v", err)
+	}
+}
+
+func TestFilePrepareKeepsExistingConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	file := NewFile(path)
+	if err := file.Prepare(); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := file.Load(); err != nil {
+	if err := file.Prepare(); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.ReadFile(path)
@@ -82,14 +112,14 @@ func TestFileLoadKeepsExistingConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(before, after) {
-		t.Fatal("Load() rewrote an existing configuration")
+		t.Fatal("Prepare() rewrote an existing configuration")
 	}
 }
 
 func TestFileWriteLeavesNoTemporaryFiles(t *testing.T) {
 	directory := t.TempDir()
 	file := NewFile(filepath.Join(directory, "server_configuration.json"))
-	if err := file.EnsureKeys(); err != nil {
+	if err := file.Prepare(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := file.GenerateClient(); err != nil {
@@ -138,13 +168,17 @@ func TestFileWriteRemovesTemporaryFileOnFailure(t *testing.T) {
 	}
 }
 
-func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
+func TestFileCreateIfNotExistWritesDefaultConfiguration(t *testing.T) {
 	t.Setenv("EnableTCP", "")
 	t.Setenv("EnableUDP", "")
 	t.Setenv("EnableWS", "")
 	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
-	configuration, err := NewFile(path).Load()
+	file := NewFile(path)
+	if err := file.createIfNotExist(); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,12 +195,16 @@ func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
 	}
 }
 
-func TestFileLoadAppliesEnvironmentWhenCreatingDefaultConfiguration(t *testing.T) {
+func TestFileReadAppliesEnvironmentWithoutPersistingIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	t.Setenv("Host", "env.example")
 	t.Setenv("EnableTCP", "false")
 
-	configuration, err := NewFile(path).Load()
+	file := NewFile(path)
+	if err := file.createIfNotExist(); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +231,7 @@ func TestFileLoadPreservesCompatibilityAndEnvironmentOverrides(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	configuration, err := NewFile(path).Load()
+	configuration, err := NewFile(path).Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +241,7 @@ func TestFileLoadPreservesCompatibilityAndEnvironmentOverrides(t *testing.T) {
 
 	t.Setenv("Host", "env.example")
 	t.Setenv("EnableTCP", "true")
-	configuration, err = NewFile(path).Load()
+	configuration, err = NewFile(path).Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,12 +283,12 @@ func TestFileLoadErrors(t *testing.T) {
 		if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewFile(path).Load(); err == nil {
+		if _, err := NewFile(path).Read(); err == nil {
 			t.Fatal("expected decode error")
 		}
 	})
 	t.Run("unreadable path", func(t *testing.T) {
-		if _, err := NewFile(t.TempDir()).Load(); err == nil || errors.Is(err, os.ErrNotExist) {
+		if _, err := NewFile(t.TempDir()).Read(); err == nil || errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -259,7 +297,7 @@ func TestFileLoadErrors(t *testing.T) {
 		if err := os.WriteFile(path, []byte(`{"Host":" "}`), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewFile(path).Load(); err == nil || !strings.Contains(err.Error(), "host is empty") {
+		if _, err := NewFile(path).Read(); err == nil || !strings.Contains(err.Error(), "host is empty") {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -272,7 +310,7 @@ func TestFileLoadErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := filepath.Join(parent, "server_configuration.json")
-		if _, err := NewFile(path).Load(); err == nil || !strings.Contains(err.Error(), "could not write default configuration") {
+		if err := NewFile(path).Prepare(); err == nil || !strings.Contains(err.Error(), "could not write default configuration") {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -285,8 +323,8 @@ func TestFileOperationsPropagateLoadErrors(t *testing.T) {
 	}
 	file := NewFile(path)
 
-	if err := file.EnsureKeys(); err == nil {
-		t.Fatal("EnsureKeys() ignored a load error")
+	if err := file.Prepare(); err == nil {
+		t.Fatal("Prepare() ignored a load error")
 	}
 	if _, err := file.Peers(); err == nil {
 		t.Fatal("Peers() ignored a load error")
@@ -296,7 +334,7 @@ func TestFileOperationsPropagateLoadErrors(t *testing.T) {
 	}
 }
 
-func TestFileEnsureKeys(t *testing.T) {
+func TestFilePrepareKeys(t *testing.T) {
 	t.Run("uses environment", func(t *testing.T) {
 		logs := captureServerConfigLogs(t)
 		path := filepath.Join(t.TempDir(), "server_configuration.json")
@@ -305,10 +343,10 @@ func TestFileEnsureKeys(t *testing.T) {
 		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(public))
 		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(private))
 		file := NewFile(path)
-		if err := file.EnsureKeys(); err != nil {
+		if err := file.Prepare(); err != nil {
 			t.Fatal(err)
 		}
-		configuration, err := file.Load()
+		configuration, err := file.Read()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,10 +367,10 @@ func TestFileEnsureKeys(t *testing.T) {
 		t.Setenv(publicKeyEnvVar, "invalid")
 		t.Setenv(privateKeyEnvVar, "invalid")
 		file := NewFile(path)
-		if err := file.EnsureKeys(); err != nil {
+		if err := file.Prepare(); err != nil {
 			t.Fatal(err)
 		}
-		configuration, err := file.Load()
+		configuration, err := file.Read()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -357,10 +395,10 @@ func TestFileEnsureKeys(t *testing.T) {
 		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(environmentPrivate))
 
 		file := NewFile(path)
-		if err := file.EnsureKeys(); err != nil {
+		if err := file.Prepare(); err != nil {
 			t.Fatal(err)
 		}
-		loaded, err := file.Load()
+		loaded, err := file.Read()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -377,9 +415,9 @@ func TestFileEnsureKeys(t *testing.T) {
 		_, configuration.X25519PrivateKey = testX25519KeyPair(t, 2)
 		writeServerConfiguration(t, path, *configuration)
 
-		err := NewFile(path).EnsureKeys()
+		err := NewFile(path).Prepare()
 		if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
-			t.Fatalf("EnsureKeys() error = %v", err)
+			t.Fatalf("Prepare() error = %v", err)
 		}
 	})
 
@@ -391,9 +429,9 @@ func TestFileEnsureKeys(t *testing.T) {
 		t.Setenv(publicKeyEnvVar, base64.StdEncoding.EncodeToString(public))
 		t.Setenv(privateKeyEnvVar, base64.StdEncoding.EncodeToString(private))
 
-		err := NewFile(path).EnsureKeys()
+		err := NewFile(path).Prepare()
 		if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
-			t.Fatalf("EnsureKeys() error = %v", err)
+			t.Fatalf("Prepare() error = %v", err)
 		}
 	})
 }

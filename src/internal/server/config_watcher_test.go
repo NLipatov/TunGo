@@ -20,7 +20,10 @@ func newWatcherFile(t *testing.T, peers []serverconfig.AllowedPeer) *serverconfi
 
 func setWatcherPeers(t *testing.T, file *serverconfig.File, peers []serverconfig.AllowedPeer) {
 	t.Helper()
-	configuration, err := file.Load()
+	if err := file.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +104,7 @@ func TestConfigWatcherIgnoresConfigurationMovedAway(t *testing.T) {
 	key := make([]byte, 32)
 	key[0] = 1
 	file := newWatcherFile(t, []serverconfig.AllowedPeer{{PublicKey: key, Enabled: true, ClientID: 1}})
-	configuration, err := file.Load()
+	configuration, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}

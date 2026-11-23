@@ -57,7 +57,7 @@ func TestFileGenerateClient(t *testing.T) {
 		t.Fatalf("client tunnel address = %s, want 10.0.1.2", active.IPv4)
 	}
 
-	updated, err := file.Load()
+	updated, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestFileGenerateClientDoesNotRegisterPeerWhenClientFileWriteFails(t *testin
 	if _, err := file.GenerateClient(); err == nil {
 		t.Fatal("GenerateClient() succeeded when the client file could not be written")
 	}
-	updated, err := file.Load()
+	updated, err := file.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestFileGenerateClientEnablesIPv6Subnets(t *testing.T) {
 	if _, err := NewFile(path).GenerateClient(); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := NewFile(path).Load()
+	updated, err := NewFile(path).Read()
 	if err != nil {
 		t.Fatal(err)
 	}

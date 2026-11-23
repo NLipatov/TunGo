@@ -76,13 +76,16 @@ func (t *TUI) runRuntime(
 		if t.serverFile == nil {
 			return fmt.Errorf("server configuration file is nil")
 		}
-		configuration, loadErr := t.serverFile.Load()
-		if loadErr != nil {
-			return fmt.Errorf("load server configuration: %w", loadErr)
+		running, err = server.New(t.serverFile)
+		if err != nil {
+			return err
+		}
+		configuration, readErr := t.serverFile.Read()
+		if readErr != nil {
+			return fmt.Errorf("read server configuration: %w", readErr)
 		}
 		info := serverRuntimeInfo(configuration)
 		runtimeInfo = func() bubbleTea.RuntimeInfo { return info }
-		running, err = server.New(t.serverFile)
 	default:
 		return fmt.Errorf("invalid runtime mode: %v", runtimeMode)
 	}
