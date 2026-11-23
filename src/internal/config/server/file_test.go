@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -43,6 +44,96 @@ func testX25519KeyPair(t *testing.T, seed byte) ([]byte, []byte) {
 		t.Fatal(err)
 	}
 	return public, private
+}
+
+func TestFileCreateKeepsExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	content := []byte("written by an editor")
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewFile(path).create(*newConfiguration()); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("create() error = %v, want os.ErrExist", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("create() overwrote the file: %q", got)
+	}
+}
+
+func TestFileLoadKeepsExistingConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server_configuration.json")
+	file := NewFile(path)
+	if err := file.EnsureKeys(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Load(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("Load() rewrote an existing configuration")
+	}
+}
+
+func TestFileWriteLeavesNoTemporaryFiles(t *testing.T) {
+	directory := t.TempDir()
+	file := NewFile(filepath.Join(directory, "server_configuration.json"))
+	if err := file.EnsureKeys(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.GenerateClient(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".server_configuration-") {
+			t.Fatalf("temporary file left behind: %s", entry.Name())
+		}
+	}
+	info, err := os.Stat(file.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("configuration permissions = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestFileWriteRemovesTemporaryFileOnFailure(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "server_configuration.json")
+	// A non-empty directory at the target path makes the final rename fail.
+	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewFile(path).write(*newConfiguration()); err == nil {
+		t.Fatal("write() succeeded over a directory")
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "server_configuration.json" {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("directory entries after a failed write = %v", names)
+	}
 }
 
 func TestFileLoadCreatesDefaultConfiguration(t *testing.T) {
@@ -171,7 +262,14 @@ func TestFileLoadErrors(t *testing.T) {
 		}
 	})
 	t.Run("cannot write default", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "server_configuration.json") + string(os.PathSeparator)
+		if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+			t.Skip("directory permissions do not prevent file creation here")
+		}
+		parent := filepath.Join(t.TempDir(), "read-only")
+		if err := os.Mkdir(parent, 0500); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(parent, "server_configuration.json")
 		if _, err := NewFile(path).Load(); err == nil || !strings.Contains(err.Error(), "could not write default configuration") {
 			t.Fatalf("error = %v", err)
 		}

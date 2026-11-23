@@ -51,9 +51,12 @@ func (f *File) Load() (*Configuration, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-
 	configuration = newConfiguration()
-	if err := f.write(*configuration); err != nil {
+	if err := f.create(*configuration); err != nil {
+		// race condition case: another process created the file, for example a text editor.
+		if errors.Is(err, os.ErrExist) {
+			return f.read()
+		}
 		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}
 	slog.Info("server configuration created with defaults", "path", f.path)
@@ -115,15 +118,58 @@ func applyBoolEnvironment(name string, destination *bool) {
 	}
 }
 
-func (f *File) write(configuration Configuration) error {
+func (f *File) create(configuration Configuration) error {
+	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(configuration, "", "\t")
 	if err != nil {
 		return err
 	}
+	fd, err := os.OpenFile(f.path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err = fd.Write(data); err != nil {
+		_ = fd.Close()
+		return err
+	}
+	return fd.Close()
+}
+
+func (f *File) write(configuration Configuration) error {
 	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(f.path, data, 0600)
+	data, err := json.MarshalIndent(configuration, "", "\t")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), ".server_configuration-*.json")
+	if err != nil {
+		return err
+	}
+	var renamed bool
+	defer func() {
+		if !renamed {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err = tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), f.path); err != nil {
+		return err
+	}
+	renamed = true
+	return nil
 }
 
 func (f *File) update(update func(*Configuration) error) error {

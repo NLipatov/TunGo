@@ -96,8 +96,11 @@ func (w *configWatcher) watch(ctx context.Context) {
 			if eventFile != configFileName {
 				continue
 			}
-			// Watch for Write, Create, and Rename (atomic writes use rename)
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+			// React to Write and Create only. An atomic write (rename over the file)
+			// arrives as Create. Rename for this name means the file was moved away,
+			// for example by an editor that saves by renaming, and reloading then
+			// would find no file and replace it with defaults.
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				slog.Info("ConfigWatcher detected config change", "op", event.Op)
 				prevPeers = w.checkAndRevoke(prevPeers)
 			}
