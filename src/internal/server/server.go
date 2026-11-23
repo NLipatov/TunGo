@@ -39,7 +39,7 @@ func New(configFile *serverconfig.File) (*Server, error) {
 	if err := configFile.EnsureKeys(); err != nil {
 		return nil, fmt.Errorf("could not prepare server keys: %w", err)
 	}
-	conf, err := configFile.Load()
+	conf, err := configFile.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server configuration: %w", err)
 	}

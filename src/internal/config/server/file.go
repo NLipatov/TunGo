@@ -176,7 +176,7 @@ func (f *File) write(configuration Configuration) error {
 }
 
 func (f *File) update(update func(*Configuration) error) error {
-	configuration, err := f.Load()
+	configuration, err := f.Read()
 	if err != nil {
 		return err
 	}
