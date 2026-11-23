@@ -174,7 +174,25 @@ func (f *File) write(configuration Configuration) error {
 		return err
 	}
 	renamed = true
+	if err := f.syncDir(); err != nil {
+		slog.Warn(
+			"server configuration directory was not synced",
+			"path", filepath.Dir(f.path),
+			"err", err,
+		)
+	}
 	return nil
+}
+
+func (f *File) syncDir() error {
+	dir, err := os.Open(filepath.Dir(f.path))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = dir.Close()
+	}()
+	return dir.Sync()
 }
 
 func (f *File) update(update func(*Configuration) error) error {
