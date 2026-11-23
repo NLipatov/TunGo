@@ -30,14 +30,14 @@ type Configuration struct {
 	TunnelRoutesV6   []string `json:"TunnelRoutesV6"`
 }
 
-func (c *Configuration) applyDefaults() {
+func (c *Configuration) applyDefaults() error {
 	activeSettings, err := c.selectedSettings()
 	if err != nil {
-		return
+		return err
 	}
 	dnsV4, dnsV6 := effectiveDNS(activeSettings.Network)
 	activeSettings.DNSv4, activeSettings.DNSv6 = dnsV4, dnsV6
-	c.TunnelRoutesV4 = effectiveTunnelRoutes(
+	routesV4, err := effectiveTunnelRoutes(
 		"TunnelRoutesV4",
 		c.TunnelRoutesV4,
 		dnsV4,
@@ -45,7 +45,11 @@ func (c *Configuration) applyDefaults() {
 		splits.FullTunnelV4(),
 		isIPv4Prefix,
 	)
-	c.TunnelRoutesV6 = effectiveTunnelRoutes(
+	if err != nil {
+		return err
+	}
+	c.TunnelRoutesV4 = routesV4
+	routesV6, err := effectiveTunnelRoutes(
 		"TunnelRoutesV6",
 		c.TunnelRoutesV6,
 		dnsV6,
@@ -53,8 +57,13 @@ func (c *Configuration) applyDefaults() {
 		splits.FullTunnelV6(),
 		isIPv6Prefix,
 	)
+	if err != nil {
+		return err
+	}
+	c.TunnelRoutesV6 = routesV6
 	activeSettings.MTU = effectiveMTU(*activeSettings, c.Protocol)
 	activeSettings.DialTimeout = effectiveDialTimeout(*activeSettings)
+	return nil
 }
 
 func isIPv4Prefix(p netip.Prefix) bool {
@@ -82,7 +91,8 @@ func effectiveDNS(network settings.Network) ([]string, []string) {
 
 // effectiveTunnelRoutes normalizes one address family's tunnel routes.
 // A nil list means full tunnel; an empty list tunnels nothing but DNS.
-// Invalid entries are skipped, any /0 entry replaces the list with full tunnel,
+// An invalid entry fails with an error naming its field and index. Surrounding
+// whitespace is trimmed, any /0 entry replaces the list with full tunnel,
 // and host bits are cleared. Each resolver outside the TUN subnet gets a host
 // route unless a configured prefix already covers it.
 func effectiveTunnelRoutes(
@@ -91,7 +101,7 @@ func effectiveTunnelRoutes(
 	tunSubnet netip.Prefix,
 	defaultRoutes []string,
 	inFamily func(netip.Prefix) bool,
-) []string {
+) ([]string, error) {
 	if routes == nil {
 		routes = defaultRoutes
 	}
@@ -106,34 +116,36 @@ func effectiveTunnelRoutes(
 			uncoveredDNS = append(uncoveredDNS, addr)
 		}
 	}
-	seen := make(map[netip.Prefix]struct{}, len(routes))
-	normalized := make([]string, 0, len(routes))
-	for _, cidr := range routes {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || !inFamily(prefix) {
-			slog.Warn(
-				"client tunnel route skipped: invalid prefix",
-				"field", field,
-				"configured", cidr,
-			)
-			continue
+	prefixes, zeroMaskFound := make([]netip.Prefix, 0, len(routes)), false
+	for i, cidr := range routes {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d] %q is not a valid prefix", field, i, cidr)
+		}
+		if !inFamily(prefix) {
+			return nil, fmt.Errorf("%s[%d] %q is not a prefix of this address family", field, i, cidr)
 		}
 		if prefix.Bits() == 0 {
-			slog.Warn(
-				"client tunnel routes replaced with full tunnel: /0 prefix",
-				"field", field,
-				"configured", cidr,
-			)
-			normalized = defaultRoutes
-			uncoveredDNS = uncoveredDNS[:0]
-			break
+			zeroMaskFound = true
 		}
+		prefixes = append(prefixes, prefix)
+	}
+	if zeroMaskFound {
+		slog.Warn(
+			"client tunnel routes replaced with full tunnel: /0 prefix",
+			"field", field,
+		)
+		return defaultRoutes, nil
+	}
+	seen := make(map[netip.Prefix]struct{}, len(routes))
+	normalized := make([]string, 0, len(routes))
+	for i, prefix := range prefixes {
 		prefixMasked := prefix.Masked()
 		if prefix != prefixMasked {
 			slog.Warn(
 				"client tunnel route host bits cleared",
 				"field", field,
-				"configured", cidr,
+				"configured", routes[i],
 				"effective", prefixMasked,
 			)
 		}
@@ -153,7 +165,7 @@ func effectiveTunnelRoutes(
 		)
 		normalized = append(normalized, route)
 	}
-	return normalized
+	return normalized, nil
 }
 
 // effectiveMTU determines the usable MTU for the configured address families.
