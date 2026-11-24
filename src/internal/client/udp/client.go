@@ -2,7 +2,6 @@ package udp
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -41,18 +40,13 @@ const (
 // New builds the complete client UDP packet loop.
 func New(
 	ctx context.Context,
-	transport io.ReadWriteCloser,
+	conn *net.UDPConn,
 	tun io.ReadWriter,
 	crypto crypto,
 	rekey rekeySession,
 	allowedSources map[netip.Addr]struct{},
-) (*Client, error) {
-	udpConn, err := unwrapUDPConn(transport)
-	if err != nil {
-		return nil, err
-	}
-
-	udpTransport := udptransport.NewClientConn(udpConn, writeDeadline)
+) *Client {
+	udpTransport := udptransport.NewClientConn(conn, writeDeadline)
 	outbound := packetsender.New(udpTransport, crypto)
 	tunHandler := newTunHandler(ctx, tun, outbound, rekey, allowedSources)
 	transportHandler := newTransportHandler(ctx, udpTransport, tun, crypto, rekey, outbound)
@@ -61,7 +55,7 @@ func New(
 		ctx:       ctx,
 		tun:       tunHandler,
 		transport: transportHandler,
-	}, nil
+	}
 }
 
 // Run moves packets in both directions until the context is cancelled or one
@@ -86,23 +80,4 @@ func (c *Client) Run() error {
 			}
 		}
 	}
-}
-
-func unwrapUDPConn(transport io.ReadWriteCloser) (*net.UDPConn, error) {
-	current := transport
-	for range 8 {
-		if udpConn, ok := current.(*net.UDPConn); ok {
-			return udpConn, nil
-		}
-		unwrapper, ok := current.(interface{ Unwrap() io.ReadWriteCloser })
-		if !ok {
-			break
-		}
-		next := unwrapper.Unwrap()
-		if next == nil || next == current {
-			break
-		}
-		current = next
-	}
-	return nil, fmt.Errorf("udp transport must wrap *net.UDPConn, got %T", transport)
 }
