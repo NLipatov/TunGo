@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	publicKeyEnvVar  = "X25519_PUBLIC_KEY"
-	privateKeyEnvVar = "X25519_PRIVATE_KEY"
+	publicKeyEnvVar              = "X25519_PUBLIC_KEY"
+	privateKeyEnvVar             = "X25519_PRIVATE_KEY"
+	tempConfigurationFilePattern = ".server_configuration-*.json"
 )
 
 // File owns the persisted server configuration and its mutations.
@@ -131,15 +132,35 @@ func (f *File) create(configuration Configuration) error {
 	if err != nil {
 		return err
 	}
-	fd, err := os.OpenFile(f.path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), tempConfigurationFilePattern)
 	if err != nil {
 		return err
 	}
-	if _, err = fd.Write(data); err != nil {
-		_ = fd.Close()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+	if _, err := tmp.Write(data); err != nil {
 		return err
 	}
-	return fd.Close()
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(tmp.Name(), f.path); err != nil {
+		return err
+	}
+	_ = os.Remove(tmp.Name())
+	if err := f.syncDir(); err != nil {
+		slog.Warn(
+			"server configuration directory was not synced",
+			"path", filepath.Dir(f.path),
+			"err", err,
+		)
+	}
+	return nil
 }
 
 func (f *File) write(configuration Configuration) error {
@@ -150,7 +171,7 @@ func (f *File) write(configuration Configuration) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(f.path), ".server_configuration-*.json")
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), tempConfigurationFilePattern)
 	if err != nil {
 		return err
 	}
