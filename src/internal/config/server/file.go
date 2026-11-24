@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	publicKeyEnvVar  = "X25519_PUBLIC_KEY"
-	privateKeyEnvVar = "X25519_PRIVATE_KEY"
+	publicKeyEnvVar              = "X25519_PUBLIC_KEY"
+	privateKeyEnvVar             = "X25519_PRIVATE_KEY"
+	tempConfigurationFilePattern = ".server_configuration-*.json"
 )
 
 // File owns the persisted server configuration and its mutations.
@@ -43,24 +44,38 @@ func (f *File) Path() string {
 	return f.path
 }
 
-func (f *File) Load() (*Configuration, error) {
-	configuration, err := f.read()
-	if err == nil {
-		return configuration, nil
+// Prepare makes the configuration ready for the server: it creates the file with
+// defaults when it does not exist and adds a key pair when the file has none.
+func (f *File) Prepare() error {
+	if err := f.createDefaultIfNotExist(); err != nil {
+		return err
 	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-
-	configuration = newConfiguration()
-	if err := f.write(*configuration); err != nil {
-		return nil, fmt.Errorf("could not write default configuration: %w", err)
-	}
-	slog.Info("server configuration created with defaults", "path", f.path)
-	return f.read()
+	return f.ensureKeys()
 }
 
-func (f *File) read() (*Configuration, error) {
+// createDefaultIfNotExist writes the default configuration when no file exists.
+// A file created concurrently by another process, for example an editor, is kept.
+func (f *File) createDefaultIfNotExist() error {
+	// Check first so that an existing configuration needs no write access to its directory.
+	if _, err := os.Stat(f.path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	err := f.create(*newConfiguration())
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("could not write default configuration: %w", err)
+	}
+	slog.Info("server configuration created with defaults", "path", f.path)
+	return nil
+}
+
+// Read reads the existing configuration without creating it.
+// It fails with an os.ErrNotExist error when the file does not exist.
+func (f *File) Read() (*Configuration, error) {
 	data, err := os.ReadFile(f.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -115,30 +130,103 @@ func applyBoolEnvironment(name string, destination *bool) {
 	}
 }
 
-func (f *File) write(configuration Configuration) error {
+// createTemp creates a temporary configuration file.
+// On success, the caller is responsible for deleting the temporary file.
+func (f *File) createTemp(configuration Configuration) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
+		return "", err
+	}
 	data, err := json.MarshalIndent(configuration, "", "\t")
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
-		return err
+	var success bool
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), tempConfigurationFilePattern)
+	if err != nil {
+		return "", err
 	}
-	return os.WriteFile(f.path, data, 0600)
+	defer func() {
+		if !success {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	success = true
+	return tmp.Name(), nil
 }
 
-func (f *File) update(update func(*Configuration) error) error {
-	configuration, err := f.Load()
+func (f *File) create(configuration Configuration) error {
+	tmp, err := f.createTemp(configuration)
+	if err != nil {
+		return fmt.Errorf("could not write a temporary server configuration: %w", err)
+	}
+	if err := os.Link(tmp, f.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	_ = os.Remove(tmp)
+	if err := f.syncDir(); err != nil {
+		slog.Warn(
+			"server configuration directory was not synced",
+			"path", filepath.Dir(f.path),
+			"err", err,
+		)
+	}
+	return nil
+}
+
+func (f *File) replace(configuration Configuration) error {
+	tmp, err := f.createTemp(configuration)
+	if err != nil {
+		return fmt.Errorf("could not write a temporary server configuration: %w", err)
+	}
+	if err := os.Rename(tmp, f.path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.syncDir(); err != nil {
+		slog.Warn(
+			"server configuration directory was not synced",
+			"path", filepath.Dir(f.path),
+			"err", err,
+		)
+	}
+	return nil
+}
+
+func (f *File) syncDir() error {
+	dir, err := os.Open(filepath.Dir(f.path))
 	if err != nil {
 		return err
 	}
-	if err := update(configuration); err != nil {
-		return err
-	}
-	return f.write(*configuration)
+	defer func() {
+		_ = dir.Close()
+	}()
+	return dir.Sync()
 }
 
-func (f *File) EnsureKeys() error {
-	configuration, err := f.Load()
+func (f *File) update(change func(*Configuration) error) error {
+	configuration, err := f.Read()
+	if err != nil {
+		return err
+	}
+	if err := change(configuration); err != nil {
+		return err
+	}
+	return f.replace(*configuration)
+}
+
+func (f *File) ensureKeys() error {
+	configuration, err := f.Read()
 	if err != nil {
 		return err
 	}
@@ -157,7 +245,7 @@ func (f *File) EnsureKeys() error {
 	}
 	configuration.X25519PublicKey = append([]byte(nil), public...)
 	configuration.X25519PrivateKey = append([]byte(nil), private...)
-	if err := f.write(*configuration); err != nil {
+	if err := f.replace(*configuration); err != nil {
 		return err
 	}
 	slog.Info("server key pair saved", "source", source)
@@ -204,8 +292,12 @@ func validateX25519KeyPair(public, private []byte) error {
 	return nil
 }
 
+// Peers returns copies of the allowed peers. Without a configuration file there are no peers yet.
 func (f *File) Peers() ([]AllowedPeer, error) {
-	configuration, err := f.Load()
+	configuration, err := f.Read()
+	if errors.Is(err, os.ErrNotExist) {
+		return []AllowedPeer{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

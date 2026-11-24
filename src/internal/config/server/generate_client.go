@@ -30,10 +30,10 @@ type GeneratedClient struct {
 
 // GenerateClient creates a client configuration and registers its peer.
 func (f *File) GenerateClient() (GeneratedClient, error) {
-	if err := f.EnsureKeys(); err != nil {
-		return GeneratedClient{}, fmt.Errorf("could not prepare server keys: %w", err)
+	if err := f.Prepare(); err != nil {
+		return GeneratedClient{}, fmt.Errorf("could not prepare server configuration: %w", err)
 	}
-	serverConfiguration, err := f.Load()
+	serverConfiguration, err := f.Read()
 	if err != nil {
 		return GeneratedClient{}, fmt.Errorf("failed to read server configuration: %w", err)
 	}
@@ -96,7 +96,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		Enabled:   true,
 		ClientID:  clientID,
 	})
-	if err := f.write(*serverConfiguration); err != nil {
+	if err := f.replace(*serverConfiguration); err != nil {
 		registrationErr := fmt.Errorf("failed to register client: %w", err)
 		if removeErr := os.Remove(path); removeErr != nil {
 			return GeneratedClient{}, errors.Join(

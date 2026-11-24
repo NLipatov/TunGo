@@ -11,6 +11,7 @@ import (
 	serverconfig "tungo/internal/config/server"
 	"tungo/internal/config/settings"
 	"tungo/internal/mode"
+	"tungo/internal/platform"
 	bubbleTea "tungo/internal/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
@@ -76,8 +77,12 @@ func TestTUIRunRuntimeReportsServerConfigurationErrors(t *testing.T) {
 		ui := newTestTUI(t)
 		ui.serverFile = serverconfig.NewFile(t.TempDir())
 		err := ui.runRuntime(context.Background(), mode.Server, logBuffer)
-		if err == nil || !strings.Contains(err.Error(), "load server configuration") {
-			t.Fatalf("runRuntime() error = %v", err)
+		want := "could not prepare server configuration"
+		if !platform.ServerModeSupported() {
+			want = "server runtime is not supported"
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("runRuntime() error = %v, want it to contain %q", err, want)
 		}
 	})
 }

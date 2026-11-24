@@ -96,8 +96,11 @@ func (w *configWatcher) watch(ctx context.Context) {
 			if eventFile != configFileName {
 				continue
 			}
-			// Watch for Write, Create, and Rename (atomic writes use rename)
-			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+			// React to Write and Create only. An atomic write (rename over the file)
+			// arrives as Create. Rename for this name means the file was moved away,
+			// for example by an editor that saves by renaming, and reloading then
+			// would find no file and replace it with defaults.
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				slog.Info("ConfigWatcher detected config change", "op", event.Op)
 				prevPeers = w.checkAndRevoke(prevPeers)
 			}
@@ -115,7 +118,7 @@ func (w *configWatcher) watch(ctx context.Context) {
 
 // loadCurrentState returns the current peer access snapshot.
 func (w *configWatcher) loadCurrentState() map[string]peerAccessState {
-	conf, err := w.file.Load()
+	conf, err := w.file.Read()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load initial config", "err", err)
 		return nil
@@ -136,7 +139,7 @@ func (w *configWatcher) loadCurrentState() map[string]peerAccessState {
 // 1. Revokes sessions for peers that were removed or disabled
 // 2. Updates the runtime AllowedPeers map for new handshake lookups
 func (w *configWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
-	conf, err := w.file.Load()
+	conf, err := w.file.Read()
 	if err != nil {
 		slog.Warn("ConfigWatcher failed to load config", "err", err)
 		return prevPeers
