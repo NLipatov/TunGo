@@ -81,12 +81,3 @@ func IsAllowedSource(packet []byte, allowed map[netip.Addr]struct{}) bool {
 	_, found := allowed[src.Unmap()]
 	return found
 }
-
-// ExtractIPVersion extracts the IP version from a packet.
-// Returns 4 for IPv4, 6 for IPv6, or 0 if the packet is empty.
-func ExtractIPVersion(packet []byte) uint8 {
-	if len(packet) < 1 {
-		return 0
-	}
-	return packet[0] >> 4
-}
