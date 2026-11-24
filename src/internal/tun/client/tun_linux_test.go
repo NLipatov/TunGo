@@ -31,8 +31,6 @@ type clientTUNIPMock struct {
 	routeDelTargets     []netip.Addr
 	addedSplits4        [][]string
 	addedSplits6        [][]string
-	deletedSplits4      [][]string
-	deletedSplits6      [][]string
 	deletedInterfaces   []string
 	linkDeleteErr       error
 }
@@ -74,16 +72,6 @@ func (m *clientTUNIPMock) RouteAddSplitDev(_ string, prefixes []string) error {
 func (m *clientTUNIPMock) Route6AddSplitDev(_ string, prefixes []string) error {
 	m.addedSplits6 = append(m.addedSplits6, slices.Clone(prefixes))
 	return m.mark("split6")
-}
-func (m *clientTUNIPMock) RouteDelSplitDefault(_ string, prefixes []string) error {
-	m.deletedSplits4 = append(m.deletedSplits4, slices.Clone(prefixes))
-	m.log.WriteString("splitdel;")
-	return nil
-}
-func (m *clientTUNIPMock) Route6DelSplitDefault(_ string, prefixes []string) error {
-	m.deletedSplits6 = append(m.deletedSplits6, slices.Clone(prefixes))
-	m.log.WriteString("splitdel6;")
-	return nil
 }
 func (m *clientTUNIPMock) RouteDel(target netip.Addr) error {
 	m.routeDelTargets = append(m.routeDelTargets, target)
@@ -212,8 +200,6 @@ func newTestTUN(
 		RouteDefault() (string, error)
 		RouteAddSplitDev(string, []string) error
 		Route6AddSplitDev(string, []string) error
-		RouteDelSplitDefault(string, []string) error
-		Route6DelSplitDefault(string, []string) error
 		RouteGet(netip.Addr) (string, error)
 		RouteReplaceDev(netip.Addr, string) error
 		RouteReplaceViaDev(netip.Addr, string, netip.Addr) error
@@ -289,9 +275,6 @@ func assertOpenRolledBack(t *testing.T, m *TUN, ipMock *clientTUNIPMock) {
 	}
 	if m.tun != nil {
 		t.Fatal("failed Open retained TUN")
-	}
-	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
-		t.Fatalf("rollback explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
 	}
 	for _, cleanupStep := range []string{"ldel;", "rdel;"} {
 		if !strings.Contains(ipMock.log.String(), cleanupStep) {
@@ -410,8 +393,6 @@ func TestLinuxTUNAppliesTunnelRoutes(t *testing.T) {
 			}{
 				{name: "add IPv4", calls: ipMock.addedSplits4, want: test.wantV4, count: 1},
 				{name: "add IPv6", calls: ipMock.addedSplits6, want: test.wantV6, count: 1},
-				{name: "delete IPv4", calls: ipMock.deletedSplits4, count: 0},
-				{name: "delete IPv6", calls: ipMock.deletedSplits6, count: 0},
 			} {
 				if len(check.calls) != check.count {
 					t.Fatalf("%s calls = %v, want %d calls", check.name, check.calls, check.count)
@@ -461,9 +442,6 @@ func TestLinuxTUNDeletesInterfacesWithDifferentSubnets(t *testing.T) {
 
 	if want := []string{"tun1", "tun0"}; !slices.Equal(ipMock.deletedInterfaces, want) {
 		t.Errorf("deleted interfaces = %v, want %v", ipMock.deletedInterfaces, want)
-	}
-	if len(ipMock.deletedSplits4) != 0 || len(ipMock.deletedSplits6) != 0 {
-		t.Fatalf("Close() explicitly deleted split routes: IPv4=%v IPv6=%v", ipMock.deletedSplits4, ipMock.deletedSplits6)
 	}
 }
 
