@@ -124,35 +124,50 @@ func applyBoolEnvironment(name string, destination *bool) {
 	}
 }
 
-func (f *File) create(configuration Configuration) error {
+// createTmp creates a temporary configuration file.
+// On success, the caller is responsible for deleting the temporary file.
+func (f *File) createTmp(configuration Configuration) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
-		return err
+		return "", err
 	}
 	data, err := json.MarshalIndent(configuration, "", "\t")
 	if err != nil {
-		return err
+		return "", err
 	}
+	var success bool
 	tmp, err := os.CreateTemp(filepath.Dir(f.path), tempConfigurationFilePattern)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
+		if !success {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
 	}()
 	if _, err := tmp.Write(data); err != nil {
-		return err
+		return "", err
 	}
 	if err := tmp.Sync(); err != nil {
-		return err
+		return "", err
 	}
 	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	success = true
+	return tmp.Name(), nil
+}
+
+func (f *File) create(configuration Configuration) error {
+	tmp, err := f.createTmp(configuration)
+	if err != nil {
+		return fmt.Errorf("could not write a temporary server configuration: %w", err)
+	}
+	if err := os.Link(tmp, f.path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Link(tmp.Name(), f.path); err != nil {
-		return err
-	}
-	_ = os.Remove(tmp.Name())
+	_ = os.Remove(tmp)
 	if err := f.syncDir(); err != nil {
 		slog.Warn(
 			"server configuration directory was not synced",
@@ -164,37 +179,14 @@ func (f *File) create(configuration Configuration) error {
 }
 
 func (f *File) write(configuration Configuration) error {
-	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(configuration, "", "\t")
+	tmp, err := f.createTmp(configuration)
 	if err != nil {
+		return fmt.Errorf("could not write a temporary server configuration: %w", err)
+	}
+	if err := os.Rename(tmp, f.path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(f.path), tempConfigurationFilePattern)
-	if err != nil {
-		return err
-	}
-	var renamed bool
-	defer func() {
-		if !renamed {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if _, err = tmp.Write(data); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp.Name(), f.path); err != nil {
-		return err
-	}
-	renamed = true
 	if err := f.syncDir(); err != nil {
 		slog.Warn(
 			"server configuration directory was not synced",
