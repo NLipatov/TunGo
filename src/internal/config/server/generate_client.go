@@ -96,7 +96,7 @@ func (f *File) GenerateClient() (GeneratedClient, error) {
 		Enabled:   true,
 		ClientID:  clientID,
 	})
-	if err := f.write(*serverConfiguration); err != nil {
+	if err := f.replace(*serverConfiguration); err != nil {
 		registrationErr := fmt.Errorf("failed to register client: %w", err)
 		if removeErr := os.Remove(path); removeErr != nil {
 			return GeneratedClient{}, errors.Join(

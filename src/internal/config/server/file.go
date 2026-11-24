@@ -47,15 +47,15 @@ func (f *File) Path() string {
 // Prepare makes the configuration ready for the server: it creates the file with
 // defaults when it does not exist and adds a key pair when the file has none.
 func (f *File) Prepare() error {
-	if err := f.createIfNotExist(); err != nil {
+	if err := f.createDefaultIfNotExist(); err != nil {
 		return err
 	}
 	return f.ensureKeys()
 }
 
-// createIfNotExist writes the default configuration when no file exists.
+// createDefaultIfNotExist writes the default configuration when no file exists.
 // A file created concurrently by another process, for example an editor, is kept.
-func (f *File) createIfNotExist() error {
+func (f *File) createDefaultIfNotExist() error {
 	err := f.create(*newConfiguration())
 	if errors.Is(err, os.ErrExist) {
 		return nil
@@ -124,9 +124,9 @@ func applyBoolEnvironment(name string, destination *bool) {
 	}
 }
 
-// createTmp creates a temporary configuration file.
+// createTemp creates a temporary configuration file.
 // On success, the caller is responsible for deleting the temporary file.
-func (f *File) createTmp(configuration Configuration) (string, error) {
+func (f *File) createTemp(configuration Configuration) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
 		return "", err
 	}
@@ -159,7 +159,7 @@ func (f *File) createTmp(configuration Configuration) (string, error) {
 }
 
 func (f *File) create(configuration Configuration) error {
-	tmp, err := f.createTmp(configuration)
+	tmp, err := f.createTemp(configuration)
 	if err != nil {
 		return fmt.Errorf("could not write a temporary server configuration: %w", err)
 	}
@@ -178,8 +178,8 @@ func (f *File) create(configuration Configuration) error {
 	return nil
 }
 
-func (f *File) write(configuration Configuration) error {
-	tmp, err := f.createTmp(configuration)
+func (f *File) replace(configuration Configuration) error {
+	tmp, err := f.createTemp(configuration)
 	if err != nil {
 		return fmt.Errorf("could not write a temporary server configuration: %w", err)
 	}
@@ -208,15 +208,15 @@ func (f *File) syncDir() error {
 	return dir.Sync()
 }
 
-func (f *File) update(update func(*Configuration) error) error {
+func (f *File) update(change func(*Configuration) error) error {
 	configuration, err := f.Read()
 	if err != nil {
 		return err
 	}
-	if err := update(configuration); err != nil {
+	if err := change(configuration); err != nil {
 		return err
 	}
-	return f.write(*configuration)
+	return f.replace(*configuration)
 }
 
 func (f *File) ensureKeys() error {
@@ -239,7 +239,7 @@ func (f *File) ensureKeys() error {
 	}
 	configuration.X25519PublicKey = append([]byte(nil), public...)
 	configuration.X25519PrivateKey = append([]byte(nil), private...)
-	if err := f.write(*configuration); err != nil {
+	if err := f.replace(*configuration); err != nil {
 		return err
 	}
 	slog.Info("server key pair saved", "source", source)

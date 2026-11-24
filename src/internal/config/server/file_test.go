@@ -152,7 +152,7 @@ func TestFileWriteRemovesTemporaryFileOnFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewFile(path).write(*newConfiguration()); err == nil {
+	if err := NewFile(path).replace(*newConfiguration()); err == nil {
 		t.Fatal("write() succeeded over a directory")
 	}
 	entries, err := os.ReadDir(directory)
@@ -168,14 +168,14 @@ func TestFileWriteRemovesTemporaryFileOnFailure(t *testing.T) {
 	}
 }
 
-func TestFileCreateIfNotExistWritesDefaultConfiguration(t *testing.T) {
+func TestFileCreateDefaultIfNotExistWritesDefaultConfiguration(t *testing.T) {
 	t.Setenv("EnableTCP", "")
 	t.Setenv("EnableUDP", "")
 	t.Setenv("EnableWS", "")
 	logs := captureServerConfigLogs(t)
 	path := filepath.Join(t.TempDir(), "nested", "server_configuration.json")
 	file := NewFile(path)
-	if err := file.createIfNotExist(); err != nil {
+	if err := file.createDefaultIfNotExist(); err != nil {
 		t.Fatal(err)
 	}
 	configuration, err := file.Read()
@@ -201,7 +201,7 @@ func TestFileReadAppliesEnvironmentWithoutPersistingIt(t *testing.T) {
 	t.Setenv("EnableTCP", "false")
 
 	file := NewFile(path)
-	if err := file.createIfNotExist(); err != nil {
+	if err := file.createDefaultIfNotExist(); err != nil {
 		t.Fatal(err)
 	}
 	configuration, err := file.Read()
