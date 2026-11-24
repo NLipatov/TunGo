@@ -277,6 +277,24 @@ func TestFileMutationPersistsEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestFilePrepareNeedsNoWriteAccessForExistingConfiguration(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions do not prevent file creation here")
+	}
+	directory := filepath.Join(t.TempDir(), "configuration")
+	file := NewFile(filepath.Join(directory, "server_configuration.json"))
+	if err := file.Prepare(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0700) })
+	if err := file.Prepare(); err != nil {
+		t.Fatalf("Prepare() on a read-only directory with a ready configuration: %v", err)
+	}
+}
+
 func TestFileLoadErrors(t *testing.T) {
 	t.Run("invalid JSON", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "server_configuration.json")

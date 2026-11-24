@@ -56,6 +56,12 @@ func (f *File) Prepare() error {
 // createDefaultIfNotExist writes the default configuration when no file exists.
 // A file created concurrently by another process, for example an editor, is kept.
 func (f *File) createDefaultIfNotExist() error {
+	// Check first so that an existing configuration needs no write access to its directory.
+	if _, err := os.Stat(f.path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	err := f.create(*newConfiguration())
 	if errors.Is(err, os.ErrExist) {
 		return nil
