@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"sync/atomic"
 	"time"
@@ -177,10 +178,11 @@ func (c *Client) runTunnel(
 	defer c.ready.Store(false)
 	switch activeSettings.Protocol {
 	case settings.UDP:
-		tunnel, err := udp.New(ctx, conn, tun, crypto, rekey, allowed)
-		if err != nil {
-			return err
+		udpConn, ok := conn.(*net.UDPConn)
+		if !ok {
+			return fmt.Errorf("udp transport must be *net.UDPConn, got %T", conn)
 		}
+		tunnel := udp.New(ctx, udpConn, tun, crypto, rekey, allowed)
 		c.ready.Store(true)
 		c.sessionReadyAt = time.Now()
 		slog.Info("tunneling traffic via TUN device")

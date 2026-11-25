@@ -54,7 +54,6 @@ type recordingRunner struct {
 	inputs        []string
 	outputCalls   [][]string
 	output        []byte
-	failOnCall    int
 }
 
 func (m *recordingRunner) Run(_ string, _ ...string) error { return nil }
@@ -65,9 +64,6 @@ func (m *recordingRunner) Output(name string, args ...string) ([]byte, error) {
 func (m *recordingRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	call := append([]string{name}, args...)
 	m.combinedCalls = append(m.combinedCalls, call)
-	if m.failOnCall > 0 && len(m.combinedCalls) == m.failOnCall {
-		return []byte("boom"), errors.New("boom")
-	}
 	return nil, nil
 }
 
@@ -185,10 +181,8 @@ func TestRouteDefault(t *testing.T) {
 
 func TestSplitRoutesEmpty(t *testing.T) {
 	for name, run := range map[string]func(*Configurator, string, []string) error{
-		"add IPv4":    (*Configurator).RouteAddSplitDev,
-		"delete IPv4": (*Configurator).RouteDelSplitDefault,
-		"add IPv6":    (*Configurator).Route6AddSplitDev,
-		"delete IPv6": (*Configurator).Route6DelSplitDefault,
+		"add IPv4": (*Configurator).RouteAddSplitDev,
+		"add IPv6": (*Configurator).Route6AddSplitDev,
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := &recordingRunner{}
@@ -280,42 +274,6 @@ func TestRouteAddSplitDevLargeBatch(t *testing.T) {
 		if want := "route add " + prefix + " dev tun0"; lines[i] != want {
 			t.Fatalf("line %d = %q, want %q", i+1, lines[i], want)
 		}
-	}
-}
-
-func TestRouteDelSplitDefault(t *testing.T) {
-	rec := &recordingRunner{failOnCall: 1}
-	w := New(rec)
-
-	if err := w.RouteDelSplitDefault("tun0", []string{"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24"}); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	want := [][]string{
-		{"ip", "route", "del", "192.0.2.0/24", "dev", "tun0"},
-		{"ip", "route", "del", "198.51.100.0/24", "dev", "tun0"},
-		{"ip", "route", "del", "203.0.113.0/24", "dev", "tun0"},
-	}
-	if !reflect.DeepEqual(rec.combinedCalls, want) {
-		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
-	}
-}
-
-func TestRoute6DelSplitDefault(t *testing.T) {
-	rec := &recordingRunner{failOnCall: 1}
-	w := New(rec)
-
-	if err := w.Route6DelSplitDefault("tun0", []string{"2001:db8:1::/64", "2001:db8:2::/64", "2001:db8:3::/64"}); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	want := [][]string{
-		{"ip", "-6", "route", "del", "2001:db8:1::/64", "dev", "tun0"},
-		{"ip", "-6", "route", "del", "2001:db8:2::/64", "dev", "tun0"},
-		{"ip", "-6", "route", "del", "2001:db8:3::/64", "dev", "tun0"},
-	}
-	if !reflect.DeepEqual(rec.combinedCalls, want) {
-		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
 	}
 }
 

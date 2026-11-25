@@ -58,18 +58,6 @@ func allocateIP(subnet netip.Prefix, clientID int) (netip.Addr, error) {
 func (n Network) HasIPv4() bool { return n.IPv4.IsValid() }
 func (n Network) HasIPv6() bool { return n.IPv6.IsValid() }
 
-func (n Network) IsZero() bool {
-	return n.TunName == "" &&
-		!n.IPv4Subnet.IsValid() &&
-		!n.IPv6Subnet.IsValid() &&
-		n.Server == (Host{}) &&
-		n.Port == 0 &&
-		len(n.DNSv4) == 0 &&
-		len(n.DNSv6) == 0 &&
-		!n.IPv4.IsValid() &&
-		!n.IPv6.IsValid()
-}
-
 // IPv4CIDR returns the IPv4 address combined with the subnet prefix length, e.g. "10.0.0.2/24".
 func (n Network) IPv4CIDR() (string, error) {
 	if !n.IPv4.IsValid() {
@@ -90,10 +78,4 @@ func (n Network) IPv6CIDR() (string, error) {
 		return "", fmt.Errorf("no IPv6 subnet")
 	}
 	return netip.PrefixFrom(n.IPv6.Unmap(), n.IPv6Subnet.Bits()).String(), nil
-}
-
-// WithIPv6Subnet returns a copy with the IPv6Subnet field set.
-func (n Network) WithIPv6Subnet(subnet netip.Prefix) Network {
-	n.IPv6Subnet = subnet
-	return n
 }

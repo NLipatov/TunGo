@@ -22,24 +22,6 @@ func TestActiveStateBlocksRuntimeStart(t *testing.T) {
 	}
 }
 
-func TestActiveStateIndicatesRunning(t *testing.T) {
-	cases := []struct {
-		state UnitActiveState
-		want  bool
-	}{
-		{UnitActiveStateActive, true},
-		{UnitActiveStateReloading, true},
-		{UnitActiveStateActivating, false},
-		{UnitActiveStateInactive, false},
-		{UnitActiveStateUnknown, false},
-	}
-	for _, tc := range cases {
-		if got := ActiveStateIndicatesRunning(tc.state); got != tc.want {
-			t.Fatalf("state=%q: got %v want %v", tc.state, got, tc.want)
-		}
-	}
-}
-
 func TestIsInstallerManagedFragmentPath(t *testing.T) {
 	if IsInstallerManagedFragmentPath("", "/etc/systemd/system/tungo.service") {
 		t.Fatal("expected empty fragment path to be unmanaged")

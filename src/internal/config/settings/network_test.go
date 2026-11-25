@@ -146,25 +146,3 @@ func TestCIDR_NoSubnet(t *testing.T) {
 		}
 	})
 }
-
-func TestIsZero(t *testing.T) {
-	if !(Network{}).IsZero() {
-		t.Fatal("expected zero Network to be IsZero")
-	}
-	a := Network{TunName: "tun0"}
-	if a.IsZero() {
-		t.Fatal("non-zero Network should not be IsZero")
-	}
-}
-
-func TestWithIPv6Subnet(t *testing.T) {
-	a := Network{TunName: "tun0"}
-	subnet := netip.MustParsePrefix("fd00::/64")
-	b := a.WithIPv6Subnet(subnet)
-	if b.IPv6Subnet != subnet {
-		t.Fatalf("WithIPv6Subnet: want %s, got %s", subnet, b.IPv6Subnet)
-	}
-	if a.IPv6Subnet.IsValid() {
-		t.Fatal("original should not be mutated")
-	}
-}

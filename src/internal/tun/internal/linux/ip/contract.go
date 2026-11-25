@@ -12,8 +12,6 @@ type Contract interface {
 	RouteDefault() (string, error)
 	RouteAddSplitDev(devName string, split []string) error
 	Route6AddSplitDev(devName string, split []string) error
-	RouteDelSplitDefault(devName string, split []string) error
-	Route6DelSplitDefault(devName string, split []string) error
 	RouteGet(hostAddr netip.Addr) (string, error)
 	RouteReplaceDev(hostAddr netip.Addr, ifName string) error
 	RouteReplaceViaDev(hostAddr netip.Addr, ifName string, gateway netip.Addr) error

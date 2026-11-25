@@ -124,20 +124,6 @@ func (i *Configurator) addSplitRoutes(devName string, splits []string, family st
 	return nil
 }
 
-func (i *Configurator) RouteDelSplitDefault(devName string, split []string) error {
-	for _, prefix := range split {
-		_, _ = i.runner.CombinedOutput("ip", "route", "del", prefix, "dev", devName)
-	}
-	return nil
-}
-
-func (i *Configurator) Route6DelSplitDefault(devName string, split []string) error {
-	for _, prefix := range split {
-		_, _ = i.runner.CombinedOutput("ip", "-6", "route", "del", prefix, "dev", devName)
-	}
-	return nil
-}
-
 // RouteGet gets the route to a host.
 func (i *Configurator) RouteGet(hostAddr netip.Addr) (string, error) {
 	hostAddr = hostAddr.Unmap()

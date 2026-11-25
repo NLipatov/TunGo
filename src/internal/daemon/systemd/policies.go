@@ -15,15 +15,6 @@ func ActiveStateBlocksRuntimeStart(state UnitActiveState) bool {
 	}
 }
 
-func ActiveStateIndicatesRunning(state UnitActiveState) bool {
-	switch state {
-	case UnitActiveStateActive, UnitActiveStateReloading:
-		return true
-	default:
-		return false
-	}
-}
-
 func IsInstallerManagedFragmentPath(fragmentPath string, managedPath string) bool {
 	normalized := strings.TrimSpace(fragmentPath)
 	if normalized == "" || strings.EqualFold(normalized, "unknown") {

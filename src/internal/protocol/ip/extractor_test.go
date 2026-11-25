@@ -173,25 +173,6 @@ func TestExtractDestIP_TooShort(t *testing.T) {
 	}
 }
 
-func TestExtractIPVersion(t *testing.T) {
-	// IPv4
-	packet := []byte{0x45}
-	if ExtractIPVersion(packet) != 4 {
-		t.Fatal("should extract version 4")
-	}
-
-	// IPv6
-	packet = []byte{0x60}
-	if ExtractIPVersion(packet) != 6 {
-		t.Fatal("should extract version 6")
-	}
-
-	// Empty
-	if ExtractIPVersion([]byte{}) != 0 {
-		t.Fatal("should return 0 for empty packet")
-	}
-}
-
 func TestExtractSourceIP_RealIPv4Packet(t *testing.T) {
 	// A more realistic IPv4 header (ICMP echo request pattern)
 	packet := []byte{
