@@ -2,7 +2,6 @@ package tcp
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
@@ -45,7 +44,7 @@ func New(
 		peers: peers,
 		registrar: newRegistrar(
 			func() handshake { return newHandshake() },
-			func(material chacha20.KeyMaterial, isServer bool) (crypto, epochController, error) {
+			func(material chacha20.KeyMaterial, isServer bool) (chacha20.Crypto, epochController, error) {
 				return tcpcrypto.NewFromHandshake(material, isServer)
 			},
 			peers,
@@ -131,11 +130,10 @@ func (s *Server) handleFrame(peer *session.Peer, sender *peerSender, frame []byt
 	if len(frame) < chacha20.TCPEpochPrefixSize+chacha20poly1305.Overhead || len(frame) > settings.DefaultEthernetMTU+chacha20.TCPOverhead {
 		return nil
 	}
-	plaintext, err := peer.Decrypt(frame)
+	plaintext, epoch, err := peer.Decrypt(frame)
 	if err != nil {
 		return err
 	}
-	epoch := binary.BigEndian.Uint16(frame[:chacha20.TCPEpochPrefixSize])
 	peer.ObservePeerEpoch(epoch)
 	if handled, err := s.handleService(peer, sender, epoch, plaintext); handled {
 		return err

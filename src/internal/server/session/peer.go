@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/keys"
 )
 
@@ -19,11 +20,6 @@ var ErrPeerClosed = errors.New("peer closed")
 type PeerSender interface {
 	Send([]byte) error
 	Close() error
-}
-
-type crypto interface {
-	Encrypt([]byte) ([]byte, error)
-	Decrypt([]byte) ([]byte, error)
 }
 
 type peerRekey interface {
@@ -39,7 +35,7 @@ type peerRekey interface {
 // preventing concurrent zeroization. Encryption a sender performs after Send
 // returns is stopped by PeerSender.Close before zeroization.
 type Peer struct {
-	crypto       crypto
+	crypto       chacha20.Crypto
 	rekey        peerRekey
 	sender       PeerSender
 	internalIP   netip.Addr
@@ -54,7 +50,7 @@ type Peer struct {
 }
 
 func NewPeer(
-	crypto crypto,
+	crypto chacha20.Crypto,
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
@@ -64,7 +60,7 @@ func NewPeer(
 }
 
 func NewPeerWithAuth(
-	crypto crypto,
+	crypto chacha20.Crypto,
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
@@ -78,7 +74,7 @@ func NewPeerWithAuth(
 }
 
 func newPeer(
-	crypto crypto,
+	crypto chacha20.Crypto,
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
@@ -88,7 +84,7 @@ func newPeer(
 }
 
 func newPeerWithAuth(
-	crypto crypto,
+	crypto chacha20.Crypto,
 	rekey peerRekey,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
@@ -195,12 +191,12 @@ func (p *Peer) LastActivity() time.Time {
 
 // Decrypt decrypts data while protecting session crypto from concurrent
 // lifecycle teardown and zeroization.
-func (p *Peer) Decrypt(data []byte) ([]byte, error) {
+func (p *Peer) Decrypt(data []byte) ([]byte, uint16, error) {
 	p.cryptoMu.RLock()
 	defer p.cryptoMu.RUnlock()
 
 	if p.closed.Load() {
-		return nil, ErrPeerClosed
+		return nil, 0, ErrPeerClosed
 	}
 	return p.crypto.Decrypt(data)
 }

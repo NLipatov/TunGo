@@ -2,7 +2,6 @@ package tcp
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
@@ -26,32 +25,32 @@ type transportRekey interface {
 }
 
 type transportHandler struct {
-	ctx                 context.Context
-	reader              io.Reader
-	writer              io.Writer
-	cryptographyService crypto
-	rekey               transportRekey
-	egress              sender
-	lastRecvNano        atomic.Int64
-	pingBuf             []byte
+	ctx          context.Context
+	reader       io.Reader
+	writer       io.Writer
+	crypto       chacha20.Crypto
+	rekey        transportRekey
+	egress       sender
+	lastRecvNano atomic.Int64
+	pingBuf      []byte
 }
 
 func newTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService crypto,
+	crypto chacha20.Crypto,
 	rekey transportRekey,
 	egress sender,
 ) *transportHandler {
 	t := &transportHandler{
-		ctx:                 ctx,
-		reader:              reader,
-		writer:              writer,
-		cryptographyService: cryptographyService,
-		rekey:               rekey,
-		egress:              egress,
-		pingBuf:             make([]byte, chacha20.TCPEpochPrefixSize+3, chacha20.TCPEpochPrefixSize+3+chacha20.TCPOverhead),
+		ctx:     ctx,
+		reader:  reader,
+		writer:  writer,
+		crypto:  crypto,
+		rekey:   rekey,
+		egress:  egress,
+		pingBuf: make([]byte, chacha20.TCPEpochPrefixSize+3, chacha20.TCPEpochPrefixSize+3+chacha20.TCPOverhead),
 	}
 	t.lastRecvNano.Store(time.Now().UnixNano())
 	return t
@@ -80,12 +79,11 @@ func (t *transportHandler) HandleTransport() error {
 				continue
 			}
 
-			payload, payloadErr := t.cryptographyService.Decrypt(buffer[:n])
+			payload, carrierEpoch, payloadErr := t.crypto.Decrypt(buffer[:n])
 			if payloadErr != nil {
 				slog.Warn("failed to decrypt data", "err", payloadErr)
 				return payloadErr
 			}
-			carrierEpoch := binary.BigEndian.Uint16(buffer[:chacha20.TCPEpochPrefixSize])
 			if t.rekey != nil {
 				t.rekey.ObservePeerEpoch(carrierEpoch)
 			}

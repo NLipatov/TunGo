@@ -80,9 +80,9 @@ func (c *Crypto) Encrypt(buf []byte) ([]byte, error) {
 	return buf[:chacha20.TCPEpochPrefixSize+len(ciphertext)], nil
 }
 
-func (c *Crypto) Decrypt(data []byte) ([]byte, error) {
+func (c *Crypto) Decrypt(data []byte) ([]byte, uint16, error) {
 	if len(data) < chacha20.TCPEpochPrefixSize {
-		return nil, fmt.Errorf("frame too short for epoch header")
+		return nil, 0, fmt.Errorf("frame too short for epoch header")
 	}
 	epoch := binary.BigEndian.Uint16(data[:chacha20.TCPEpochPrefixSize])
 
@@ -91,10 +91,14 @@ func (c *Crypto) Decrypt(data []byte) ([]byte, error) {
 
 	session := c.receiveSessionForEpoch(epoch)
 	if session == nil {
-		return nil, ErrUnknownEpoch
+		return nil, 0, ErrUnknownEpoch
 	}
 
-	return session.Decrypt(data[chacha20.TCPEpochPrefixSize:])
+	plaintext, err := session.Decrypt(data[chacha20.TCPEpochPrefixSize:])
+	if err != nil {
+		return nil, 0, err
+	}
+	return plaintext, epoch, nil
 }
 
 func (c *Crypto) receiveSessionForEpoch(epoch uint16) *Session {

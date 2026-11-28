@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/rekey"
 	udpcrypto "tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/keys"
@@ -26,9 +27,9 @@ type passthroughCrypto struct {
 }
 
 func (c *passthroughCrypto) Encrypt(data []byte) ([]byte, error) { return data, nil }
-func (c *passthroughCrypto) Decrypt([]byte) ([]byte, error) {
+func (c *passthroughCrypto) Decrypt([]byte) ([]byte, uint16, error) {
 	c.decrypts++
-	return c.plaintext, nil
+	return c.plaintext, 0, nil
 }
 func (c *passthroughCrypto) RouteID() uint64 { return c.routeID }
 
@@ -94,10 +95,7 @@ func TestServer_HandleEstablishedWritesPlaintextToTun(t *testing.T) {
 	peer := session.NewPeer(crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), nil)
 	tun := &testTun{}
 	server := &Server{tun: tun, peers: session.NewRepository()}
-	frame := make([]byte, udpcrypto.EpochOffset+2)
-	binary.BigEndian.PutUint16(frame[udpcrypto.EpochOffset:], 7)
-
-	if err := server.handleEstablished(peer.ExternalAddrPort(), peer, frame); err != nil {
+	if err := server.handleEstablished(peer.ExternalAddrPort(), peer, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(tun.writes) != 1 || string(tun.writes[0]) != string(plaintext) {
@@ -178,7 +176,7 @@ type failingEncryptCrypto struct{}
 func (failingEncryptCrypto) Encrypt([]byte) ([]byte, error) {
 	return nil, errors.New("nonce exhausted")
 }
-func (failingEncryptCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+func (failingEncryptCrypto) Decrypt([]byte) ([]byte, uint16, error) { return nil, 0, nil }
 
 type failingWriter struct{}
 
@@ -186,11 +184,8 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no buffe
 
 func TestServer_RunTunSendFailure(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		crypto interface {
-			Encrypt([]byte) ([]byte, error)
-			Decrypt([]byte) ([]byte, error)
-		}
+		name        string
+		crypto      chacha20.Crypto
 		writer      io.Writer
 		wantDeleted bool
 	}{

@@ -25,8 +25,8 @@ func (udpRegEpochManager) RetirePreviousEpoch() bool              { return true 
 // udpRegCrypto is a mock crypto.
 type udpRegCrypto struct{}
 
-func (udpRegCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
-func (udpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
+func (udpRegCrypto) Encrypt(b []byte) ([]byte, error)         { return b, nil }
+func (udpRegCrypto) Decrypt(b []byte) ([]byte, uint16, error) { return b, 0, nil }
 
 // udpRegHandshake is a mock handshake that reads from registration queue.
 type udpRegHandshake struct {
@@ -66,12 +66,12 @@ func (f *udpRegHandshakeFactory) NewHandshake() handshake {
 }
 
 type udpRegCryptoFactory struct {
-	crypto crypto
+	crypto chacha20.Crypto
 	ctrl   epochController
 	err    error
 }
 
-func (f *udpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, epochController, error) {
+func (f *udpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (chacha20.Crypto, epochController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}

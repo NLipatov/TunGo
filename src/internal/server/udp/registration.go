@@ -32,11 +32,6 @@ type rekeyV2Handshake interface {
 	RespondRekeyV2(prologue, msg1 []byte) (msg2, c2s, s2c []byte, err error)
 }
 
-type crypto interface {
-	Encrypt([]byte) ([]byte, error)
-	Decrypt([]byte) ([]byte, error)
-}
-
 type epochController interface {
 	ReadyForRekey() bool
 	SendEpoch() uint16
@@ -47,7 +42,7 @@ type epochController interface {
 }
 
 type newHandshake func() handshake
-type newCrypto func(chacha20.KeyMaterial, bool) (crypto, epochController, error)
+type newCrypto func(chacha20.KeyMaterial, bool) (chacha20.Crypto, epochController, error)
 
 const (
 	registrationQueueCapacity = 16

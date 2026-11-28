@@ -74,8 +74,8 @@ type plaintextCrypto struct {
 	plaintext []byte
 }
 
-func (c *plaintextCrypto) Encrypt(data []byte) ([]byte, error) { return data, nil }
-func (c *plaintextCrypto) Decrypt([]byte) ([]byte, error)      { return c.plaintext, nil }
+func (c *plaintextCrypto) Encrypt(data []byte) ([]byte, error)    { return data, nil }
+func (c *plaintextCrypto) Decrypt([]byte) ([]byte, uint16, error) { return c.plaintext, 0, nil }
 
 type epochManager struct {
 	epoch uint16

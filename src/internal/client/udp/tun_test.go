@@ -39,7 +39,7 @@ func newDueTestRekeyCoordinator(controller testRekeyController) *tunnelrekey.Cli
 	)
 }
 
-// fakeCrypto implements config.crypto for testing
+// tunhandlerTestRakeCrypto implements chacha20.Crypto for testing
 type tunhandlerTestRakeCrypto struct {
 	prefix []byte
 	err    error
@@ -52,9 +52,9 @@ func (f *tunhandlerTestRakeCrypto) Encrypt(p []byte) ([]byte, error) {
 	return append(f.prefix, p...), nil
 }
 
-func (f *tunhandlerTestRakeCrypto) Decrypt(_ []byte) ([]byte, error) {
+func (f *tunhandlerTestRakeCrypto) Decrypt(_ []byte) ([]byte, uint16, error) {
 	// Not used in TunHandler tests
-	return nil, fmt.Errorf("not implemented")
+	return nil, 0, fmt.Errorf("not implemented")
 }
 
 // fakeReader allows custom Read behavior
@@ -106,8 +106,8 @@ func (c *tunHandlerTestCancelOnEncrypt) Encrypt(p []byte) ([]byte, error) {
 	}
 	return append(c.prefix, p...), nil
 }
-func (c *tunHandlerTestCancelOnEncrypt) Decrypt(_ []byte) ([]byte, error) {
-	return nil, fmt.Errorf("unused")
+func (c *tunHandlerTestCancelOnEncrypt) Decrypt(_ []byte) ([]byte, uint16, error) {
+	return nil, 0, fmt.Errorf("unused")
 }
 
 type tunHandlerTestCancelWriter struct {

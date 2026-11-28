@@ -35,11 +35,6 @@ type tunManager interface {
 	Close() error
 }
 
-type crypto interface {
-	Encrypt([]byte) ([]byte, error)
-	Decrypt([]byte) ([]byte, error)
-}
-
 type clientRekey interface {
 	MaybeBuildRekeyInit(time.Time, []byte) ([]byte, bool, error)
 	HandleRekeyAck(uint16, []byte) (bool, error)

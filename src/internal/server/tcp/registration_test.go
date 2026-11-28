@@ -46,8 +46,8 @@ func (f *tcpRegHandshakeFactory) NewHandshake() handshake {
 // tcpRegCrypto is a mock crypto.
 type tcpRegCrypto struct{}
 
-func (tcpRegCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
-func (tcpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
+func (tcpRegCrypto) Encrypt(b []byte) ([]byte, error)         { return b, nil }
+func (tcpRegCrypto) Decrypt(b []byte) ([]byte, uint16, error) { return b, 0, nil }
 
 // tcpRegEpochManager is a mock epoch manager.
 type tcpRegEpochManager struct{}
@@ -58,12 +58,12 @@ func (tcpRegEpochManager) RetirePreviousEpoch() bool              { return true 
 
 // tcpRegCryptoFactory returns a pre-configured crypto.
 type tcpRegCryptoFactory struct {
-	crypto crypto
+	crypto chacha20.Crypto
 	ctrl   epochController
 	err    error
 }
 
-func (f *tcpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, epochController, error) {
+func (f *tcpRegCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (chacha20.Crypto, epochController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}

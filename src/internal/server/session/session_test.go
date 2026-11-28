@@ -16,12 +16,12 @@ type testCrypto struct {
 }
 
 func (c *testCrypto) Encrypt(data []byte) ([]byte, error) { return data, nil }
-func (c *testCrypto) Decrypt(data []byte) ([]byte, error) {
+func (c *testCrypto) Decrypt(data []byte) ([]byte, uint16, error) {
 	if c.decryptCh != nil {
 		close(c.decryptCh)
 		<-c.releaseCh
 	}
-	return data, nil
+	return data, 0, nil
 }
 func (c *testCrypto) Zeroize() {
 	c.mu.Lock()
@@ -78,7 +78,7 @@ func TestPeer_AuthAndLifecycle(t *testing.T) {
 	if peer.IsSourceAllowed(netip.MustParseAddr("10.2.0.1")) {
 		t.Fatal("unexpected source address allowed")
 	}
-	plaintext, err := peer.Decrypt([]byte("data"))
+	plaintext, _, err := peer.Decrypt([]byte("data"))
 	if err != nil || string(plaintext) != "data" {
 		t.Fatalf("decrypt: plaintext=%q err=%v", plaintext, err)
 	}
@@ -86,7 +86,7 @@ func TestPeer_AuthAndLifecycle(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	peer.markClosed()
-	if _, err := peer.Decrypt(nil); !errors.Is(err, ErrPeerClosed) {
+	if _, _, err := peer.Decrypt(nil); !errors.Is(err, ErrPeerClosed) {
 		t.Fatalf("closed peer decrypt error = %v", err)
 	}
 	if err := peer.Send(nil); !errors.Is(err, ErrPeerClosed) {
@@ -151,7 +151,7 @@ func TestRepository_DeleteWaitsForDecrypt(t *testing.T) {
 
 	decryptDone := make(chan struct{})
 	go func() {
-		_, _ = peer.Decrypt([]byte("x"))
+		_, _, _ = peer.Decrypt([]byte("x"))
 		close(decryptDone)
 	}()
 	<-crypto.decryptCh

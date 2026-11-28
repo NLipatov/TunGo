@@ -92,7 +92,7 @@ func TestCrypto_RoundTrip(t *testing.T) {
 		t.Fatalf("ciphertext len=%d, want %d", len(ct), wantLen)
 	}
 
-	pt, err := server.Decrypt(ct)
+	pt, _, err := server.Decrypt(ct)
 	if err != nil {
 		t.Fatalf("Decrypt: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestCrypto_BidirectionalRoundTrip(t *testing.T) {
 	// Client → Server
 	msg1 := []byte("client to server")
 	ct1 := encryptBuf(t, client, msg1)
-	pt1, err := server.Decrypt(ct1)
+	pt1, _, err := server.Decrypt(ct1)
 	if err != nil {
 		t.Fatalf("Decrypt C2S: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCrypto_BidirectionalRoundTrip(t *testing.T) {
 	// Server → Client
 	msg2 := []byte("server to client")
 	ct2 := encryptBuf(t, server, msg2)
-	pt2, err := client.Decrypt(ct2)
+	pt2, _, err := client.Decrypt(ct2)
 	if err != nil {
 		t.Fatalf("Decrypt S2C: %v", err)
 	}
@@ -152,12 +152,15 @@ func TestCrypto_StageEpoch_DualEpoch(t *testing.T) {
 
 	// Server should still decrypt old-epoch frame (recv nonce for old session
 	// hasn't been used yet, so it advances 0→1 matching ct1's nonce of 1).
-	pt1, err := server.Decrypt(ct1)
+	pt1, gotEpoch1, err := server.Decrypt(ct1)
 	if err != nil {
 		t.Fatalf("Decrypt old-epoch frame after rekey: %v", err)
 	}
 	if !bytes.Equal(pt1, msg1) {
 		t.Fatalf("old-epoch mismatch: got %q want %q", pt1, msg1)
+	}
+	if gotEpoch1 != 0 {
+		t.Fatalf("old-epoch frame decrypted with epoch %d, want 0", gotEpoch1)
 	}
 
 	// Client switches send to new epoch and sends a new message.
@@ -173,12 +176,15 @@ func TestCrypto_StageEpoch_DualEpoch(t *testing.T) {
 	}
 
 	// Server decrypts new-epoch frame.
-	pt2, err := server.Decrypt(ct2)
+	pt2, gotEpoch2, err := server.Decrypt(ct2)
 	if err != nil {
 		t.Fatalf("Decrypt new-epoch frame: %v", err)
 	}
 	if !bytes.Equal(pt2, msg2) {
 		t.Fatalf("new-epoch mismatch: got %q want %q", pt2, msg2)
+	}
+	if gotEpoch2 != clientEpoch {
+		t.Fatalf("new-epoch frame decrypted with epoch %d, want %d", gotEpoch2, clientEpoch)
 	}
 }
 
@@ -227,7 +233,7 @@ func TestCrypto_PromoteSendEpoch_UnknownEpochKeepsConsistentSlot(t *testing.T) {
 	if epoch := binary.BigEndian.Uint16(ct[:chacha20.TCPEpochPrefixSize]); epoch != send.epoch {
 		t.Fatalf("wire epoch %d does not match send slot epoch %d", epoch, send.epoch)
 	}
-	if _, err := server.Decrypt(ct); err != nil {
+	if _, _, err := server.Decrypt(ct); err != nil {
 		t.Fatalf("peer could not decrypt packet from retained send slot: %v", err)
 	}
 }
@@ -290,7 +296,7 @@ func TestCrypto_DecryptDoesNotRetirePreviousEpoch(t *testing.T) {
 	// Client sends with new epoch and server authenticates it.
 	msg := []byte("new-epoch-data")
 	ct := encryptBuf(t, client, msg)
-	if _, err := server.Decrypt(ct); err != nil {
+	if _, _, err := server.Decrypt(ct); err != nil {
 		t.Fatalf("Decrypt: %v", err)
 	}
 
@@ -336,7 +342,7 @@ func TestCrypto_Decrypt_TooShort(t *testing.T) {
 	aead, _ := chacha20poly1305.New(key)
 	tc := NewCrypto(id, aead, aead, false)
 
-	if _, err := tc.Decrypt([]byte{0x00}); err == nil {
+	if _, _, err := tc.Decrypt([]byte{0x00}); err == nil {
 		t.Fatal("expected error for frame too short")
 	}
 }
@@ -349,7 +355,7 @@ func TestCrypto_Decrypt_UnknownEpoch(t *testing.T) {
 
 	data := make([]byte, 20)
 	binary.BigEndian.PutUint16(data[:2], 99) // unknown epoch
-	if _, err := tc.Decrypt(data); err == nil {
+	if _, _, err := tc.Decrypt(data); err == nil {
 		t.Fatal("expected error for unknown epoch")
 	}
 }
@@ -373,13 +379,13 @@ func TestCrypto_FSMRetiresPreviousEpochBeforeNextRekey(t *testing.T) {
 	serverFSM.ActivateSendEpoch(serverEpoch)
 
 	clientFrame := encryptBuf(t, client, []byte("client current epoch"))
-	if _, err := server.Decrypt(clientFrame); err != nil {
+	if _, _, err := server.Decrypt(clientFrame); err != nil {
 		t.Fatalf("server Decrypt: %v", err)
 	}
 	serverFSM.ObservePeerEpoch(binary.BigEndian.Uint16(clientFrame[:chacha20.TCPEpochPrefixSize]))
 
 	serverFrame := encryptBuf(t, server, []byte("server current epoch"))
-	if _, err := client.Decrypt(serverFrame); err != nil {
+	if _, _, err := client.Decrypt(serverFrame); err != nil {
 		t.Fatalf("client Decrypt: %v", err)
 	}
 	clientFSM.ObservePeerEpoch(binary.BigEndian.Uint16(serverFrame[:chacha20.TCPEpochPrefixSize]))
@@ -425,7 +431,7 @@ func TestCrypto_Decrypt_PropagatesSessionDecryptError(t *testing.T) {
 	// Known epoch=0 but random payload should fail authentication in session decrypt.
 	frame := make([]byte, chacha20.TCPEpochPrefixSize+chacha20poly1305.Overhead+1)
 	binary.BigEndian.PutUint16(frame[:chacha20.TCPEpochPrefixSize], 0)
-	if _, err := server.Decrypt(frame); err == nil {
+	if _, _, err := server.Decrypt(frame); err == nil {
 		t.Fatal("expected decrypt failure for malformed ciphertext")
 	}
 }

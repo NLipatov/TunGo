@@ -2,7 +2,6 @@ package udp
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"tungo/internal/client/stopwatch"
 	"tungo/internal/config/settings"
 	"tungo/internal/protocol/chacha20"
-	"tungo/internal/protocol/chacha20/udp"
 	"tungo/internal/protocol/servicepacket"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -25,35 +23,35 @@ type transportRekey interface {
 }
 
 type transportHandler struct {
-	ctx                 context.Context
-	reader              io.Reader
-	writer              io.Writer
-	cryptographyService crypto
-	rekey               transportRekey
-	egress              sender
-	lastPingSentAt      time.Time
-	pingBuf             []byte
-	readActivity        *stopwatch.Stopwatch
+	ctx            context.Context
+	reader         io.Reader
+	writer         io.Writer
+	crypto         chacha20.Crypto
+	rekey          transportRekey
+	egress         sender
+	lastPingSentAt time.Time
+	pingBuf        []byte
+	readActivity   *stopwatch.Stopwatch
 }
 
 func newTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService crypto,
+	crypto chacha20.Crypto,
 	rekey transportRekey,
 	egress sender,
 ) *transportHandler {
 	const pingLen = udpPayloadOffset + 3
 	return &transportHandler{
-		ctx:                 ctx,
-		reader:              reader,
-		writer:              writer,
-		cryptographyService: cryptographyService,
-		rekey:               rekey,
-		egress:              egress,
-		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
-		readActivity:        stopwatch.New(),
+		ctx:          ctx,
+		reader:       reader,
+		writer:       writer,
+		crypto:       crypto,
+		rekey:        rekey,
+		egress:       egress,
+		pingBuf:      make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
+		readActivity: stopwatch.New(),
 	}
 }
 
@@ -85,7 +83,7 @@ func (t *transportHandler) handleDatagram(pkt []byte) (int, error) {
 		return 0, nil
 	}
 
-	decrypted, decryptionErr := t.cryptographyService.Decrypt(pkt)
+	decrypted, carrierEpoch, decryptionErr := t.crypto.Decrypt(pkt)
 	if decryptionErr != nil {
 		// Drop undecryptable packets without terminating session.
 		// If session is truly broken, keepalive timeout will detect it.
@@ -93,10 +91,6 @@ func (t *transportHandler) handleDatagram(pkt []byte) (int, error) {
 		return 0, nil
 	}
 	t.readActivity.Reset()
-	var carrierEpoch uint16
-	if len(pkt) >= udp.EpochOffset+2 {
-		carrierEpoch = binary.BigEndian.Uint16(pkt[udp.EpochOffset : udp.EpochOffset+2])
-	}
 
 	if t.rekey != nil {
 		// Authentication proves the peer epoch; UDP uses the same event to promote send.
