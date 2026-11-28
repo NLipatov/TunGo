@@ -39,8 +39,8 @@ type TransportHandlerMockCrypto struct {
 }
 
 func (m *TransportHandlerMockCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
-func (m *TransportHandlerMockCrypto) Decrypt(_ []byte) ([]byte, error) {
-	return m.decOut, m.decErr
+func (m *TransportHandlerMockCrypto) Decrypt(_ []byte) ([]byte, uint16, error) {
+	return m.decOut, 0, m.decErr
 }
 
 type TransportHandlerMockRekeyAck struct {
@@ -82,7 +82,7 @@ func newTestTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	crypto crypto,
+	crypto chacha20.Crypto,
 	epoch testEpochObserver,
 	ack testRekeyAckHandler,
 	egress sender,

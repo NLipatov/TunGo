@@ -145,7 +145,7 @@ func TestCrypto_EncryptDecrypt_RoundTrip(t *testing.T) {
 		t.Fatalf("nonce counter = %d, want 1", counter)
 	}
 
-	decrypted, err := server.Decrypt(encrypted)
+	decrypted, _, err := server.Decrypt(encrypted)
 	if err != nil {
 		t.Fatalf("Decrypt failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCrypto_StageEpoch_UsesCanonicalDirections(t *testing.T) {
 	client.PromoteSendEpoch(clientEpoch)
 	server.PromoteSendEpoch(serverEpoch)
 
-	roundTrip := func(sender, receiver *Crypto, payload []byte) {
+	roundTrip := func(sender, receiver *Crypto, wantEpoch uint16, payload []byte) {
 		t.Helper()
 		buf := make(
 			[]byte,
@@ -183,22 +183,25 @@ func TestCrypto_StageEpoch_UsesCanonicalDirections(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Encrypt: %v", err)
 		}
-		decrypted, err := receiver.Decrypt(encrypted)
+		decrypted, epoch, err := receiver.Decrypt(encrypted)
 		if err != nil {
 			t.Fatalf("Decrypt: %v", err)
+		}
+		if epoch != wantEpoch {
+			t.Fatalf("decrypted epoch %d, want %d", epoch, wantEpoch)
 		}
 		if string(decrypted) != string(payload) {
 			t.Fatalf("decrypted %q, want %q", decrypted, payload)
 		}
 	}
 
-	roundTrip(client, server, []byte("c2s"))
-	roundTrip(server, client, []byte("s2c"))
+	roundTrip(client, server, clientEpoch, []byte("c2s"))
+	roundTrip(server, client, serverEpoch, []byte("s2c"))
 }
 
 func TestCrypto_Decrypt_TooShort(t *testing.T) {
 	c := makeCrypto(t)
-	_, err := c.Decrypt(make([]byte, MinPacketSize-1))
+	_, _, err := c.Decrypt(make([]byte, MinPacketSize-1))
 	if err == nil {
 		t.Fatal("expected error for short ciphertext")
 	}
@@ -212,7 +215,7 @@ func TestCrypto_Decrypt_UnknownEpoch(t *testing.T) {
 	binary.BigEndian.PutUint64(buf[:RouteIDLength], c.RouteID())
 	binary.BigEndian.PutUint16(buf[EpochOffset:EpochOffset+2], 99)
 
-	_, err := c.Decrypt(buf)
+	_, _, err := c.Decrypt(buf)
 	if !errors.Is(err, ErrUnknownEpoch) {
 		t.Fatalf("expected ErrUnknownEpoch, got %v", err)
 	}
@@ -309,7 +312,7 @@ func TestCrypto_Decrypt_EpochMismatch(t *testing.T) {
 	buf := make([]byte, MinPacketSize)
 	binary.BigEndian.PutUint16(buf[EpochOffset:EpochOffset+2], 0)
 
-	_, err := c.Decrypt(buf)
+	_, _, err := c.Decrypt(buf)
 	if !errors.Is(err, ErrUnknownEpoch) {
 		t.Fatalf("expected ErrUnknownEpoch on epoch mismatch, got %v", err)
 	}
@@ -362,7 +365,7 @@ func TestCrypto_Decrypt_UnknownRouteID(t *testing.T) {
 	packet := make([]byte, MinPacketSize)
 	binary.BigEndian.PutUint64(packet[:RouteIDLength], 0x9988776655443322)
 
-	_, err := c.Decrypt(packet)
+	_, _, err := c.Decrypt(packet)
 	if !errors.Is(err, ErrUnknownRouteID) {
 		t.Fatalf("expected ErrUnknownRouteID, got %v", err)
 	}

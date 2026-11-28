@@ -82,7 +82,7 @@ func newTestTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	crypto crypto,
+	crypto corechacha20.Crypto,
 	epoch testEpochController,
 	ack testRekeyAckHandler,
 	egress sender,
@@ -114,7 +114,7 @@ func TestHandleControlplane_RekeyAckTypes(t *testing.T) {
 	}
 }
 
-// thTestCrypto implements config.crypto for testing TransportHandler
+// thTestCrypto implements chacha20.Crypto for testing TransportHandler
 // Only Decrypt is used in tests.
 type thTestCrypto struct {
 	output []byte
@@ -124,25 +124,26 @@ type thTestCrypto struct {
 func (m *thTestCrypto) Encrypt([]byte) ([]byte, error) {
 	return nil, fmt.Errorf("not used")
 }
-func (m *thTestCrypto) Decrypt([]byte) ([]byte, error) {
+func (m *thTestCrypto) Decrypt([]byte) ([]byte, uint16, error) {
 	if m.err != nil {
-		return nil, m.err
+		return nil, 0, m.err
 	}
-	return m.output, nil
+	return m.output, 0, nil
 }
 
-// thAckCrypto returns payload without the UDP route ID and nonce.
+// thAckCrypto returns payload without the UDP route ID and nonce,
+// and the epoch carried in the nonce.
 type thAckCrypto struct{}
 
 func (thAckCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
-func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
+func (thAckCrypto) Decrypt(b []byte) ([]byte, uint16, error) {
 	payloadOffset := udpPayloadOffset
 	if len(b) <= payloadOffset {
-		return nil, fmt.Errorf("cipher too short")
+		return nil, 0, fmt.Errorf("cipher too short")
 	}
 	out := make([]byte, len(b)-payloadOffset)
 	copy(out, b[payloadOffset:])
-	return out, nil
+	return out, binary.BigEndian.Uint16(b[chacha20.EpochOffset : chacha20.EpochOffset+2]), nil
 }
 
 func buildTestUDPPacket(epoch uint16, payload []byte) []byte {

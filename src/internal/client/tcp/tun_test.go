@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"tungo/internal/client/packetsender"
+	"tungo/internal/protocol/chacha20"
 	"tungo/internal/protocol/chacha20/rekey"
 	"tungo/internal/protocol/keys"
 	tunnelrekey "tungo/internal/protocol/rekey"
@@ -73,7 +74,7 @@ type TunHandlerMockCrypto struct{ err error }
 func (m *TunHandlerMockCrypto) Encrypt(b []byte) ([]byte, error) {
 	return append([]byte(nil), b...), m.err
 }
-func (m *TunHandlerMockCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+func (m *TunHandlerMockCrypto) Decrypt([]byte) ([]byte, uint16, error) { return nil, 0, nil }
 
 type tunHandlerFailingKeyDeriver struct{ err error }
 
@@ -93,7 +94,7 @@ func rdr(seq ...struct {
 	return &TunHandlerMockReader{seq: seq}
 }
 
-func mockEgress(w io.Writer, c crypto) sender {
+func mockEgress(w io.Writer, c chacha20.Crypto) sender {
 	return packetsender.New(w, c)
 }
 

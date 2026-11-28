@@ -50,7 +50,7 @@ type rekeyV2Handshake interface {
 
 func (c *Client) connect(
 	ctx context.Context,
-) (net.Conn, crypto, clientRekey, error) {
+) (net.Conn, chacha20.Crypto, clientRekey, error) {
 	active, err := c.configurations.Active()
 	if err != nil {
 		return nil, nil, nil, err
@@ -187,7 +187,7 @@ func (c *Client) handshake(
 	ctx context.Context,
 	conn net.Conn,
 	protocol settings.Protocol,
-) (net.Conn, crypto, clientRekey, error) {
+) (net.Conn, chacha20.Crypto, clientRekey, error) {
 	configuration, err := c.configurations.Active()
 	if err != nil {
 		_ = conn.Close()
@@ -215,7 +215,7 @@ func (c *Client) handshake(
 	}
 
 	var (
-		cr              crypto
+		cr              chacha20.Crypto
 		epochController epochController
 	)
 	switch protocol {

@@ -73,28 +73,32 @@ func (c *Crypto) Encrypt(plaintext []byte) ([]byte, error) {
 	return plaintext[:RouteIDLength+len(encrypted)], nil
 }
 
-func (c *Crypto) Decrypt(ciphertext []byte) ([]byte, error) {
+func (c *Crypto) Decrypt(ciphertext []byte) ([]byte, uint16, error) {
 	if len(ciphertext) < MinPacketSize {
-		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
+		return nil, 0, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
 	routeID, ok := ReadRouteID(ciphertext)
 	if !ok {
-		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
+		return nil, 0, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
 	if routeID != c.routeID {
-		return nil, ErrUnknownRouteID
+		return nil, 0, ErrUnknownRouteID
 	}
 
 	cipherPayload := ciphertext[NonceOffset:]
 	epoch := binary.BigEndian.Uint16(cipherPayload[core.NonceEpochOffset:chacha20poly1305.NonceSize])
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
-		return nil, ErrUnknownEpoch
+		return nil, 0, ErrUnknownEpoch
 	}
 	if session.Epoch() != epoch {
-		return nil, ErrUnknownEpoch
+		return nil, 0, ErrUnknownEpoch
 	}
-	return session.Decrypt(cipherPayload)
+	plaintext, err := session.Decrypt(cipherPayload)
+	if err != nil {
+		return nil, 0, err
+	}
+	return plaintext, epoch, nil
 }
 
 // StageEpoch installs a new immutable session with fresh nonce/replay state.

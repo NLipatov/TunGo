@@ -8,16 +8,12 @@ import (
 	"time"
 
 	"tungo/internal/client/packetsender"
+	"tungo/internal/protocol/chacha20"
 	udptransport "tungo/internal/transport/udp"
 )
 
 type sender interface {
 	Send([]byte) error
-}
-
-type crypto interface {
-	Encrypt([]byte) ([]byte, error)
-	Decrypt([]byte) ([]byte, error)
 }
 
 type rekeySession interface {
@@ -42,7 +38,7 @@ func New(
 	ctx context.Context,
 	conn *net.UDPConn,
 	tun io.ReadWriter,
-	crypto crypto,
+	crypto chacha20.Crypto,
 	rekey rekeySession,
 	allowedSources map[netip.Addr]struct{},
 ) *Client {

@@ -149,7 +149,7 @@ func TestUDPRepliesUseRequestDestination(t *testing.T) {
 				if from.Addr().Unmap() != destination.Addr() || from.Port() != destination.Port() {
 					t.Fatalf("reply from %s, want %s", from, destination)
 				}
-				plaintext, err := clientCrypto.Decrypt(buffer[:n])
+				plaintext, _, err := clientCrypto.Decrypt(buffer[:n])
 				if err != nil {
 					t.Fatal(err)
 				}

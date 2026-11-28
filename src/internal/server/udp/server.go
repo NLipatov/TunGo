@@ -2,7 +2,6 @@ package udp
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -56,7 +55,7 @@ func New(
 			conn,
 			peers,
 			func() handshake { return newHandshake() },
-			func(material chacha20.KeyMaterial, isServer bool) (crypto, epochController, error) {
+			func(material chacha20.KeyMaterial, isServer bool) (chacha20.Crypto, epochController, error) {
 				return udpcrypto.NewFromHandshake(material, isServer)
 			},
 			ipv4Subnet,
@@ -182,29 +181,25 @@ func datagramDestination(oob []byte) (netip.Addr, error) {
 }
 
 func (s *Server) handleEstablished(addr netip.AddrPort, peer *session.Peer, frame []byte) error {
-	plaintext, err := peer.Decrypt(frame)
+	plaintext, epoch, err := peer.Decrypt(frame)
 	if err != nil {
 		return nil
 	}
 	if peer.ExternalAddrPort() != addr {
 		s.peers.UpdateExternalAddr(peer, addr)
 	}
-	return s.handleDecrypted(peer, frame, plaintext)
+	return s.handleDecrypted(peer, epoch, plaintext)
 }
 
 func (s *Server) handleDecrypted(
 	peer *session.Peer,
-	frame, plaintext []byte,
+	epoch uint16,
+	plaintext []byte,
 ) error {
 	if peer.IsClosed() {
 		return nil
 	}
 	peer.TouchActivity()
-
-	if len(frame) < udpcrypto.EpochOffset+2 {
-		return nil
-	}
-	epoch := binary.BigEndian.Uint16(frame[udpcrypto.EpochOffset : udpcrypto.EpochOffset+2])
 	peer.ObservePeerEpoch(epoch)
 	peer.ActivateSendEpoch(epoch)
 	if handled, err := s.handleService(peer, epoch, plaintext); handled {
